@@ -1,0 +1,23 @@
+WHITESPACE = _{ " " | "\t" }
+identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0'..'9' )* }
+constant = @{ ASCII_DIGIT+ }
+
+circuit = _{ SOI ~ statements ~ EOI }
+
+statements = _{ ( statement ~ NEWLINE )* ~ statement }
+
+statement = { alias_statement | gate_statement }
+
+wire = { identifier | constant }
+wire_list = { wire+ } // e.g. x 2 y -- no arithmetics
+poly_expression_list = { wire+ } // e.g. x^3 + 1 x^2 -- a list of length 2
+
+gate_name = { identifier }
+gate_statement = { gate_name ~ poly_expression_list }
+assignment_gate_statement = { wire_list ~ "=" ~ gate_name ~ poly_expression_list }
+
+alias_name = { identifier }
+alias_inputs = { wire_list }
+alias_outputs = { wire_list }
+
+alias_statement = { "alias" ~ alias_name ~ alias_inputs ~ ("->" ~ alias_outputs)? ~ "{" ~ statements ~ "}" }
