@@ -1,6 +1,6 @@
 # IR module
 
-- [Spec](https://org.heliax.dev/products/plonkup/ir_spec.html)
+- [Spec](./ir_spec.md)
 - Provides interfaces for `compile`, `prove`, and `verify` using IR.
 - Calls interfaces of `plonk-core`.
 
