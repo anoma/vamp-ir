@@ -2,32 +2,42 @@ WHITESPACE = _{ " " | "\t" }
 identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0'..'9' )* }
 number = @{ ASCII_DIGIT+ }
 
+// A circuit is a collection of statements
 circuit = _{ SOI ~ statement* ~ EOI }
 
+// Three types of statements: pub, alias, constraint
 statement = _{ pub_statement | alias_statement | constraint_statement }
 
-wire = { identifier | number }
-wire_list = { wire+ } // e.g. x 2 y -- no arithmetics
+// pub statement declares public wires
+pub_statement = { NEWLINE* ~ "pub" ~ wire_list ~ NEWLINE* }
 
-op = { "+" | "-" }
-
-monomial = @{ wire ~ ("^" ~ number)? }
-term = { monomial ~ "*" ~ term | monomial }
-poly = { "("? ~ term ~ op ~ poly ~ ")"? | term }
-
-// an expression return a list of unnamed wires
-expression = { poly | "(" ~ gate_expression ~ ")" }
-expression_list = { expression+ } // e.g. x^3 + 1 (add x 2) x^2 -- a list of length 3
-
-gate_name = { identifier }
-gate_expression = { gate_name ~ expression_list }
-
-// a constraint statement places some constraint on wires
-constraint_statement = { NEWLINE* ~ (expression ~ "=" ~ expression | "poly" ~ poly | gate_expression) ~ NEWLINE* }
-
+// alias statement defines an alias
 alias_name = { identifier }
 alias_inputs = { wire_list }
 alias_outputs = { wire_list }
 alias_statement = { NEWLINE* ~ "def" ~ alias_name ~ alias_inputs ~ ("->" ~ alias_outputs)? ~ "{" ~ constraint_statement* ~ "}" ~ NEWLINE* }
 
-pub_statement = { NEWLINE* ~ "pub" ~ wire_list ~ NEWLINE* }
+// Atomic data unit for the IR, a wire
+wire = { identifier | number }
+wire_list = { wire+ } // e.g. x 2 y -- no arithmetics
+
+// Polynomial is a arithmetic expression involving wires as mathematical
+// variables.
+op = { "+" | "-" }
+monomial = @{ wire ~ ("^" ~ number)? }
+term = { monomial ~ "*" ~ term | monomial }
+poly = { "("? ~ term ~ op ~ poly ~ ")"? | term }
+
+// An expression returns a list of unnamed wires, and is eiter a poly
+// expression or a gate expression, which must be enclosed in "()".
+expression = { poly | "(" ~ gate_expression ~ ")" }
+
+gate_name = { identifier }
+gate_expression = { gate_name ~ expression_list }
+
+expression_list = { expression+ } // e.g. x^3 + 1 (add x 2) x^2 -- a list of length 3
+
+// a constraint statement places some constraint on wires
+// either a `=` constraint or a gate constraint
+constraint_statement = { NEWLINE* ~ (expression ~ "=" ~ expression | gate_expression) ~ NEWLINE* }
+
