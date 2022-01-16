@@ -19,7 +19,7 @@ pub(crate) fn print_pair(level: usize, pair: Pair<Rule>) {
 }
 
 fn main() {
-    let pairs = PlonkIRParser::parse(Rule::circuit, "a1 b2^2 * c3 + d4 \n def gate a -> b {\n a (b 1) c \n e d 2 \n}").unwrap_or_else(|e| panic!("{}", e));
+    let pairs = PlonkIRParser::parse(Rule::circuit, "pub a1 b2\na1 b2^2 * c3 + d4 \n def gate a -> b {\n a (b 1) c \n e d 2 \n}").unwrap_or_else(|e| panic!("{}", e));
 
     for pair in pairs {
         print_pair(0, pair);

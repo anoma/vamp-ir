@@ -4,7 +4,7 @@ number = @{ ASCII_DIGIT+ }
 
 circuit = _{ SOI ~ statement* ~ EOI }
 
-statement = _{ alias_statement | constraint_statement }
+statement = _{ pub_statement | alias_statement | constraint_statement }
 
 wire = { identifier | number }
 wire_list = { wire+ } // e.g. x 2 y -- no arithmetics
@@ -15,15 +15,19 @@ monomial = @{ wire ~ ("^" ~ number)? }
 term = { monomial ~ "*" ~ term | monomial }
 poly = { "("? ~ term ~ op ~ poly ~ ")"? | term }
 
+// an expression return a list of unnamed wires
 expression = { poly | "(" ~ gate_expression ~ ")" }
 expression_list = { expression+ } // e.g. x^3 + 1 (add x 2) x^2 -- a list of length 3
 
 gate_name = { identifier }
 gate_expression = { gate_name ~ expression_list }
 
+// a constraint statement places some constraint on wires
 constraint_statement = { NEWLINE* ~ (expression ~ "=" ~ expression | "poly" ~ poly | gate_expression) ~ NEWLINE* }
 
 alias_name = { identifier }
 alias_inputs = { wire_list }
 alias_outputs = { wire_list }
 alias_statement = { NEWLINE* ~ "def" ~ alias_name ~ alias_inputs ~ ("->" ~ alias_outputs)? ~ "{" ~ constraint_statement* ~ "}" ~ NEWLINE* }
+
+pub_statement = { NEWLINE* ~ "pub" ~ wire_list ~ NEWLINE* }
