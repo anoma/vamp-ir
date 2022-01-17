@@ -14,6 +14,13 @@
 - Verify: takes input the output of compile, as well as a table `PI` (same as
   in prove), and a proof; outputs a boolean value.
 
+## Testing
+
+```=sh
+cd plonk-ir
+cargo run
+```
+
 ## TODO
 
 1. Implement internal AST and code converting output of PEST parser to internal AST.

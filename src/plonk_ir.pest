@@ -1,6 +1,6 @@
 WHITESPACE = _{ " " | "\t" }
 identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0'..'9' )* }
-number = @{ ASCII_DIGIT+ }
+constant = @{ ASCII_DIGIT+ }
 
 // A circuit is a collection of statements
 circuit = _{ SOI ~ statement* ~ EOI }
@@ -18,13 +18,13 @@ alias_outputs = { wire_list }
 alias_statement = { NEWLINE* ~ "def" ~ alias_name ~ alias_inputs ~ ("->" ~ alias_outputs)? ~ "{" ~ constraint_statement* ~ "}" ~ NEWLINE* }
 
 // Atomic data unit for the IR, a wire
-wire = { identifier | number }
+wire = { identifier }
 wire_list = { wire+ } // e.g. x 2 y -- no arithmetics
 
 // Polynomial is a arithmetic expression involving wires as mathematical
 // variables.
 op = { "+" | "-" }
-monomial = @{ wire ~ ("^" ~ number)? }
+monomial = @{ constant | wire ~ ("^" ~ constant)? }
 term = { monomial ~ "*" ~ term | monomial }
 poly = { "("? ~ term ~ op ~ poly ~ ")"? | term }
 
