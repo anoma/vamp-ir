@@ -1,6 +1,6 @@
 # IR module
 
-- [Spec](./ir_spec.md)
+- [Design rationale](./ir_design.md) / [Spec](./ir_spec.md)
 - Provides interfaces for `compile`, `prove`, and `verify` using IR.
 - Calls interfaces of `plonk-core`.
 
