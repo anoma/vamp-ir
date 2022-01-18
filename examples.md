@@ -16,7 +16,7 @@ f = fixed_base_scalar_mul e
 
 Note that the base for the gate `fixed_base_scalar_mul` is fixed to be
 `generator` by the backend, where
-```=rust
+```rust
 let (x, y) = P::AFFINE_GENERATOR_COEFFS;
 let generator = GroupAffine::new(x, y);
 ```
