@@ -1,7 +1,7 @@
 # Example: TestCircuit in IR
 
 We describe how the full workflow working with the test circuit given in
-[circuit.rs:465](../src/plonk_core/src/circuit.rs#L465).
+[circuit.rs:465](../plonk-core/src/circuit.rs#L465).
 
 First, the IR file is as follows.
 ```
@@ -12,6 +12,13 @@ range 5 b
 c = a + b
 d = a * b
 f = fixed_base_scalar_mul e
+```
+
+Note that the base for the gate `fixed_base_scalar_mul` is fixed to be
+`generator` by the backend, where
+```=rust
+let (x, y) = P::AFFINE_GENERATOR_COEFFS;
+let generator = GroupAffine::new(x, y);
 ```
 
 ## Compile
