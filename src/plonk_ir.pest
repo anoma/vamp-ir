@@ -27,13 +27,13 @@ wire = !{ wire_id | "(" ~ gate_expression ~ ")" }
 // Polynomial is a arithmetic expression involving wires as mathematical
 // variables.
 op = { "+" | "-" }
-monomial = ${ constant | wire ~ ("^" ~ constant)? }
+monomial = ${ (constant | wire) ~ ("^" ~ constant)? }
 term = _{ monomial ~ ("*" ~ monomial)* }
 poly = { term ~ (op ~ term)* }
 
 // An expression returns a list of unnamed wires, and is eiter a poly
 // expression or a gate expression, which must be enclosed in "()".
-expression = { poly | "(" ~ gate_expression ~ ")" }
+expression = { "(" ~ gate_expression ~ ")" | poly }
 
 gate_name = { identifier }
 gate_expression = { gate_name ~ expression_list }

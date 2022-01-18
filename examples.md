@@ -11,8 +11,11 @@ range a 2^6
 range b 2^5
 c = a + b
 d = a * b
-f = fixed_base_scalar_mul e
+f = (fixed_base_scalar_mul e)
 ```
+
+Above, we have to use "(...)" to force a gate expression in the current grammar
+since it is vague to the parser what is a gate vs what is a poly.
 
 Note that the base for the gate `fixed_base_scalar_mul` is fixed to be
 `generator` by the backend, where
