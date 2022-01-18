@@ -9,24 +9,27 @@ circuit = _{ SOI ~ statement* ~ EOI }
 statement = _{ pub_statement | alias_statement | constraint_statement }
 
 // pub statement declares public wires
-pub_statement = { NEWLINE* ~ "pub" ~ wire_list ~ NEWLINE* }
+pub_statement = { NEWLINE* ~ "pub" ~ wire_id_list ~ NEWLINE* }
 
 // alias statement defines an alias
 alias_name = { identifier }
-alias_inputs = { wire_list }
-alias_outputs = { wire_list }
+alias_inputs = { wire_id_list }
+alias_outputs = { wire_id_list }
 alias_statement = { NEWLINE* ~ "def" ~ alias_name ~ alias_inputs ~ ("->" ~ alias_outputs)? ~ "{" ~ constraint_statement* ~ "}" ~ NEWLINE* }
 
-// Atomic data unit for the IR, a wire
-wire = { identifier }
-wire_list = { wire+ } // e.g. x 2 y -- no arithmetics
+// Atomic and immutable data unit for the IR, a wire
+wire_id = { identifier }
+wire_id_list = { wire_id+ } // e.g. x 2 y -- no arithmetics
+// A wire is either referred to from a wire_id, or a gate_expression that
+// returns exactly ONE output wire
+wire = !{ wire_id | "(" ~ gate_expression ~ ")" }
 
 // Polynomial is a arithmetic expression involving wires as mathematical
 // variables.
 op = { "+" | "-" }
-monomial = @{ constant | wire ~ ("^" ~ constant)? }
-term = { monomial ~ "*" ~ term | monomial }
-poly = { "("? ~ term ~ op ~ poly ~ ")"? | term }
+monomial = ${ constant | wire ~ ("^" ~ constant)? }
+term = _{ monomial ~ ("*" ~ monomial)* }
+poly = { term ~ (op ~ term)* }
 
 // An expression returns a list of unnamed wires, and is eiter a poly
 // expression or a gate expression, which must be enclosed in "()".
