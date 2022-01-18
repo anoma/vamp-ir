@@ -7,8 +7,8 @@ First, the IR file is as follows.
 ```
 // circuit.pir
 pub c d f
-range 6 a
-range 5 b
+range a 2^6
+range b 2^5
 c = a + b
 d = a * b
 f = fixed_base_scalar_mul e
