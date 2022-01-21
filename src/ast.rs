@@ -23,17 +23,22 @@ pub enum Statement {
 #[derive(Debug, FromPest, PartialEq, Clone)]
 #[pest_ast(rule(Rule::pub_statement))]
 pub struct PubStatement {
-    pub wires: Vec<Wire>
+    pub wires: Vec<Identifier>
 }
 
 #[derive(Debug, FromPest, PartialEq, Clone)]
 #[pest_ast(rule(Rule::alias_statement))]
 pub struct AliasStatement {
     pub name: Identifier,
-    pub inputs: WireIDList,
-    pub outputs: WireIDList,
+    pub inputs: Vec<Identifier>,
+    pub _arrow: Option<AliasArrow>,
+    pub outputs: Vec<Identifier>,
     pub body: Vec<ConstraintStatement>,
 }
+
+#[derive(Debug, FromPest, PartialEq, Clone)]
+#[pest_ast(rule(Rule::alias_arrow))]
+pub struct AliasArrow;
 
 #[derive(Debug, FromPest, PartialEq, Clone)]
 #[pest_ast(rule(Rule::constraint_statement))]
@@ -60,20 +65,8 @@ pub struct PolyExpression {
 #[pest_ast(rule(Rule::gate_expression))]
 pub struct GateExpression {
     pub name: Identifier,
+    pub parameters: Vec<Constant>,
     pub expressions: Vec<Identifier>
-}
-
-#[derive(Debug, FromPest, PartialEq, Clone)]
-#[pest_ast(rule(Rule::wire_id_list))]
-pub struct WireIDList {
-    wires: Vec<Identifier>,
-}
-
-#[derive(Debug, FromPest, PartialEq, Clone)]
-#[pest_ast(rule(Rule::wire_id))]
-pub struct Wire {
-    #[pest_ast(outer(with(span_into_str)))]
-    name: String,
 }
 
 #[derive(Debug, FromPest, PartialEq, Clone)]
@@ -84,8 +77,8 @@ pub struct Identifier {
 }
 
 #[derive(Debug, FromPest, PartialEq, Clone)]
-#[pest_ast(rule(Rule::identifier))]
-pub struct Constants {
+#[pest_ast(rule(Rule::constant))]
+pub struct Constant {
     #[pest_ast(outer(with(span_into_str)))]
     pub value: String,
 }
@@ -115,9 +108,10 @@ mod tests {
 
     #[test]
     fn test_circuit_no_expr() {
-        ast::parse_circuit_from_string("def gate a -> b { gate a }
+        let circuit = ast::parse_circuit_from_string("def gate a -> b { gate a }
 (a b) = (b c)
 ");
+        assert_eq!(circuit.size(), 2);
     }
 
     #[test]

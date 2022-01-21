@@ -6,3 +6,4 @@ extern crate pest_ast;
 extern crate pest;
 
 pub mod ast;
+pub mod vampir;

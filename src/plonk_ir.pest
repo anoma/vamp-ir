@@ -1,7 +1,6 @@
 WHITESPACE = _{ " " | "\t" }
 identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0'..'9' )* }
 constant = @{ ASCII_DIGIT+ }
-constant_list = { constant+ }
 
 // A circuit is a collection of statements
 circuit = { SOI ~ statement* ~ EOI }
@@ -13,15 +12,13 @@ statement = { pub_statement | alias_statement | constraint_statement }
 pub_statement = { NEWLINE* ~ "pub" ~ wire_id_list ~ NEWLINE* }
 
 // alias statement defines an alias
-alias_name = { identifier }
-alias_inputs = { wire_id_list }
-alias_outputs = { wire_id_list }
-alias_statement = { NEWLINE* ~ "def" ~ identifier ~ wire_id_list ~ ("->" ~ wire_id_list)? ~ "{" ~ constraint_statement* ~ "}" ~ NEWLINE* }
+alias_arrow = { "->" }
+alias_statement = { NEWLINE* ~ "def" ~ identifier ~ wire_id_list ~ (alias_arrow ~ wire_id_list)? ~ "{" ~ constraint_statement* ~ "}" ~ NEWLINE* }
 
 // Atomic and immutable data unit for the IR, a wire
 wire_type = { "pub" | "priv" | "const" }
 wire_id = _{ wire_type? ~ identifier }
-wire_id_list = { wire_id+ } // e.g. x y -- no arithmetics allowed
+wire_id_list = _{ wire_id+ } // e.g. x y -- no arithmetics allowed
 // A wire is either referred to from a wire_id, or a gate_expression that
 // returns exactly ONE output wire
 wire = !{ identifier | "(" ~ gate_expression ~ ")" }
@@ -39,8 +36,7 @@ poly = { term ~ (op ~ term)* }
 // expression or a gate expression, which must be enclosed in "()".
 expression = { "(" ~ gate_expression ~ ")" | poly }
 
-gate = { identifier ~ ("[" ~ constant_list ~ "]")? }
-gate_expression = { identifier ~ wire_id+ }
+gate_expression = { identifier ~ ("[" ~ constant+ ~ "]")? ~ wire_id+ }
 
 // a constraint statement places some constraint on wires
 // either a `=` constraint or a gate constraint
