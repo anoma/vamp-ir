@@ -24,3 +24,5 @@ std = []
 plonk-core = { path = "../plonk-core" }
 pest = "2.1.0"
 pest_derive = "2.1.0"
+pest-ast = "0.3.3"
+from-pest = "0.3.1"

@@ -25,11 +25,20 @@ their symbols to metadata and other relevant information.
   - Example naming: `some_gate#output#1#2` for the 2nd output of the 1st invocation of the gate `some_gate`.
 3. **(Not necessary for first iteration)** algebraic optimizations, wire eliminations, etc.
 4. Algebraic constraint translation
-  - Translate algebraic constraints to PLONK `arithmetic_gate`
-  - `arithmetic_gate` only supports `z = a * x + b * y + c * x * y`, where z is
-    either `pub` or not and `a, b, c` are possibly zero.
-  - For first iteration: do something naive here, allocate an `arithmetic_gate`
-    for each multiplication and addition is fine.
+  - Translate algebraic constraints to PLONK polynomial gates
+  - Supported polynomial gates
+    ```
+    poly_gate[m l r o f c] xl xr xf -> xo {
+      o * xo = -m * (xl * xr) - l * xl - r * xr - f * xf - c
+    }
+    ```
+    ```
+    pubout_poly_gate[m l r o f c] xl xr xf xo -> xp {
+      pub xp = - m * (xl * xr) - l * xl - r * xr - f * xf - o * xo - c
+    }
+    ```
+  - For first iteration: do something naive here, allocate a `poly_gate_2`
+    for each internal multiplication and addition.
 5. Final AST walks to circuit
   - At this point the AST contains only gate constraint statements on
     explicitly named wires.

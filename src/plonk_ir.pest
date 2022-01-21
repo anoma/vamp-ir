@@ -1,12 +1,13 @@
 WHITESPACE = _{ " " | "\t" }
 identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0'..'9' )* }
 constant = @{ ASCII_DIGIT+ }
+constant_list = { constant+ }
 
 // A circuit is a collection of statements
-circuit = _{ SOI ~ statement* ~ EOI }
+circuit = { SOI ~ statement* ~ EOI }
 
 // Three types of statements: pub, alias, constraint
-statement = _{ pub_statement | alias_statement | constraint_statement }
+statement = { pub_statement | alias_statement | constraint_statement }
 
 // pub statement declares public wires
 pub_statement = { NEWLINE* ~ "pub" ~ wire_id_list ~ NEWLINE* }
@@ -15,14 +16,15 @@ pub_statement = { NEWLINE* ~ "pub" ~ wire_id_list ~ NEWLINE* }
 alias_name = { identifier }
 alias_inputs = { wire_id_list }
 alias_outputs = { wire_id_list }
-alias_statement = { NEWLINE* ~ "def" ~ alias_name ~ alias_inputs ~ ("->" ~ alias_outputs)? ~ "{" ~ constraint_statement* ~ "}" ~ NEWLINE* }
+alias_statement = { NEWLINE* ~ "def" ~ identifier ~ wire_id_list ~ ("->" ~ wire_id_list)? ~ "{" ~ constraint_statement* ~ "}" ~ NEWLINE* }
 
 // Atomic and immutable data unit for the IR, a wire
-wire_id = { identifier }
-wire_id_list = { wire_id+ } // e.g. x 2 y -- no arithmetics
+wire_type = { "pub" | "priv" | "const" }
+wire_id = _{ wire_type? ~ identifier }
+wire_id_list = { wire_id+ } // e.g. x y -- no arithmetics allowed
 // A wire is either referred to from a wire_id, or a gate_expression that
 // returns exactly ONE output wire
-wire = !{ wire_id | "(" ~ gate_expression ~ ")" }
+wire = !{ identifier | "(" ~ gate_expression ~ ")" }
 
 // Polynomial is a arithmetic expression involving wires as mathematical
 // variables.
@@ -37,10 +39,8 @@ poly = { term ~ (op ~ term)* }
 // expression or a gate expression, which must be enclosed in "()".
 expression = { "(" ~ gate_expression ~ ")" | poly }
 
-gate_name = { identifier }
-gate_expression = { gate_name ~ expression_list }
-
-expression_list = { expression+ } // e.g. x^3 + 1 (add x 2) x^2 -- a list of length 3
+gate = { identifier ~ ("[" ~ constant_list ~ "]")? }
+gate_expression = { identifier ~ wire_id+ }
 
 // a constraint statement places some constraint on wires
 // either a `=` constraint or a gate constraint
