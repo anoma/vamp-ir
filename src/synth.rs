@@ -12,12 +12,12 @@ where
     F: PrimeField,
     P: TEModelParameters<BaseField = F>,
 {
-    wires: HashSet<String>,
-    pub_wires: HashSet<String>,
+    /// Maps wire names to plonk-core variables
+    wires: HashMap<String, Option<Variable>>,
+    /// Maps pub wire names to plonk-core pi positions
+    pub_wires: HashMap<String, Option<usize>>,
     _out_wires: HashSet<String>,
     gates: Vec<ast::GateExpression>,
-    plonk_variables: HashMap<String, Variable>,
-    pub_wire_pos: HashMap<String, usize>,
     _f: PhantomData<F>,
     _p: PhantomData<P>,
 }
@@ -32,8 +32,8 @@ where
             match statement {
                 ast::Statement::PubStatement(st) => {
                     st.wires.iter().for_each(|id| {
-                        self.wires.insert(id.value.clone());
-                        self.pub_wires.insert(id.value.clone());
+                        self.wires.insert(id.value.clone(), None);
+                        self.pub_wires.insert(id.value.clone(), None);
                     });
                 },
                 ast::Statement::AliasStatement(_) => {
@@ -42,7 +42,7 @@ where
                     match st {
                         ast::ConstraintStatement::GateExpression(gate) => {
                             gate.expressions.iter().for_each(|id| {
-                                self.wires.insert(id.value.clone());
+                                self.wires.insert(id.value.clone(), None);
                             });
                             self.gates.push(gate.clone());
                         },
@@ -66,22 +66,22 @@ where
         composer: &mut StandardComposer<F, P>,
     ) -> Result<(), Error> {
         let _zero = composer.zero_var();
-        self.wires.iter().for_each(|wire| {
-            let plonk_var = composer.add_input(F::zero());
-            self.plonk_variables.insert(wire.clone(), plonk_var);
+        self.wires.iter_mut().for_each(|(_, plonk_var)| {
+            *plonk_var = Some(composer.add_input(F::zero()));
         });
         self.gates.iter().for_each(|gate| {
             match gate.name.value.as_str() {
                 "pubout_poly_gate" => {
-                    let xl = self.plonk_variables.get(&gate.expressions.get(0).unwrap().value).unwrap();
-                    let xr = self.plonk_variables.get(&gate.expressions.get(1).unwrap().value).unwrap();
-                    let xo = self.plonk_variables.get(&gate.expressions.get(2).unwrap().value).unwrap();
-                    let xf = self.plonk_variables.get(&gate.expressions.get(3).unwrap().value).unwrap();
+                    let xl = self.wires.get(&gate.expressions.get(0).unwrap().value).unwrap().unwrap();
+                    let xr = self.wires.get(&gate.expressions.get(1).unwrap().value).unwrap().unwrap();
+                    let xo = self.wires.get(&gate.expressions.get(2).unwrap().value).unwrap().unwrap();
+                    let xf = self.wires.get(&gate.expressions.get(3).unwrap().value).unwrap().unwrap();
 
                     let xp = gate.expressions.get(4).unwrap().value.clone();
                     // assert!(self.pub_wires.contains(&xp));
                     // assert!(!self.pub_wire_pos.contains_key(&xp));
-                    self.pub_wire_pos.insert(xp, composer.circuit_size());
+                    let pos = self.pub_wires.get_mut(&xp).unwrap();
+                    *pos = Some(composer.circuit_size());
 
                     let m = F::from_str(&gate.parameters.get(0).unwrap().value).unwrap_or(F::zero());
                     let l = F::from_str(&gate.parameters.get(1).unwrap().value).unwrap_or(F::zero());
@@ -91,13 +91,13 @@ where
                     let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
 
                     composer.width_4_poly_gate(
-                        *xl, *xr, *xo, *xf, m, l, r, o, c, f, Some(F::zero()));
+                        xl, xr, xo, xf, m, l, r, o, c, f, Some(F::zero()));
                 },
                 "poly_gate" => {
-                    let xl = self.plonk_variables.get(&gate.expressions.get(0).unwrap().value).unwrap();
-                    let xr = self.plonk_variables.get(&gate.expressions.get(1).unwrap().value).unwrap();
-                    let xo = self.plonk_variables.get(&gate.expressions.get(2).unwrap().value).unwrap();
-                    let xf = self.plonk_variables.get(&gate.expressions.get(3).unwrap().value).unwrap();
+                    let xl = self.wires.get(&gate.expressions.get(0).unwrap().value).unwrap().unwrap();
+                    let xr = self.wires.get(&gate.expressions.get(1).unwrap().value).unwrap().unwrap();
+                    let xo = self.wires.get(&gate.expressions.get(2).unwrap().value).unwrap().unwrap();
+                    let xf = self.wires.get(&gate.expressions.get(3).unwrap().value).unwrap().unwrap();
 
                     let m = F::from_str(&gate.parameters.get(0).unwrap().value).unwrap_or(F::zero());
                     let l = F::from_str(&gate.parameters.get(1).unwrap().value).unwrap_or(F::zero());
@@ -107,7 +107,7 @@ where
                     let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
 
                     composer.width_4_poly_gate(
-                        *xl, *xr, *xo, *xf, m, l, r, o, c, f, None);
+                        xl, xr, xo, xf, m, l, r, o, c, f, None);
                 },
                 _ => {
 
@@ -125,7 +125,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vampir;
+    use crate::synth;
 
     use ark_poly_commit::{PolynomialCommitment, sonic_pc::SonicKZG10};
     use rand::rngs::OsRng;
@@ -140,7 +140,7 @@ pub a d
 gate a b
 gate b c
 ");
-        let mut circuit = vampir::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit.synth(ast_circuit);
         assert_eq!(circuit.pub_wires.len(), 2);
         assert_eq!(circuit.wires.len(), 4);
@@ -154,7 +154,7 @@ pub x
 pubout_poly_gate[0 1 0 0 0 0] y y y y x
 poly_gate[1 0 0 0 0 4] y y y y
 ");
-        let mut circuit = vampir::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit.synth(ast_circuit);
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
         let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();

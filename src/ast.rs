@@ -107,7 +107,7 @@ mod tests {
     use crate::ast;
 
     #[test]
-    fn test_circuit_no_expr() {
+    fn no_expr() {
         let circuit = ast::parse_circuit_from_string("def gate a -> b { gate a }
 (a b) = (b c)
 ");
@@ -115,7 +115,12 @@ mod tests {
     }
 
     #[test]
-    fn test_circuit_one() {
+    fn expr() {
+        ast::parse_circuit_from_string("c = d * (fi a b c) + b ^ 5");
+    }
+
+    #[test]
+    fn test_circuit() {
         ast::parse_circuit_from_string("pub c d f
 range a 2^6
 range b 2^5
@@ -125,12 +130,7 @@ f = (fixed_base_scalar_mul e)");
     }
 
     #[test]
-    fn test_circuit_two() {
-        ast::parse_circuit_from_string("c = d * (fi a b c) + b ^ 5");
-    }
-
-    #[test]
-    fn test_circuit_three() {
+    fn built_in_gate() {
         ast::parse_circuit_from_string("pubout_poly_gate[0 1 0 0 0 0] y y y y x");
     }
 }
