@@ -1,7 +1,7 @@
 [package]
 name = "plonk-ir"
 version = "0.0.1"
-authors = ["ZK-GARAGE Authors"]
+authors = [""]
 readme = "README.md"
 repository = "https://github.com/heliax/plonk"
 keywords = ["cryptography", "plonk", "zk-snarks", "zero-knowledge", "crypto"]
@@ -21,6 +21,15 @@ rustdoc-args = ["--cfg", "doc_cfg"]
 std = []
 
 [dependencies]
+ark-ff = "0.3"
+ark-ec = "0.3"
+ark-bls12-377 = "0.3"
+ark-bls12-381 = "0.3"
+ark-ed-on-bls12-377 = "0.3"
+ark-ed-on-bls12-381 = "0.3"
+ark-poly = "0.3"
+ark-poly-commit = "0.3"
+rand="0.8.0"
 plonk-core = { path = "../plonk-core" }
 pest = "2.1.0"
 pest_derive = "2.1.0"

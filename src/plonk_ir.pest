@@ -9,7 +9,7 @@ circuit = { SOI ~ statement* ~ EOI }
 statement = { pub_statement | alias_statement | constraint_statement }
 
 // pub statement declares public wires
-pub_statement = { NEWLINE* ~ "pub" ~ wire_id_list ~ NEWLINE* }
+pub_statement = { NEWLINE* ~ "pub " ~ wire_id_list ~ NEWLINE* }
 
 // alias statement defines an alias
 alias_arrow = { "->" }
@@ -36,7 +36,7 @@ poly = { term ~ (op ~ term)* }
 // expression or a gate expression, which must be enclosed in "()".
 expression = { "(" ~ gate_expression ~ ")" | poly }
 
-gate_expression = { identifier ~ ("[" ~ constant+ ~ "]")? ~ wire_id+ }
+gate_expression = { identifier ~ ( "[" ~ constant+ ~ "]")? ~ wire_id+ }
 
 // a constraint statement places some constraint on wires
 // either a `=` constraint or a gate constraint

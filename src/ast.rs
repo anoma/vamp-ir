@@ -128,4 +128,9 @@ f = (fixed_base_scalar_mul e)");
     fn test_circuit_two() {
         ast::parse_circuit_from_string("c = d * (fi a b c) + b ^ 5");
     }
+
+    #[test]
+    fn test_circuit_three() {
+        ast::parse_circuit_from_string("pubout_poly_gate[0 1 0 0 0 0] y y y y x");
+    }
 }
