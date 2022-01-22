@@ -1,49 +1,46 @@
 use crate::ast;
 use std::collections::HashSet;
 
-pub struct Gate {
-    name: String,
-    wires: Vec<String>
-}
-
-pub struct Circuit {
+#[derive(Default)]
+pub struct CircuitEnv {
     wires: HashSet<String>,
     pub_wires: HashSet<String>,
-    gates: Vec<Gate>,
+    out_wires: HashSet<String>,
+    gates: Vec<ast::GateExpression>,
 }
 
-impl Circuit {
-    pub fn new(ast_circuit: ast::Circuit) -> Self {
-        let mut pub_wires: HashSet<String> = HashSet::new();
-        let mut wires: HashSet<String> = HashSet::new();
-        let gates: Vec<Gate> = ast_circuit.statements.iter().filter_map(|statement| {
+impl CircuitEnv {
+    pub fn default() -> Self {
+        let wires = HashSet::new();
+        let pub_wires = HashSet::new();
+        let out_wires = HashSet::new();
+        let gates = Vec::new();
+        CircuitEnv {wires, pub_wires, out_wires, gates}
+    }
+    pub fn synth(&mut self, ast_circuit: ast::Circuit) -> () {
+        ast_circuit.statements.iter().for_each(|statement| {
             match statement {
                 ast::Statement::PubStatement(st) => {
-                    for id in st.wires.iter() {
-                        pub_wires.insert(id.value.clone());
-                    }
-                    None
+                    st.wires.iter().for_each(|id| {
+                        self.wires.insert(id.value.clone());
+                        self.pub_wires.insert(id.value.clone());
+                    });
                 },
                 ast::Statement::AliasStatement(_) => {
-                    None
                 },
                 ast::Statement::ConstraintStatement(st) => {
                     match st {
                         ast::ConstraintStatement::GateExpression(gate) => {
-                            let mut w = vec![];
-                            for id in &gate.expressions {
-                                wires.insert(id.value.clone());
-                                w.push(id.value.clone());
-                            }
-                            let gate = Gate {name: gate.name.value.clone(), wires: w };
-                            Some(gate)
-                        }
-                        _ => None
+                            gate.expressions.iter().for_each(|id| {
+                                self.wires.insert(id.value.clone());
+                            });
+                            self.gates.push(gate.clone());
+                        },
+                        _ => {}
                     }
                 }
             }
-        }).collect();
-        Circuit { wires, pub_wires, gates }
+        });
     }
 }
 
@@ -54,13 +51,14 @@ mod tests {
     #[test]
     fn test_circuit_pub_and_gate() {
         let ast_circuit = ast::parse_circuit_from_string("
-pub a
+pub a d
 gate a b
 gate b c
 ");
-        let circuit = vampir::Circuit::new(ast_circuit);
-        assert_eq!(circuit.pub_wires.len(), 1);
-        assert_eq!(circuit.wires.len(), 3);
+        let mut circuit = vampir::CircuitEnv::default();
+        circuit.synth(ast_circuit);
+        assert_eq!(circuit.pub_wires.len(), 2);
+        assert_eq!(circuit.wires.len(), 4);
         assert_eq!(circuit.gates.len(), 2);
     }
 
