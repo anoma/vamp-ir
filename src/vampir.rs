@@ -1,5 +1,5 @@
 use crate::ast;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::marker::PhantomData;
 use plonk_core::prelude::*;
 
@@ -14,11 +14,12 @@ where
 {
     wires: HashSet<String>,
     pub_wires: HashSet<String>,
-    out_wires: HashSet<String>,
+    _out_wires: HashSet<String>,
     gates: Vec<ast::GateExpression>,
-    _p: PhantomData<F>,
-    __p: PhantomData<P>,
-    // plonk_variables: HashMap<String, Variable>
+    plonk_variables: HashMap<String, Variable>,
+    pub_wire_pos: HashMap<String, usize>,
+    _f: PhantomData<F>,
+    _p: PhantomData<P>,
 }
 
 impl<F, P> Synthesizer<F, P>
@@ -64,11 +65,55 @@ where
         &mut self,
         composer: &mut StandardComposer<F, P>,
     ) -> Result<(), Error> {
-        let zero = composer.zero_var();
-        let a = composer.add_input(F::zero());
-        let b = composer.add_input(F::one());
-        let c = composer.add_input(F::one());
-        composer.width_4_poly_gate(a, b, c, zero, F::one(), F::zero(), F::zero(), F::one(), F::zero(), F::zero(), None);
+        let _zero = composer.zero_var();
+        self.wires.iter().for_each(|wire| {
+            let plonk_var = composer.add_input(F::zero());
+            self.plonk_variables.insert(wire.clone(), plonk_var);
+        });
+        self.gates.iter().for_each(|gate| {
+            match gate.name.value.as_str() {
+                "pubout_poly_gate" => {
+                    let xl = self.plonk_variables.get(&gate.expressions.get(0).unwrap().value).unwrap();
+                    let xr = self.plonk_variables.get(&gate.expressions.get(1).unwrap().value).unwrap();
+                    let xo = self.plonk_variables.get(&gate.expressions.get(2).unwrap().value).unwrap();
+                    let xf = self.plonk_variables.get(&gate.expressions.get(3).unwrap().value).unwrap();
+
+                    let xp = gate.expressions.get(4).unwrap().value.clone();
+                    // assert!(self.pub_wires.contains(&xp));
+                    // assert!(!self.pub_wire_pos.contains_key(&xp));
+                    self.pub_wire_pos.insert(xp, composer.circuit_size());
+
+                    let m = F::from_str(&gate.parameters.get(0).unwrap().value).unwrap_or(F::zero());
+                    let l = F::from_str(&gate.parameters.get(1).unwrap().value).unwrap_or(F::zero());
+                    let r = F::from_str(&gate.parameters.get(2).unwrap().value).unwrap_or(F::zero());
+                    let o = F::from_str(&gate.parameters.get(3).unwrap().value).unwrap_or(F::zero());
+                    let c = F::from_str(&gate.parameters.get(4).unwrap().value).unwrap_or(F::zero());
+                    let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
+
+                    composer.width_4_poly_gate(
+                        *xl, *xr, *xo, *xf, m, l, r, o, c, f, Some(F::zero()));
+                },
+                "poly_gate" => {
+                    let xl = self.plonk_variables.get(&gate.expressions.get(0).unwrap().value).unwrap();
+                    let xr = self.plonk_variables.get(&gate.expressions.get(1).unwrap().value).unwrap();
+                    let xo = self.plonk_variables.get(&gate.expressions.get(2).unwrap().value).unwrap();
+                    let xf = self.plonk_variables.get(&gate.expressions.get(3).unwrap().value).unwrap();
+
+                    let m = F::from_str(&gate.parameters.get(0).unwrap().value).unwrap_or(F::zero());
+                    let l = F::from_str(&gate.parameters.get(1).unwrap().value).unwrap_or(F::zero());
+                    let r = F::from_str(&gate.parameters.get(2).unwrap().value).unwrap_or(F::zero());
+                    let o = F::from_str(&gate.parameters.get(3).unwrap().value).unwrap_or(F::zero());
+                    let c = F::from_str(&gate.parameters.get(4).unwrap().value).unwrap_or(F::zero());
+                    let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
+
+                    composer.width_4_poly_gate(
+                        *xl, *xr, *xo, *xf, m, l, r, o, c, f, None);
+                },
+                _ => {
+
+                }
+            }
+        });
         Ok(())
     }
 
@@ -114,6 +159,7 @@ poly_gate[1 0 0 0 0 4] y y y y
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
         let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
 
-        let (_pk_p, _verifier_data) = circuit.compile::<PC>(&pp).unwrap();
+        let (pk_p, _verifier_data) = circuit.compile::<PC>(&pp).unwrap();
+        assert_eq!(pk_p.n, 8);
     }
 }
