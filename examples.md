@@ -6,12 +6,11 @@ We describe how the full workflow working with the test circuit given in
 First, the IR file is as follows.
 ```
 // circuit.pir
-pub c d f
-range a 2^6
-range b 2^5
-c = a + b
-d = a * b
-f = (fixed_base_scalar_mul e)
+range[2^6] a
+range[2^5] b
+pub c = a + b
+pub d = a * b
+pub f = (fixed_base_scalar_mul e)
 ```
 
 Above, we have to use "(...)" to force a gate expression in the current grammar
@@ -80,7 +79,7 @@ started with after proof generation).
 {
   "c": 25,
   "d": 100,
-  "f": 2
+  "f": .. // representation of the group element 2 * g, where g is the fixed base
 }
 ```
 
