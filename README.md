@@ -11,8 +11,8 @@ Proof system agnostic representation of circuits / constraint systems.
 - Compile: takes input an IR file, outputs compiled prover key, verifier data, as
   well as necessary metadata mapping IR wires to positions.
 - Prove: takes input the output of compile, as well as a table `PI` mapping
-  public input wires to values and a table `W` mapping witness wires to values,
-  outputs a proof.
+  public input wires to values and a table `W` mapping non-ouput witness wires
+  to values, outputs a proof.
 - Verify: takes input the output of compile, as well as a table `PI` (same as
   in prove), and a proof; outputs a boolean value.
 
@@ -37,7 +37,7 @@ gates / aliases.
 - Alias: Input wire count, output wire count, body (vector of statements).
   Should be initialized with the set of built-in gates.
 
-## Compilation pipeline
+### Compilation pipeline
 
 1. Algebraic simplification
   - Canonicalize polynomials: remove duplicate terms, collapse constants (e.g. `2^4 -> 16`)
@@ -64,16 +64,16 @@ gates / aliases.
     ```
   - For first iteration: do something naive here, allocate a `poly_gate_2`
     for each internal multiplication and addition.
-5. Circuit synthesis
+5. Circuit synthesis (proof-of-concept done in `synth.rs`)
   - At this point the AST contains only gate constraint statements on
     explicitly named wires.
   - First, we need to obtain the metadata for the circuit from the AST
     - Names of PI wires
     - Names of output wires (wires that are output of custom gates)
-    - Names of non-output witness wires
-    - At this point we can instantiate Plonk circuit struct in rust, specifying
-      all PI wires and non-output witness wires.
+    - Names of non-output witness wires (and how they are derived from other
+      wires in terms of arithmetic expressions and built-in gates)
   - Second, to synth the circuit, we simply walk the AST and call the corresponding Plonk functions.
+  - Finally, metadata and output of `plonk-core` (prover key and verifier data) is returned as output.
 
 ## TODO
 
