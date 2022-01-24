@@ -27,12 +27,20 @@ pub struct PubStatement {
 }
 
 #[derive(Debug, FromPest, PartialEq, Clone)]
+#[pest_ast(rule(Rule::wire))]
+pub struct Wire{
+    #[pest_ast(inner(rule(Rule::wire_type), with(span_into_str)))]
+    pub typ: String,
+    pub name: Identifier
+}
+
+#[derive(Debug, FromPest, PartialEq, Clone)]
 #[pest_ast(rule(Rule::alias_statement))]
 pub struct AliasStatement {
     pub name: Identifier,
-    pub inputs: Vec<Identifier>,
+    pub inputs: Vec<Wire>,
     pub _arrow: Option<AliasArrow>,
-    pub outputs: Vec<Identifier>,
+    pub outputs: Vec<Wire>,
     pub body: Vec<ConstraintStatement>,
 }
 
@@ -44,13 +52,13 @@ pub struct AliasArrow;
 #[pest_ast(rule(Rule::constraint_statement))]
 pub enum ConstraintStatement {
     EqualConstraint(Expression, Expression),
-    GateExpression(GateExpression)
+    GateInvocation(GateInvocation)
 }
 
 #[derive(Debug, FromPest, PartialEq, Clone)]
 #[pest_ast(rule(Rule::expression))]
 pub enum Expression {
-    GateExpression(GateExpression),
+    GateInvocation(GateInvocation),
     PolyExpression(PolyExpression)
 }
 
@@ -62,11 +70,12 @@ pub struct PolyExpression {
 }
 
 #[derive(Debug, FromPest, PartialEq, Clone)]
-#[pest_ast(rule(Rule::gate_expression))]
-pub struct GateExpression {
+#[pest_ast(rule(Rule::gate_invocation))]
+pub struct GateInvocation {
     pub name: Identifier,
     pub parameters: Vec<Constant>,
-    pub expressions: Vec<Identifier>
+    // TODO: Support general expressions here
+    pub wires: Vec<Wire>
 }
 
 #[derive(Debug, FromPest, PartialEq, Clone)]
@@ -115,22 +124,24 @@ mod tests {
     }
 
     #[test]
+    fn built_in_gate() {
+        ast::parse_circuit_from_string("pubout_poly_gate[0 1 0 0 0 0] y y y y x");
+    }
+
+    #[test]
+    #[ignore] // not implemented
     fn expr() {
         ast::parse_circuit_from_string("c = d * (fi a b c) + b ^ 5");
     }
 
     #[test]
+    #[ignore] // not implemented
     fn test_circuit() {
-        ast::parse_circuit_from_string("pub c d f
-range a 2^6
-range b 2^5
-c = a + b
-d = a * b
-f = (fixed_base_scalar_mul e)");
-    }
-
-    #[test]
-    fn built_in_gate() {
-        ast::parse_circuit_from_string("pubout_poly_gate[0 1 0 0 0 0] y y y y x");
+        ast::parse_circuit_from_string("
+bit_range[6] a
+bit_range[5] b
+pub c = a + b
+pub d = a * b
+pub f = (fixed_base_scalar_mul e)");
     }
 }

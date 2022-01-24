@@ -9,36 +9,33 @@ circuit = { SOI ~ statement* ~ EOI }
 statement = { pub_statement | alias_statement | constraint_statement }
 
 // pub statement declares public wires
-pub_statement = { NEWLINE* ~ "pub " ~ wire_id_list ~ NEWLINE* }
+pub_statement = { NEWLINE* ~ "pub " ~ identifier+ ~ NEWLINE* }
 
 // alias statement defines an alias
 alias_arrow = { "->" }
-alias_statement = { NEWLINE* ~ "def" ~ identifier ~ wire_id_list ~ (alias_arrow ~ wire_id_list)? ~ "{" ~ constraint_statement* ~ "}" ~ NEWLINE* }
+alias_statement = { NEWLINE* ~ "def" ~ identifier ~ wire_list ~ (alias_arrow ~ wire_list)? ~ "{" ~ constraint_statement* ~ "}" ~ NEWLINE* }
 
 // Atomic and immutable data unit for the IR, a wire
-wire_type = { "pub" | "priv" | "const" }
-wire_id = _{ wire_type? ~ identifier }
-wire_id_list = _{ wire_id+ } // e.g. x y -- no arithmetics allowed
-// A wire is either referred to from a wire_id, or a gate_expression that
-// returns exactly ONE output wire
-wire = !{ identifier | "(" ~ gate_expression ~ ")" }
+wire_type = { "pub" | "priv" | "const" | "" }
+wire = { wire_type ~ identifier }
+wire_list = _{ wire+ } // e.g. x y -- no arithmetics allowed
 
 // Polynomial is a arithmetic expression involving wires as mathematical
 // variables.
 op = { "+" | "-" }
 op_prec_2 = { "*" }
 op_prec_3 = { "^" }
-monomial = { (constant | wire) ~ (op_prec_3 ~ constant)? }
+monomial = { (constant | wire | "(" ~ gate_invocation ~ ")" ) ~ (op_prec_3 ~ constant)? }
 term = { monomial ~ (op_prec_2 ~ monomial)* }
 poly = { term ~ (op ~ term)* }
 
 // An expression returns a list of unnamed wires, and is eiter a poly
 // expression or a gate expression, which must be enclosed in "()".
-expression = { "(" ~ gate_expression ~ ")" | poly }
+expression = { "(" ~ gate_invocation ~ ")" | poly }
 
-gate_expression = { identifier ~ ( "[" ~ constant+ ~ "]")? ~ wire_id+ }
+gate_invocation = { identifier ~ ( "[" ~ constant+ ~ "]")? ~ wire_list }
 
 // a constraint statement places some constraint on wires
 // either a `=` constraint or a gate constraint
-constraint_statement = { NEWLINE* ~ (expression ~ "=" ~ expression | gate_expression) ~ NEWLINE* }
+constraint_statement = { NEWLINE* ~ (expression ~ "=" ~ expression | gate_invocation) ~ NEWLINE* }
 

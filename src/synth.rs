@@ -17,7 +17,7 @@ where
     /// Maps pub wire names to plonk-core pi positions
     pub_wires: HashMap<String, Option<usize>>,
     _out_wires: HashSet<String>,
-    gates: Vec<ast::GateExpression>,
+    gates: Vec<ast::GateInvocation>,
     _f: PhantomData<F>,
     _p: PhantomData<P>,
 }
@@ -40,9 +40,13 @@ where
                 },
                 ast::Statement::ConstraintStatement(st) => {
                     match st {
-                        ast::ConstraintStatement::GateExpression(gate) => {
-                            gate.expressions.iter().for_each(|id| {
-                                self.wires.insert(id.value.clone(), None);
+                        ast::ConstraintStatement::GateInvocation(gate) => {
+                            gate.wires.iter().for_each(|id| {
+                                self.wires.insert(id.name.value.clone(), None);
+                                println!("{}", id.typ);
+                                if id.typ == "pub" {
+                                    self.pub_wires.insert(id.name.value.clone(), None);
+                                }
                             });
                             self.gates.push(gate.clone());
                         },
@@ -72,12 +76,12 @@ where
         self.gates.iter().for_each(|gate| {
             match gate.name.value.as_str() {
                 "pubout_poly_gate" => {
-                    let xl = self.wires.get(&gate.expressions.get(0).unwrap().value).unwrap().unwrap();
-                    let xr = self.wires.get(&gate.expressions.get(1).unwrap().value).unwrap().unwrap();
-                    let xo = self.wires.get(&gate.expressions.get(2).unwrap().value).unwrap().unwrap();
-                    let xf = self.wires.get(&gate.expressions.get(3).unwrap().value).unwrap().unwrap();
+                    let xl = self.wires.get(&gate.wires.get(0).unwrap().name.value).unwrap().unwrap();
+                    let xr = self.wires.get(&gate.wires.get(1).unwrap().name.value).unwrap().unwrap();
+                    let xo = self.wires.get(&gate.wires.get(2).unwrap().name.value).unwrap().unwrap();
+                    let xf = self.wires.get(&gate.wires.get(3).unwrap().name.value).unwrap().unwrap();
 
-                    let xp = gate.expressions.get(4).unwrap().value.clone();
+                    let xp = gate.wires.get(4).unwrap().name.value.clone();
                     // assert!(self.pub_wires.contains(&xp));
                     // assert!(!self.pub_wire_pos.contains_key(&xp));
                     let pos = self.pub_wires.get_mut(&xp).unwrap();
@@ -94,10 +98,10 @@ where
                         xl, xr, xo, xf, m, l, r, o, c, f, Some(F::zero()));
                 },
                 "poly_gate" => {
-                    let xl = self.wires.get(&gate.expressions.get(0).unwrap().value).unwrap().unwrap();
-                    let xr = self.wires.get(&gate.expressions.get(1).unwrap().value).unwrap().unwrap();
-                    let xo = self.wires.get(&gate.expressions.get(2).unwrap().value).unwrap().unwrap();
-                    let xf = self.wires.get(&gate.expressions.get(3).unwrap().value).unwrap().unwrap();
+                    let xl = self.wires.get(&gate.wires.get(0).unwrap().name.value).unwrap().unwrap();
+                    let xr = self.wires.get(&gate.wires.get(1).unwrap().name.value).unwrap().unwrap();
+                    let xo = self.wires.get(&gate.wires.get(2).unwrap().name.value).unwrap().unwrap();
+                    let xf = self.wires.get(&gate.wires.get(3).unwrap().name.value).unwrap().unwrap();
 
                     let m = F::from_str(&gate.parameters.get(0).unwrap().value).unwrap_or(F::zero());
                     let l = F::from_str(&gate.parameters.get(1).unwrap().value).unwrap_or(F::zero());
@@ -134,21 +138,21 @@ mod tests {
     use ark_ed_on_bls12_381::EdwardsParameters as JubJubParameters;
 
     #[test]
-    fn test_circuit_pub_and_gate() {
+    fn synth_pub_and_gate() {
         let ast_circuit = ast::parse_circuit_from_string("
 pub a d
-gate a b
+gate a pub b
 gate b c
 ");
         let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit.synth(ast_circuit);
-        assert_eq!(circuit.pub_wires.len(), 2);
+        assert_eq!(circuit.pub_wires.len(), 3);
         assert_eq!(circuit.wires.len(), 4);
         assert_eq!(circuit.gates.len(), 2);
     }
 
     #[test]
-    fn test_circuit_synthesis() {
+    fn synth_builtin() {
         let ast_circuit = ast::parse_circuit_from_string("
 pub x
 pubout_poly_gate[0 1 0 0 0 0] y y y y x
