@@ -113,6 +113,11 @@ where
                     composer.width_4_poly_gate(
                         xl, xr, xo, xf, m, l, r, o, c, f, None);
                 },
+                "bit_range" => {
+                    let x = self.wires.get(&gate.wires.get(0).unwrap().name.value).unwrap().unwrap();
+                    let num_bits: usize = gate.parameters.get(0).unwrap().value.parse().unwrap();
+                    composer.range_gate(x, num_bits);
+                },
                 _ => {
 
                 }
@@ -165,5 +170,21 @@ poly_gate[1 0 0 0 0 4] y y y y
 
         let (pk_p, _verifier_data) = circuit.compile::<PC>(&pp).unwrap();
         assert_eq!(pk_p.n, 8);
+    }
+
+    #[test]
+    fn synth_bit_range() {
+        let ast_circuit = ast::parse_circuit_from_string("
+pub x y
+bit_range[4] x
+bit_range[6] y
+");
+        let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit.synth(ast_circuit);
+        type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
+        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
+
+        let (pk_p, _verifier_data) = circuit.compile::<PC>(&pp).unwrap();
+        assert_eq!(pk_p.n, 16);
     }
 }
