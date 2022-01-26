@@ -189,20 +189,9 @@ def sub x y -> z { poly x - y - z }
 // x*y = z
 def mul x y -> z { poly x * y - z }
 
-// x/y = z
-def div x y -> z { mul y z x }
-
-// bit decomp of x
-def bits x -> b_0 ... b_k { ... }
-
-// bit pack of b_0 ... b_k
-def bitpack b_0 ... b_k -> x { bits x b_0 ... b_k }
-
-// x < 2^k 		k an int
-def range_k x { ... }
-
-// k = bit count of x
-def bitcount x -> k { ... }
+// inv x = x_inv
+def inv x -> x_inv
+// if x is 0, then x_inv is set to 0
 
 // x < y
 def less x y { ... }
@@ -210,20 +199,50 @@ def less x y { ... }
 // x = r mod q
 def mod x q -> r { ... }
 
+// bit decomp of x
+def bits x -> b_0 ... b_k { ... }
+
+// bit pack of b_0 ... b_k
+def bitpack b_0 ... b_k -> x { bits x b_0 ... b_k }
+
+// k = bit count of x
+def bitcount x -> k { ... }
+
 // x a bool
 def bool x {range_1 x}
 
-// bits(x) xor bits(y) = bits(z)
-def xor x y -> z { ... }
+// x < 2^k 		k is an usize
+def bit_range[k] x { ... }
+
+// conditional / controlled selects
+// out = opt_bit
+def cselect bit opt_0 opt_1 -> out
+// bit = 1 => out = val / bit = 0 => out = 1
+def cselect_1 bit val -> out
+// bit = 1 => out = 1 / bit = 0 => out = val
+def cselect_0 bit val -> out
+
+// k-bit xor and
+def xor[k] x y -> z { ... }
+def and[k] x y -> z { ... }
+
+// Twister Edwards curve addition
+def variable_base_add x1 y1 x2 y3 -> x3 y3
+def fixed_base_add ...
+
+// scalar mul potentially defined as internal alias using point addition and
+bit decomposition
+def variable_base_mul scalar x1 y1 -> x2 y2
+def fixed_base_mul scalar -> x2 y2
 
 // Blake2s(x) = y
-def blake2s x -> y { ... }
+def blake2s x .. -> y { ... }
 
 // Blake2b(x) = y
-def blake2b x -> y { ... }
+def blake2b x .. -> y { ... }
 
 // SHA-256(x) = y
-def sha256 x -> y { ... }
+def sha256 x .. -> y { ... }
 
 etc.
 ```
