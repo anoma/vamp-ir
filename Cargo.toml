@@ -30,7 +30,7 @@ ark-ed-on-bls12-381 = "0.3"
 ark-poly = "0.3"
 ark-poly-commit = "0.3"
 rand="0.8.0"
-plonk-core = { path = "../plonk-core" }
+plonk-core = { path = "../plonk-core", features = [ "std", "trace", "trace-print" ] }
 pest = "2.1.0"
 pest_derive = "2.1.0"
 pest-ast = "0.3.3"

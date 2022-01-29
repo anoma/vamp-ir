@@ -1,5 +1,4 @@
 use plonk_ir::{ast, synth};
-use plonk_core::prelude::*;
 
 use ark_poly_commit::{PolynomialCommitment, sonic_pc::SonicKZG10};
 use rand::rngs::OsRng;
@@ -18,7 +17,7 @@ poly_gate[1 0 0 0 0 4] y y y y
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
         let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
 
-        let (_pd, vd) = circuit.compile::<PC>(&pp).unwrap();
-        println!("{:?}", vd.pi_pos);
+        let pk = circuit.compile_prover::<PC>(&pp).unwrap();
+        println!("{:?}", pk);
 }
 
