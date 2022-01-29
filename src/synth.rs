@@ -62,7 +62,7 @@ where
         });
 
         // TODO: fill in the right size
-        self.size = 1 << 9;
+        self.size = 1 << 6;
     }
 
     fn synth_using_composer(
@@ -135,8 +135,7 @@ where
                     let c = F::from_str(&gate.parameters.get(4).unwrap().value).unwrap_or(F::zero());
                     let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
 
-                    composer.width_4_poly_gate(
-                        xl, xr, xo, xf, m, l, r, o, c, f, None);
+                    composer.width_4_poly_gate(xl, xr, xo, xf, m, l, r, o, c, f, None);
                 },
                 "bit_range" => {
                     let x = self.wires.get(&gate.wires.get(0).unwrap().name.value).unwrap().unwrap();
@@ -149,6 +148,44 @@ where
             }
         });
         Ok(())
+    }
+
+    pub fn compile_prover_and_verifier<PC>(
+        &mut self,
+        u_params: &PC::UniversalParams,
+    ) -> Result<(ProverKey<F>, VerifierKey<F, PC>), Error>
+    where
+        F: PrimeField,
+        PC: HomomorphicCommitment<F>,
+    {
+        // Setup PublicParams
+        let circuit_size = self.size;
+        let (ck, _) = PC::trim(
+            u_params,
+            // +1 per wire, +2 for the permutation poly
+            circuit_size + 6,
+            0,
+            None,
+        )
+        .map_err(to_pc_error::<F, PC>)?;
+
+        // Generate & save `ProverKey` with some random values.
+        let mut prover = Prover::<F, P, PC>::new(b"test");
+        self.synth_using_composer(prover.mut_cs(), None, None)?;
+        prover.preprocess(&ck)?;
+
+        // Generate & save `VerifierKey` with some random values.
+        let mut verifier = Verifier::new(b"test");
+        self.synth_using_composer(verifier.mut_cs(), None, None)?;
+        verifier.preprocess(&ck)?;
+
+        Ok((prover
+            .prover_key
+            .expect("Unexpected error. Missing ProverKey in compilation"),
+            verifier.
+            verifier_key.
+            expect("Unexpected error. Missing VerifierKey in compilation")
+        ))
     }
 
 
@@ -247,7 +284,7 @@ pub fn run_and_prove<F, P, PC> (
 pub fn verify<F, P, PC> (
     u_params: &PC::UniversalParams,
     plonk_verifier_key: VerifierKey<F, PC>,
-    circuit: Synthesizer<F, P>,
+    circuit: &mut Synthesizer<F, P>,
     public_inputs: &HashMap<String, String>,
     proof: &Proof<F, PC>
 ) -> Result<(), Error> where
@@ -267,14 +304,17 @@ pub fn verify<F, P, PC> (
 
     // Build verifier key
     let mut verifier: Verifier<F, P, PC> = Verifier::new(b"test");
+    // circuit.synth_using_composer(verifier.mut_cs(), Some(public_inputs), None)?;
     verifier.verifier_key = Some(plonk_verifier_key);
-    let (_, vk) = PC::trim(
+    let (_ck, vk) = PC::trim(
         u_params,
         // +1 per wire, +2 for the permutation poly
         circuit.size + 6,
         0,
         None,
     ).unwrap();
+
+    // verifier.preprocess(&ck)?;
 
     verifier.verify(
         proof,
@@ -359,16 +399,21 @@ poly_gate[0 1 0 1 0 0] y y x y
                 // y = -1
             ]);
 
+
+        let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit.from_ast(ast_circuit.clone());
+        let (pk, vk) = circuit.compile_prover_and_verifier::<PC>(&pp).unwrap();
+
         // Prover POV
         let mut circuit_prover = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit_prover.from_ast(ast_circuit.clone());
-        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
+        // let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
         let proof = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
 
         // Verifier POV
         let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit_verifier.from_ast(ast_circuit.clone());
-        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
-        verify(&pp, vk, circuit_verifier, &public_inputs, &proof).unwrap();
+        // let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
+        verify(&pp, vk, &mut circuit_verifier, &public_inputs, &proof).unwrap();
     }
 }
