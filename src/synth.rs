@@ -7,6 +7,7 @@ use plonk_core::commitment::HomomorphicCommitment as HomomorphicCommitment;
 use plonk_core::proof_system::proof::Proof as Proof;
 use plonk_core::proof_system::verifier::Verifier as Verifier;
 use plonk_core::proof_system::prover::Prover as Prover;
+use plonk_core::error::to_pc_error;
 
 use ark_ec::models::TEModelParameters;
 use ark_ff::PrimeField;
@@ -26,6 +27,7 @@ where
     pub_wire_vals: HashMap<String, String>,
     _out_wires: HashSet<String>,
     gates: Vec<ast::GateInvocation>,
+    padded_circuit_size: usize,
     _f: PhantomData<F>,
     _p: PhantomData<P>,
 }
@@ -35,7 +37,7 @@ where
     F: PrimeField,
     P: TEModelParameters<BaseField = F>,
 {
-    pub fn synth(&mut self, ast_circuit: ast::Circuit) -> () {
+    pub fn from_ast(&mut self, ast_circuit: ast::Circuit) -> () {
         ast_circuit.statements.iter().for_each(|statement| {
             match statement {
                 ast::Statement::PubStatement(st) => {
@@ -63,6 +65,66 @@ where
                 }
             }
         });
+
+        // TODO: fill in the right size
+        self.padded_circuit_size = 1 << 9;
+    }
+
+    pub fn compile_prover<PC>(
+        &mut self,
+        u_params: &PC::UniversalParams,
+    ) -> Result<ProverKey<F>, Error>
+    where
+        F: PrimeField,
+        PC: HomomorphicCommitment<F>,
+    {
+        // Setup PublicParams
+        let circuit_size = self.padded_circuit_size();
+        let (ck, _) = PC::trim(
+            u_params,
+            // +1 per wire, +2 for the permutation poly
+            circuit_size + 6,
+            0,
+            None,
+        )
+        .map_err(to_pc_error::<F, PC>)?;
+
+        // Generate & save `ProverKey` with some random values.
+        let mut prover = Prover::<F, P, PC>::new(b"CircuitCompilation");
+        self.gadget(prover.mut_cs())?;
+        prover.preprocess(&ck)?;
+
+        Ok(prover
+            .prover_key
+            .expect("Unexpected error. Missing ProverKey in compilation"))
+    }
+
+    pub fn compile_verifier<PC>(
+        &mut self,
+        u_params: &PC::UniversalParams,
+    ) -> Result<VerifierKey<F, PC>, Error>
+    where
+        F: PrimeField,
+        PC: HomomorphicCommitment<F>,
+    {
+        // Setup PublicParams
+        let circuit_size = self.padded_circuit_size();
+        let (ck, _) = PC::trim(
+            u_params,
+            // +1 per wire, +2 for the permutation poly
+            circuit_size + 6,
+            0,
+            None,
+        )
+        .map_err(to_pc_error::<F, PC>)?;
+
+        // Generate & save `VerifierKey` with some random values.
+        let mut verifier = Verifier::new(b"CircuitCompilation");
+        self.gadget(verifier.mut_cs())?;
+        verifier.preprocess(&ck)?;
+        Ok(verifier.
+            verifier_key.
+            expect("Unexpected error. Missing VerifierKey in compilation"))
     }
 }
 
@@ -117,7 +179,7 @@ pub fn verify<F, P, PC> (
         let val = public_inputs.get(&wire.clone()).unwrap();
         let val = F::from_str(val).unwrap_or(F::zero());
         if let Some(pos) = pos {
-            pi.insert(*pos, -val)
+            pi[*pos] = val
         }
     });
 
@@ -248,7 +310,7 @@ gate a pub b
 gate b c
 ");
         let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
-        circuit.synth(ast_circuit);
+        circuit.from_ast(ast_circuit);
         assert_eq!(circuit.pub_wires.len(), 3);
         assert_eq!(circuit.wires.len(), 4);
         assert_eq!(circuit.gates.len(), 2);
@@ -262,7 +324,7 @@ pubout_poly_gate[0 1 0 0 0 0] y y y y x
 poly_gate[1 0 0 0 0 4] y y y y
 ");
         let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
-        circuit.synth(ast_circuit);
+        circuit.from_ast(ast_circuit);
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
         let pp = PC::setup(1 << 10, None, &mut OsRng).unwrap();
 
@@ -278,7 +340,7 @@ bit_range[4] x
 bit_range[6] y
 ");
         let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
-        circuit.synth(ast_circuit);
+        circuit.from_ast(ast_circuit);
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
         let pp = PC::setup(1 << 10, None, &mut OsRng).unwrap();
 
@@ -298,21 +360,22 @@ poly_gate[0 1 0 1 0 0] y y x y
 ");
         // Compile
         let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
-        circuit.synth(ast_circuit);
-        let (pk_p, verifier_data) = circuit.compile::<PC>(&pp).unwrap();
+        circuit.from_ast(ast_circuit);
+        let pk = circuit.compile_prover::<PC>(&pp).unwrap();
+        let vk = circuit.compile_verifier::<PC>(&pp).unwrap();
 
         let public_inputs: HashMap<String, String> = HashMap::from([
                 ("x".to_string(), "2".to_string()),
             ]);
 
         let witnesses: HashMap<String, String> = HashMap::from([
-                ("y".to_string(), "2".to_string())
+                ("y".to_string(), "-2".to_string())
             ]);
 
         // Prover POV
-        let proof = run_and_prove(&pp, pk_p, &mut circuit, &public_inputs, &witnesses).unwrap();
+        let proof = run_and_prove(&pp, pk, &mut circuit, &public_inputs, &witnesses).unwrap();
 
         // Verifier POV
-        verify(&pp, verifier_data.key, circuit, &public_inputs, &proof).unwrap();
+        verify(&pp, vk, circuit, &public_inputs, &proof).unwrap();
     }
 }

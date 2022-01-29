@@ -14,7 +14,7 @@ pubout_poly_gate[0 1 0 0 0 0] y y y y x
 poly_gate[1 0 0 0 0 4] y y y y
 ");
         let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
-        circuit.synth(ast_circuit);
+        circuit.from_ast(ast_circuit);
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
         let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
 
