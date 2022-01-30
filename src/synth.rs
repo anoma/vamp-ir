@@ -12,7 +12,7 @@ use plonk_core::error::to_pc_error;
 use ark_ec::models::TEModelParameters;
 use ark_ff::PrimeField;
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Synthesizer<F, P>
 where
     F: PrimeField,
@@ -72,6 +72,7 @@ where
         wire_vals: Option<&HashMap<String, String>>,
     ) -> Result<(), Error> {
         let _zero = composer.zero_var();
+        // Allocate wires
         self.wires.iter_mut().for_each(|(wire, plonk_var)| {
             let val = if let Some(wire_vals) = wire_vals {
                 match wire_vals.get(wire) {
@@ -85,13 +86,14 @@ where
             };
             *plonk_var = Some(composer.add_input(val));
         });
+        // Synthesize circuit using standard composer
         self.gates.iter().for_each(|gate| {
             match gate.name.value.as_str() {
                 "pubout_poly_gate" => {
                     let xl = self.wires.get(&gate.wires.get(0).unwrap().name.value).unwrap().unwrap();
                     let xr = self.wires.get(&gate.wires.get(1).unwrap().name.value).unwrap().unwrap();
                     let xo = self.wires.get(&gate.wires.get(2).unwrap().name.value).unwrap().unwrap();
-                    let xf = self.wires.get(&gate.wires.get(3).unwrap().name.value).unwrap().unwrap();
+                    // let xf = self.wires.get(&gate.wires.get(3).unwrap().name.value).unwrap().unwrap();
 
                     let xp = gate.wires.get(4).unwrap().name.value.clone();
                     // assert!(self.pub_wires.contains(&xp));
@@ -104,7 +106,7 @@ where
                     let r = F::from_str(&gate.parameters.get(2).unwrap().value).unwrap_or(F::zero());
                     let o = F::from_str(&gate.parameters.get(3).unwrap().value).unwrap_or(F::zero());
                     let c = F::from_str(&gate.parameters.get(4).unwrap().value).unwrap_or(F::zero());
-                    let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
+                    // let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
 
                     let xp_val = if let Some(pub_wire_vals) = pub_wire_vals {
                         match pub_wire_vals.get(&xp) {
@@ -119,23 +121,25 @@ where
                         F::zero()
                     };
 
-                    composer.width_4_poly_gate(xl, xr, xo, xf, m, l, r, o, c, f, Some(xp_val));
+                    // composer.width_4_poly_gate(xl, xr, xo, xf, m, l, r, o, c, f, Some(xp_val));
+                    composer.poly_gate(xl, xr, xo, m, l, r, o, c, Some(xp_val));
 
                 },
                 "poly_gate" => {
                     let xl = self.wires.get(&gate.wires.get(0).unwrap().name.value).unwrap().unwrap();
                     let xr = self.wires.get(&gate.wires.get(1).unwrap().name.value).unwrap().unwrap();
                     let xo = self.wires.get(&gate.wires.get(2).unwrap().name.value).unwrap().unwrap();
-                    let xf = self.wires.get(&gate.wires.get(3).unwrap().name.value).unwrap().unwrap();
+                    // let xf = self.wires.get(&gate.wires.get(3).unwrap().name.value).unwrap().unwrap();
 
                     let m = F::from_str(&gate.parameters.get(0).unwrap().value).unwrap_or(F::zero());
                     let l = F::from_str(&gate.parameters.get(1).unwrap().value).unwrap_or(F::zero());
                     let r = F::from_str(&gate.parameters.get(2).unwrap().value).unwrap_or(F::zero());
                     let o = F::from_str(&gate.parameters.get(3).unwrap().value).unwrap_or(F::zero());
                     let c = F::from_str(&gate.parameters.get(4).unwrap().value).unwrap_or(F::zero());
-                    let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
+                    // let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
 
-                    composer.width_4_poly_gate(xl, xr, xo, xf, m, l, r, o, c, f, None);
+                    // composer.width_4_poly_gate(xl, xr, xo, xf, m, l, r, o, c, f, None);
+                    composer.poly_gate(xl, xr, xo, m, l, r, o, c, None);
                 },
                 "bit_range" => {
                     let x = self.wires.get(&gate.wires.get(0).unwrap().name.value).unwrap().unwrap();
@@ -170,13 +174,17 @@ where
         .map_err(to_pc_error::<F, PC>)?;
 
         // Generate & save `ProverKey` with some random values.
+        println!("{:?}", self.wires);
         let mut prover = Prover::<F, P, PC>::new(b"test");
         self.synth_using_composer(prover.mut_cs(), None, None)?;
+        println!("{:?}", self.wires);
         prover.preprocess(&ck)?;
 
         // Generate & save `VerifierKey` with some random values.
+        println!("{:?}", self.wires);
         let mut verifier = Verifier::new(b"test");
         self.synth_using_composer(verifier.mut_cs(), None, None)?;
+        println!("{:?}", self.wires);
         verifier.preprocess(&ck)?;
 
         Ok((prover
@@ -273,8 +281,8 @@ pub fn run_and_prove<F, P, PC> (
 
     circuit.synth_using_composer(prover.mut_cs(), Some(public_inputs), Some(witnesses))?;
 
-    prover.mut_cs()
-            .check_circuit_satisfied();
+    // prover.mut_cs()
+    //         .check_circuit_satisfied();
 
     // Add ProverKey to Prover
     prover.prover_key = Some(prover_key);
@@ -304,7 +312,6 @@ pub fn verify<F, P, PC> (
 
     // Build verifier key
     let mut verifier: Verifier<F, P, PC> = Verifier::new(b"test");
-    // circuit.synth_using_composer(verifier.mut_cs(), Some(public_inputs), None)?;
     verifier.verifier_key = Some(plonk_verifier_key);
     let (_ck, vk) = PC::trim(
         u_params,
@@ -313,8 +320,6 @@ pub fn verify<F, P, PC> (
         0,
         None,
     ).unwrap();
-
-    // verifier.preprocess(&ck)?;
 
     verifier.verify(
         proof,
@@ -384,7 +389,7 @@ bit_range[6] y
     fn full_run() {
         // Generate CRS
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
-        let pp = PC::setup(1 << 10, None, &mut OsRng).unwrap();
+        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
@@ -407,13 +412,15 @@ poly_gate[0 1 0 1 0 0] y y x y
         // Prover POV
         let mut circuit_prover = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit_prover.from_ast(ast_circuit.clone());
-        // let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
+        let pk2 = circuit_prover.compile_prover::<PC>(&pp).unwrap();
+        assert_eq!(pk, pk2);
         let proof = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
 
         // Verifier POV
         let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit_verifier.from_ast(ast_circuit.clone());
-        // let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
+        let vk2 = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
+        assert_eq!(vk, vk2);
         verify(&pp, vk, &mut circuit_verifier, &public_inputs, &proof).unwrap();
     }
 }
