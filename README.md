@@ -53,16 +53,16 @@ gates / aliases.
   - Translate algebraic constraints to PLONK polynomial gates
   - Supported polynomial gates
     ```
-    poly_gate[m l r o f c] xl xr xf -> xo {
-      o * xo = -m * (xl * xr) - l * xl - r * xr - f * xf - c
+    poly_gate[m l r o c] xl xr -> xo {
+      o * xo = -m * (xl * xr) - l * xl - r * xr - c
     }
     ```
     ```
-    pubout_poly_gate[m l r o f c] xl xr xf xo -> xp {
-      pub xp = - m * (xl * xr) - l * xl - r * xr - f * xf - o * xo - c
+    pubout_poly_gate[m l r o c] xl xr xo -> xp {
+      pub xp = - m * (xl * xr) - l * xl - r * xr - o * xo - c
     }
     ```
-  - For first iteration: do something naive here, allocate a `poly_gate_2`
+  - For first iteration: do something naive here, allocate a `poly_gate`
     for each internal multiplication and addition.
 5. Circuit synthesis (proof-of-concept done in `synth.rs`)
   - At this point the AST contains only gate constraint statements on
@@ -75,12 +75,11 @@ gates / aliases.
   - Second, to synth the circuit, we simply walk the AST and call the corresponding Plonk functions.
   - Finally, metadata and output of `plonk-core` (prover key and verifier data) is returned as output.
 
-## TODO
+## Ordered TODO List
 
-1. Proof generation and verification interfaces
-2. Implement internal representation that can be easily manipulated (for alias
+1. Implement internal AST structs that can be easily manipulated (for alias
    expansion / algebraic manipulations)
-3. Support alias expansion
-4. Support output wires / simple gate expressions
+2. Support alias expansion
+3. Support marking of output wires at compile time and derivation of their values at prover runtime
+4. CLI interfaces. (Use `clap`?)
 5. Support general expressions
-6. CLI interfaces. (Use `clap`?)
