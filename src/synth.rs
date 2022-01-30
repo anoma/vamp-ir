@@ -486,6 +486,44 @@ bit_range[6] y
     }
 
     #[test]
+    fn compile() {
+        // Generate CRS
+        type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
+        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
+
+        // Circuit
+        let ast_circuit = ast::parse_circuit_from_string("");
+
+        // Runtime inputs
+        let public_inputs: HashMap<String, String> = HashMap::from([
+                ("x".to_string(), "1".to_string()),
+        ]);
+        let witnesses: HashMap<String, String> = HashMap::from([
+                ("y".to_string(), "52435875175126190479447740508185965837690552500527637822603658699938581184512".to_string())
+                // y = -1
+            ]);
+
+
+        let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit.from_ast(ast_circuit.clone());
+        let (pk, vk) = circuit.compile_prover_and_verifier::<PC>(&pp).unwrap();
+
+        // Prover POV
+        let mut circuit_prover = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit_prover.from_ast(ast_circuit.clone());
+        let pk2 = circuit.compile_prover::<PC>(&pp).unwrap();
+        assert_eq!(pk, pk2);
+        let (proof, _) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
+
+        // Verifier POV
+        let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit_verifier.from_ast(ast_circuit.clone());
+        let vk2 = circuit.compile_verifier::<PC>(&pp).unwrap();
+        assert_eq!(vk, vk2);
+        verify(&pp, vk, &mut circuit_verifier, &public_inputs, &proof).unwrap();
+    }
+
+    #[test]
     fn pubout_poly_gate() {
         // Generate CRS
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
@@ -507,22 +545,16 @@ pubout_poly_gate[0 1 0 0 0] y y y x
             ]);
 
 
-        let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
-        circuit.from_ast(ast_circuit.clone());
-        let (pk, vk) = circuit.compile_prover_and_verifier::<PC>(&pp).unwrap();
-
         // Prover POV
         let mut circuit_prover = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit_prover.from_ast(ast_circuit.clone());
-        let pk2 = circuit_prover.compile_prover::<PC>(&pp).unwrap();
-        assert_eq!(pk, pk2);
+        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
         let (proof, _) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
 
         // Verifier POV
         let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit_verifier.from_ast(ast_circuit.clone());
-        let vk2 = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
-        assert_eq!(vk, vk2);
+        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
         verify(&pp, vk, &mut circuit_verifier, &public_inputs, &proof).unwrap();
     }
 
@@ -545,23 +577,16 @@ poly_gate[0 1 0 1 0] y y x
                 // y = -1
             ]);
 
-
-        let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
-        circuit.from_ast(ast_circuit.clone());
-        let (pk, vk) = circuit.compile_prover_and_verifier::<PC>(&pp).unwrap();
-
         // Prover POV
         let mut circuit_prover = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit_prover.from_ast(ast_circuit.clone());
-        let pk2 = circuit_prover.compile_prover::<PC>(&pp).unwrap();
-        assert_eq!(pk, pk2);
+        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
         let (proof, _) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
 
         // Verifier POV
         let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit_verifier.from_ast(ast_circuit.clone());
-        let vk2 = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
-        assert_eq!(vk, vk2);
+        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
         verify(&pp, vk, &mut circuit_verifier, &public_inputs, &proof).unwrap();
     }
 
@@ -587,23 +612,51 @@ z = add a b
                 // y = -1
             ]);
 
-
-        let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
-        circuit.from_ast(ast_circuit.clone());
-        let (pk, vk) = circuit.compile_prover_and_verifier::<PC>(&pp).unwrap();
-
         // Prover POV
         let mut circuit_prover = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit_prover.from_ast(ast_circuit.clone());
-        let pk2 = circuit_prover.compile_prover::<PC>(&pp).unwrap();
-        assert_eq!(pk, pk2);
+        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
         let (proof, pubout) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
 
         // Verifier POV
         let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit_verifier.from_ast(ast_circuit.clone());
-        let vk2 = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
-        assert_eq!(vk, vk2);
+        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
+        verify(&pp, vk, &mut circuit_verifier, &pubout, &proof).unwrap();
+    }
+
+    #[test]
+    fn xor_and() {
+        // Generate CRS
+        type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
+        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
+
+        // Circuit
+        let ast_circuit = ast::parse_circuit_from_string("
+pub a b
+a = xor[10] x y
+b = and[10] x y
+");
+
+        // Runtime inputs
+        let public_inputs: HashMap<String, String> = HashMap::from([]);
+        let witnesses: HashMap<String, String> = HashMap::from([
+                ("x".to_string(), "321".to_string()),
+                ("y".to_string(), "678".to_string())
+                // y = -1
+            ]);
+
+
+        // Prover POV
+        let mut circuit_prover = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit_prover.from_ast(ast_circuit.clone());
+        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
+        let (proof, pubout) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
+
+        // Verifier POV
+        let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit_verifier.from_ast(ast_circuit.clone());
+        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
         verify(&pp, vk, &mut circuit_verifier, &pubout, &proof).unwrap();
     }
 }
