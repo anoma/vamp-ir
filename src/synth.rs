@@ -1,5 +1,5 @@
 use crate::ast;
-use std::collections::HashMap;
+use std::collections::{HashSet, HashMap};
 use std::marker::PhantomData;
 use plonk_core::prelude::*;
 
@@ -32,6 +32,8 @@ where
     wires: HashMap<String, Option<Variable>>,
     /// Maps pub wire names to plonk-core pi positions
     pub_wires: HashMap<String, Option<usize>>,
+    /// Set containing output wire names
+    out_wires: HashSet<String>,
     gates: Vec<Gate>,
     size: usize,
     _f: PhantomData<F>,
@@ -85,6 +87,7 @@ where
                             let out_wires = gate.out_wires.iter().map(|wire| {
                                 let wire_name = wire.name.value.clone();
                                 self.wires.insert(wire_name.clone(), None);
+                                self.out_wires.insert(wire_name.clone());
                                 if wire.typ == "pub" {
                                     self.pub_wires.insert(wire_name.clone(), None);
                                 }
@@ -111,7 +114,7 @@ where
         composer: &mut StandardComposer<F, P>,
         pub_wire_vals: Option<&HashMap<String, String>>,
         wire_vals: Option<&HashMap<String, String>>,
-    ) -> Result<(), Error> {
+    ) -> Result<HashMap<String, String>, Error> {
         let _zero = composer.zero_var();
         // Allocate wires
         self.wires.iter_mut().for_each(|(wire, plonk_var)| {
@@ -174,6 +177,30 @@ where
 
                     composer.poly_gate(xl, xr, xo, m, l, r, o, c, None);
                 },
+                // out = add x y
+                "add" => {
+                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
+                    let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
+
+                    let out = composer.arithmetic_gate(|gate| {
+                        gate.witness(x, y, None).add(F::one(), F::one())
+                    });
+
+                    let out_wire = gate.out_wires.get(0).unwrap();
+                    self.wires.insert(out_wire.clone(), Some(out));
+                },
+                // out = mul x y
+                "mul" => {
+                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
+                    let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
+
+                    let out = composer.arithmetic_gate(|gate| {
+                        gate.witness(x, y, None).mul(F::one())
+                    });
+
+                    let out_wire = gate.out_wires.get(0).unwrap();
+                    self.wires.insert(out_wire.clone(), Some(out));
+                },
                 // bit_range[n], where n is even
                 "bit_range" => {
                     let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
@@ -191,6 +218,8 @@ where
 
                     let num_bits: usize = gate.parameters.get(0).unwrap().parse().unwrap();
                     let out = composer.xor_gate(x, y, num_bits);
+                    let out_wire = gate.out_wires.get(0).unwrap();
+                    self.wires.insert(out_wire.clone(), Some(out));
                 },
                 // z = and[n] x y, where n is even
                 "and" => {
@@ -198,7 +227,9 @@ where
                     let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
 
                     let num_bits: usize = gate.parameters.get(0).unwrap().parse().unwrap();
-                    let out = composer.xor_gate(x, y, num_bits);
+                    let out = composer.and_gate(x, y, num_bits);
+                    let out_wire = gate.out_wires.get(0).unwrap();
+                    self.wires.insert(out_wire.clone(), Some(out));
                 },
                 // z = cselect bit x y, where n is even
                 "cselect" => {
@@ -207,13 +238,22 @@ where
                     let opt_1 = self.wires.get(gate.wires.get(2).unwrap()).unwrap().unwrap();
 
                     let out = composer.conditional_select(bit, opt_0, opt_1);
+                    let out_wire = gate.out_wires.get(0).unwrap();
+                    self.wires.insert(out_wire.clone(), Some(out));
                 },
                 _ => {
 
                 }
             }
         });
-        Ok(())
+        let pubout: HashMap<String, String> = HashMap::from_iter(self.out_wires.iter().filter_map(|wire| {
+            if self.pub_wires.contains_key(wire) {
+                let wire_var = self.wires.get(wire).unwrap().unwrap();
+                let val = composer.variables.get(&wire_var).unwrap().to_string();
+                Some((wire.clone(), val))
+            } else { None }
+        }));
+        Ok(pubout)
     }
 
     pub fn compile_prover_and_verifier<PC>(
@@ -320,7 +360,7 @@ pub fn run_and_prove<F, P, PC> (
     circuit: &mut Synthesizer<F, P>,
     public_inputs: &HashMap<String, String>,
     witnesses: &HashMap<String, String>
-) -> Result<Proof<F, PC>, Error>
+) -> Result<(Proof<F, PC>, HashMap<String, String>), Error>
     where
         F: PrimeField,
         P: TEModelParameters<BaseField = F>,
@@ -337,14 +377,16 @@ pub fn run_and_prove<F, P, PC> (
     // New Prover instance
     let mut prover = Prover::new(b"test");
 
-    circuit.synth_using_composer(prover.mut_cs(), Some(public_inputs), Some(witnesses))?;
+    let pubout = circuit.synth_using_composer(prover.mut_cs(), Some(public_inputs), Some(witnesses))?;
 
     // prover.mut_cs()
     //         .check_circuit_satisfied();
 
     // Add ProverKey to Prover
     prover.prover_key = Some(prover_key);
-    prover.prove(&ck)
+    let proof = prover.prove(&ck)?;
+
+    Ok((proof, pubout))
 }
 
 pub fn verify<F, P, PC> (
@@ -474,7 +516,7 @@ pubout_poly_gate[0 1 0 0 0] y y y x
         circuit_prover.from_ast(ast_circuit.clone());
         let pk2 = circuit_prover.compile_prover::<PC>(&pp).unwrap();
         assert_eq!(pk, pk2);
-        let proof = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
+        let (proof, _) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
 
         // Verifier POV
         let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
@@ -513,7 +555,7 @@ poly_gate[0 1 0 1 0] y y x
         circuit_prover.from_ast(ast_circuit.clone());
         let pk2 = circuit_prover.compile_prover::<PC>(&pp).unwrap();
         assert_eq!(pk, pk2);
-        let proof = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
+        let (proof, _) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
 
         // Verifier POV
         let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
@@ -521,5 +563,47 @@ poly_gate[0 1 0 1 0] y y x
         let vk2 = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
         assert_eq!(vk, vk2);
         verify(&pp, vk, &mut circuit_verifier, &public_inputs, &proof).unwrap();
+    }
+
+    #[test]
+    fn add_and_mul() {
+        // Generate CRS
+        type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
+        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
+
+        // Circuit
+        let ast_circuit = ast::parse_circuit_from_string("
+pub z
+a = add x y
+b = mul x y
+z = add a b
+");
+
+        // Runtime inputs
+        let public_inputs: HashMap<String, String> = HashMap::from([]);
+        let witnesses: HashMap<String, String> = HashMap::from([
+                ("x".to_string(), "2".to_string()),
+                ("y".to_string(), "3".to_string())
+                // y = -1
+            ]);
+
+
+        let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit.from_ast(ast_circuit.clone());
+        let (pk, vk) = circuit.compile_prover_and_verifier::<PC>(&pp).unwrap();
+
+        // Prover POV
+        let mut circuit_prover = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit_prover.from_ast(ast_circuit.clone());
+        let pk2 = circuit_prover.compile_prover::<PC>(&pp).unwrap();
+        assert_eq!(pk, pk2);
+        let (proof, pubout) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
+
+        // Verifier POV
+        let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit_verifier.from_ast(ast_circuit.clone());
+        let vk2 = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
+        assert_eq!(vk, vk2);
+        verify(&pp, vk, &mut circuit_verifier, &pubout, &proof).unwrap();
     }
 }
