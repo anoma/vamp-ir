@@ -12,6 +12,16 @@ use plonk_core::error::to_pc_error;
 use ark_ec::models::TEModelParameters;
 use ark_ff::PrimeField;
 
+
+#[derive(Default, Debug)]
+pub struct Gate {
+    name: String,
+    parameters: Vec<String>,
+    /// Input wires
+    wires: Vec<String>,
+    out_wires: Vec<String>
+}
+
 #[derive(Default, Debug)]
 pub struct Synthesizer<F, P>
 where
@@ -22,7 +32,7 @@ where
     wires: HashMap<String, Option<Variable>>,
     /// Maps pub wire names to plonk-core pi positions
     pub_wires: HashMap<String, Option<usize>>,
-    gates: Vec<ast::GateInvocation>,
+    gates: Vec<Gate>,
     size: usize,
     _f: PhantomData<F>,
     _p: PhantomData<P>,
@@ -47,13 +57,44 @@ where
                 ast::Statement::ConstraintStatement(st) => {
                     match st {
                         ast::ConstraintStatement::GateInvocation(gate) => {
-                            gate.wires.iter().for_each(|id| {
-                                self.wires.insert(id.name.value.clone(), None);
-                                if id.typ == "pub" {
-                                    self.pub_wires.insert(id.name.value.clone(), None);
+                            let name = gate.name.value.clone();
+                            let wires = gate.wires.iter().map(|wire| {
+                                let wire_name = wire.name.value.clone();
+                                self.wires.insert(wire_name.clone(), None);
+                                if wire.typ == "pub" {
+                                    self.pub_wires.insert(wire_name.clone(), None);
                                 }
-                            });
-                            self.gates.push(gate.clone());
+                                wire_name
+                            }).collect();
+                            let parameters = gate.parameters.iter().map(|c| {
+                                c.value.clone()
+                            }).collect();
+                            let gate: Gate = Gate { name, wires, out_wires: vec![], parameters };
+                            self.gates.push(gate);
+                        },
+                        ast::ConstraintStatement::GateInvocationWithOutput(gate) => {
+                            let name = gate.name.value.clone();
+                            let wires = gate.wires.iter().map(|wire| {
+                                let wire_name = wire.name.value.clone();
+                                self.wires.insert(wire_name.clone(), None);
+                                if wire.typ == "pub" {
+                                    self.pub_wires.insert(wire_name.clone(), None);
+                                }
+                                wire_name
+                            }).collect();
+                            let out_wires = gate.out_wires.iter().map(|wire| {
+                                let wire_name = wire.name.value.clone();
+                                self.wires.insert(wire_name.clone(), None);
+                                if wire.typ == "pub" {
+                                    self.pub_wires.insert(wire_name.clone(), None);
+                                }
+                                wire_name
+                            }).collect();
+                            let parameters = gate.parameters.iter().map(|c| {
+                                c.value.clone()
+                            }).collect();
+                            let gate = Gate { name, wires, out_wires, parameters };
+                            self.gates.push(gate);
                         },
                         _ => {}
                     }
@@ -88,25 +129,21 @@ where
         });
         // Synthesize circuit using standard composer
         self.gates.iter().for_each(|gate| {
-            match gate.name.value.as_str() {
+            match gate.name.as_str() {
                 "pubout_poly_gate" => {
-                    let xl = self.wires.get(&gate.wires.get(0).unwrap().name.value).unwrap().unwrap();
-                    let xr = self.wires.get(&gate.wires.get(1).unwrap().name.value).unwrap().unwrap();
-                    let xo = self.wires.get(&gate.wires.get(2).unwrap().name.value).unwrap().unwrap();
-                    // let xf = self.wires.get(&gate.wires.get(3).unwrap().name.value).unwrap().unwrap();
+                    let xl = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
+                    let xr = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
+                    let xo = self.wires.get(gate.wires.get(2).unwrap()).unwrap().unwrap();
 
-                    let xp = gate.wires.get(3).unwrap().name.value.clone();
-                    // assert!(self.pub_wires.contains(&xp));
-                    // assert!(!self.pub_wire_pos.contains_key(&xp));
+                    let xp = gate.wires.get(3).unwrap().clone();
                     let pos = self.pub_wires.get_mut(&xp).unwrap();
                     *pos = Some(composer.circuit_size());
 
-                    let m = F::from_str(&gate.parameters.get(0).unwrap().value).unwrap_or(F::zero());
-                    let l = F::from_str(&gate.parameters.get(1).unwrap().value).unwrap_or(F::zero());
-                    let r = F::from_str(&gate.parameters.get(2).unwrap().value).unwrap_or(F::zero());
-                    let o = F::from_str(&gate.parameters.get(3).unwrap().value).unwrap_or(F::zero());
-                    let c = F::from_str(&gate.parameters.get(4).unwrap().value).unwrap_or(F::zero());
-                    // let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
+                    let m = F::from_str(gate.parameters.get(0).unwrap()).unwrap_or(F::zero());
+                    let l = F::from_str(gate.parameters.get(1).unwrap()).unwrap_or(F::zero());
+                    let r = F::from_str(gate.parameters.get(2).unwrap()).unwrap_or(F::zero());
+                    let o = F::from_str(gate.parameters.get(3).unwrap()).unwrap_or(F::zero());
+                    let c = F::from_str(gate.parameters.get(4).unwrap()).unwrap_or(F::zero());
 
                     let xp_val = if let Some(pub_wire_vals) = pub_wire_vals {
                         match pub_wire_vals.get(&xp) {
@@ -121,30 +158,55 @@ where
                         F::zero()
                     };
 
-                    // composer.width_4_poly_gate(xl, xr, xo, xf, m, l, r, o, c, f, Some(xp_val));
                     composer.poly_gate(xl, xr, xo, m, l, r, o, c, Some(xp_val));
 
                 },
                 "poly_gate" => {
-                    let xl = self.wires.get(&gate.wires.get(0).unwrap().name.value).unwrap().unwrap();
-                    let xr = self.wires.get(&gate.wires.get(1).unwrap().name.value).unwrap().unwrap();
-                    let xo = self.wires.get(&gate.wires.get(2).unwrap().name.value).unwrap().unwrap();
-                    // let xf = self.wires.get(&gate.wires.get(3).unwrap().name.value).unwrap().unwrap();
+                    let xl = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
+                    let xr = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
+                    let xo = self.wires.get(gate.wires.get(2).unwrap()).unwrap().unwrap();
 
-                    let m = F::from_str(&gate.parameters.get(0).unwrap().value).unwrap_or(F::zero());
-                    let l = F::from_str(&gate.parameters.get(1).unwrap().value).unwrap_or(F::zero());
-                    let r = F::from_str(&gate.parameters.get(2).unwrap().value).unwrap_or(F::zero());
-                    let o = F::from_str(&gate.parameters.get(3).unwrap().value).unwrap_or(F::zero());
-                    let c = F::from_str(&gate.parameters.get(4).unwrap().value).unwrap_or(F::zero());
-                    // let f = F::from_str(&gate.parameters.get(5).unwrap().value).unwrap_or(F::zero());
+                    let m = F::from_str(gate.parameters.get(0).unwrap()).unwrap_or(F::zero());
+                    let l = F::from_str(gate.parameters.get(1).unwrap()).unwrap_or(F::zero());
+                    let r = F::from_str(gate.parameters.get(2).unwrap()).unwrap_or(F::zero());
+                    let o = F::from_str(gate.parameters.get(3).unwrap()).unwrap_or(F::zero());
+                    let c = F::from_str(gate.parameters.get(4).unwrap()).unwrap_or(F::zero());
 
-                    // composer.width_4_poly_gate(xl, xr, xo, xf, m, l, r, o, c, f, None);
                     composer.poly_gate(xl, xr, xo, m, l, r, o, c, None);
                 },
+                // bit_range[n], where n is even
                 "bit_range" => {
-                    let x = self.wires.get(&gate.wires.get(0).unwrap().name.value).unwrap().unwrap();
-                    let num_bits: usize = gate.parameters.get(0).unwrap().value.parse().unwrap();
+                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
+                    let num_bits: usize = gate.parameters.get(0).unwrap().parse().unwrap();
                     composer.range_gate(x, num_bits);
+                },
+                "bool" => {
+                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
+                    composer.boolean_gate(x);
+                },
+                // z = xor[n] x y, where n is even
+                "xor" => {
+                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
+                    let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
+
+                    let num_bits: usize = gate.parameters.get(0).unwrap().parse().unwrap();
+                    let out = composer.xor_gate(x, y, num_bits);
+                },
+                // z = and[n] x y, where n is even
+                "and" => {
+                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
+                    let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
+
+                    let num_bits: usize = gate.parameters.get(0).unwrap().parse().unwrap();
+                    let out = composer.xor_gate(x, y, num_bits);
+                },
+                // z = cselect bit x y, where n is even
+                "cselect" => {
+                    let bit = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
+                    let opt_0 = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
+                    let opt_1 = self.wires.get(gate.wires.get(2).unwrap()).unwrap().unwrap();
+
+                    let out = composer.conditional_select(bit, opt_0, opt_1);
                 },
                 _ => {
 

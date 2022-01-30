@@ -34,8 +34,9 @@ poly = { term ~ (op ~ term)* }
 expression = { "(" ~ gate_invocation ~ ")" | poly }
 
 gate_invocation = { identifier ~ ( "[" ~ constant+ ~ "]")? ~ wire_list }
+gate_invocation_with_output = { wire_list ~ "=" ~ identifier ~ ( "[" ~ constant+ ~ "]")? ~ wire_list }
 
 // a constraint statement places some constraint on wires
 // either a `=` constraint or a gate constraint
-constraint_statement = { NEWLINE* ~ (expression ~ "=" ~ expression | gate_invocation) ~ NEWLINE* }
+constraint_statement = { NEWLINE* ~ ( gate_invocation_with_output | expression ~ "=" ~ expression | gate_invocation) ~ NEWLINE* }
 

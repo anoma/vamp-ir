@@ -51,6 +51,7 @@ pub struct AliasArrow;
 #[derive(Debug, FromPest, PartialEq, Clone)]
 #[pest_ast(rule(Rule::constraint_statement))]
 pub enum ConstraintStatement {
+    GateInvocationWithOutput(GateInvocationWithOutput),
     EqualConstraint(Expression, Expression),
     GateInvocation(GateInvocation)
 }
@@ -72,6 +73,16 @@ pub struct PolyExpression {
 #[derive(Debug, FromPest, PartialEq, Clone)]
 #[pest_ast(rule(Rule::gate_invocation))]
 pub struct GateInvocation {
+    pub name: Identifier,
+    pub parameters: Vec<Constant>,
+    // TODO: Support general expressions here
+    pub wires: Vec<Wire>
+}
+
+#[derive(Debug, FromPest, PartialEq, Clone)]
+#[pest_ast(rule(Rule::gate_invocation_with_output))]
+pub struct GateInvocationWithOutput {
+    pub out_wires: Vec<Wire>,
     pub name: Identifier,
     pub parameters: Vec<Constant>,
     // TODO: Support general expressions here
