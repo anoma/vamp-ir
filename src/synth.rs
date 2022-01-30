@@ -95,7 +95,7 @@ where
                     let xo = self.wires.get(&gate.wires.get(2).unwrap().name.value).unwrap().unwrap();
                     // let xf = self.wires.get(&gate.wires.get(3).unwrap().name.value).unwrap().unwrap();
 
-                    let xp = gate.wires.get(4).unwrap().name.value.clone();
+                    let xp = gate.wires.get(3).unwrap().name.value.clone();
                     // assert!(self.pub_wires.contains(&xp));
                     // assert!(!self.pub_wire_pos.contains_key(&xp));
                     let pos = self.pub_wires.get_mut(&xp).unwrap();
@@ -174,17 +174,13 @@ where
         .map_err(to_pc_error::<F, PC>)?;
 
         // Generate & save `ProverKey` with some random values.
-        println!("{:?}", self.wires);
         let mut prover = Prover::<F, P, PC>::new(b"test");
         self.synth_using_composer(prover.mut_cs(), None, None)?;
-        println!("{:?}", self.wires);
         prover.preprocess(&ck)?;
 
         // Generate & save `VerifierKey` with some random values.
-        println!("{:?}", self.wires);
         let mut verifier = Verifier::new(b"test");
         self.synth_using_composer(verifier.mut_cs(), None, None)?;
-        println!("{:?}", self.wires);
         verifier.preprocess(&ck)?;
 
         Ok((prover
@@ -306,7 +302,7 @@ pub fn verify<F, P, PC> (
         let val = public_inputs.get(&wire.clone()).unwrap();
         let val = F::from_str(val).unwrap_or(F::zero());
         if let Some(pos) = pos {
-            pi[*pos] = -val
+            pi[*pos] = val
         }
     });
 
@@ -357,8 +353,8 @@ gate b c
     fn synth_builtin() {
         let ast_circuit = ast::parse_circuit_from_string("
 pub x
-pubout_poly_gate[0 1 0 0 0 0] y y y y x
-poly_gate[1 0 0 0 0 4] y y y y
+pubout_poly_gate[0 1 0 0 0] y y y x
+poly_gate[1 0 0 0 0] y y y y
 ");
         let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
         circuit.from_ast(ast_circuit);
@@ -386,14 +382,55 @@ bit_range[6] y
     }
 
     #[test]
-    fn full_run() {
+    fn pubout_poly_gate() {
         // Generate CRS
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
         let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
-poly_gate[0 1 0 1 0 0] y y x y
+pub x
+pubout_poly_gate[0 1 0 0 0] y y y x
+");
+
+        // Runtime inputs
+        let public_inputs: HashMap<String, String> = HashMap::from([
+                ("x".to_string(), "1".to_string()),
+        ]);
+        let witnesses: HashMap<String, String> = HashMap::from([
+                ("y".to_string(), "52435875175126190479447740508185965837690552500527637822603658699938581184512".to_string())
+                // y = -1
+            ]);
+
+
+        let mut circuit = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit.from_ast(ast_circuit.clone());
+        let (pk, vk) = circuit.compile_prover_and_verifier::<PC>(&pp).unwrap();
+
+        // Prover POV
+        let mut circuit_prover = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit_prover.from_ast(ast_circuit.clone());
+        let pk2 = circuit_prover.compile_prover::<PC>(&pp).unwrap();
+        assert_eq!(pk, pk2);
+        let proof = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
+
+        // Verifier POV
+        let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
+        circuit_verifier.from_ast(ast_circuit.clone());
+        let vk2 = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
+        assert_eq!(vk, vk2);
+        verify(&pp, vk, &mut circuit_verifier, &public_inputs, &proof).unwrap();
+    }
+
+    #[test]
+    fn poly_gate() {
+        // Generate CRS
+        type PC = SonicKZG10::<Bls12_381,DensePolynomial<BlsScalar>>;
+        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
+
+        // Circuit
+        let ast_circuit = ast::parse_circuit_from_string("
+poly_gate[0 1 0 1 0] y y x
 ");
 
         // Runtime inputs
