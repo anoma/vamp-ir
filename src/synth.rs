@@ -130,6 +130,7 @@ where
             };
             *plonk_var = Some(composer.add_input(val));
         });
+        let mut pubout: HashMap<String, String> = HashMap::new();
         // Synthesize circuit using standard composer
         self.gates.iter().for_each(|gate| {
             match gate.name.as_str() {
@@ -182,24 +183,42 @@ where
                     let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
                     let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
 
-                    let out = composer.arithmetic_gate(|gate| {
-                        gate.witness(x, y, None).add(F::one(), F::one())
-                    });
-
                     let out_wire = gate.out_wires.get(0).unwrap();
-                    self.wires.insert(out_wire.clone(), Some(out));
+
+                    if let Some(pos) = self.pub_wires.get_mut(out_wire) {
+                        let out_val = *composer.variables.get(&x).unwrap() + *composer.variables.get(&y).unwrap();
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(x, y, None).add(F::one(), F::one()).pi(out_val)
+                        });
+                        *pos = Some(composer.circuit_size());
+                        pubout.insert(out_wire.clone(), out_val.to_string());
+                    } else {
+                        let out = composer.arithmetic_gate(|gate| {
+                            gate.witness(x, y, None).add(F::one(), F::one())
+                        });
+                        self.wires.insert(out_wire.clone(), Some(out));
+                    }
                 },
                 // out = mul x y
                 "mul" => {
                     let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
                     let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
 
-                    let out = composer.arithmetic_gate(|gate| {
-                        gate.witness(x, y, None).mul(F::one())
-                    });
-
                     let out_wire = gate.out_wires.get(0).unwrap();
-                    self.wires.insert(out_wire.clone(), Some(out));
+
+                    if let Some(pos) = self.pub_wires.get_mut(out_wire) {
+                        let out_val = *composer.variables.get(&x).unwrap() * *composer.variables.get(&y).unwrap();
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(x, y, None).mul(F::one()).pi(out_val)
+                        });
+                        *pos = Some(composer.circuit_size());
+                        pubout.insert(out_wire.clone(), out_val.to_string());
+                    } else {
+                        let out = composer.arithmetic_gate(|gate| {
+                            gate.witness(x, y, None).mul(F::one())
+                        });
+                        self.wires.insert(out_wire.clone(), Some(out));
+                    }
                 },
                 // bit_range[n], where n is even
                 "bit_range" => {
@@ -246,13 +265,6 @@ where
                 }
             }
         });
-        let pubout: HashMap<String, String> = HashMap::from_iter(self.out_wires.iter().filter_map(|wire| {
-            if self.pub_wires.contains_key(wire) {
-                let wire_var = self.wires.get(wire).unwrap().unwrap();
-                let val = composer.variables.get(&wire_var).unwrap().to_string();
-                Some((wire.clone(), val))
-            } else { None }
-        }));
         Ok(pubout)
     }
 
@@ -405,6 +417,7 @@ pub fn verify<F, P, PC> (
     circuit.pub_wires.iter().for_each(|(wire, pos)| {
         let val = public_inputs.get(&wire.clone()).unwrap();
         let val = F::from_str(val).unwrap_or(F::zero());
+        println!("{}", val);
         if let Some(pos) = pos {
             pi[*pos] = val
         }
@@ -617,6 +630,9 @@ z = add a b
         circuit_prover.from_ast(ast_circuit.clone());
         let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
         let (proof, pubout) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
+
+        let z = pubout.get("z").unwrap();
+        println!("{:?}", z);
 
         // Verifier POV
         let mut circuit_verifier = synth::Synthesizer::<BlsScalar, JubJubParameters>::default();
