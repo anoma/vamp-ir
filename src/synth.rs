@@ -1,3 +1,4 @@
+use ark_ec::twisted_edwards_extended::GroupAffine;
 use crate::ast;
 use std::collections::{HashSet, HashMap};
 use std::marker::PhantomData;
@@ -106,7 +107,7 @@ where
         });
 
         // TODO: fill in the right size
-        self.size = 1 << 6;
+        self.size = 1 << 12;
     }
 
     fn synth_using_composer(
@@ -179,8 +180,7 @@ where
 
                     let out_wire = gate.out_wires.get(0).unwrap();
 
-                    println!("pre add: {}", composer.circuit_size());
-
+                    // Add the correct gate depending on if output wire is public
                     if let Some(pos) = self.pub_wires.get_mut(out_wire) {
                         let out_val = *composer.variables.get(&x).unwrap() + *composer.variables.get(&y).unwrap();
                         *pos = Some(composer.circuit_size());
@@ -194,8 +194,6 @@ where
                         });
                         self.wires.insert(out_wire.clone(), Some(out));
                     }
-
-                    println!("post add: {}", composer.circuit_size());
                 },
                 // out = mul x y
                 "mul" => {
@@ -204,6 +202,7 @@ where
 
                     let out_wire = gate.out_wires.get(0).unwrap();
 
+                    // Add the correct gate depending on if output wire is public
                     if let Some(pos) = self.pub_wires.get_mut(out_wire) {
                         let out_val = *composer.variables.get(&x).unwrap() * *composer.variables.get(&y).unwrap();
                         *pos = Some(composer.circuit_size());
@@ -236,7 +235,16 @@ where
                     let num_bits: usize = gate.parameters.get(0).unwrap().parse().unwrap();
                     let out = composer.xor_gate(x, y, num_bits);
                     let out_wire = gate.out_wires.get(0).unwrap();
-                    self.wires.insert(out_wire.clone(), Some(out));
+
+                    // Add additional constraint if output wire is public
+                    if let Some(pos_x) = self.pub_wires.get_mut(out_wire) {
+                        *pos_x = Some(composer.circuit_size());
+                        let val = *composer.variables.get(&out).unwrap();
+                        composer.constrain_to_constant(out, F::zero(), Some(-val));
+                        pubout.insert(out_wire.clone(), val);
+                    } else {
+                        self.wires.insert(out_wire.clone(), Some(out));
+                    }
                 },
                 // z = and[n] x y, where n is even
                 "and" => {
@@ -246,9 +254,18 @@ where
                     let num_bits: usize = gate.parameters.get(0).unwrap().parse().unwrap();
                     let out = composer.and_gate(x, y, num_bits);
                     let out_wire = gate.out_wires.get(0).unwrap();
-                    self.wires.insert(out_wire.clone(), Some(out));
+
+                    // Add additional constraint if output wire is public
+                    if let Some(pos_x) = self.pub_wires.get_mut(out_wire) {
+                        *pos_x = Some(composer.circuit_size());
+                        let val = *composer.variables.get(&out).unwrap();
+                        composer.constrain_to_constant(out, F::zero(), Some(-val));
+                        pubout.insert(out_wire.clone(), val);
+                    } else {
+                        self.wires.insert(out_wire.clone(), Some(out));
+                    }
                 },
-                // z = cselect bit x y, where n is even
+                // z = cselect bit x y
                 "cselect" => {
                     let bit = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
                     let opt_0 = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
@@ -257,6 +274,38 @@ where
                     let out = composer.conditional_select(bit, opt_0, opt_1);
                     let out_wire = gate.out_wires.get(0).unwrap();
                     self.wires.insert(out_wire.clone(), Some(out));
+                },
+                "fixed_base_scalar_mul" => {
+                    let e = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
+
+                    let x_wire = gate.out_wires.get(0).unwrap();
+                    let y_wire = gate.out_wires.get(1).unwrap();
+
+                    let (x, y) = P::AFFINE_GENERATOR_COEFFS;
+                    let generator = GroupAffine::new(x, y);
+
+                    let scalar_mul_result =
+                        composer.fixed_base_scalar_mul(e, generator);
+
+                    // Add additional constraint if output wire is public
+                    if let Some(pos_x) = self.pub_wires.get_mut(x_wire) {
+                        *pos_x = Some(composer.circuit_size());
+                        let x_val = *composer.variables.get(&scalar_mul_result.x).unwrap();
+                        composer.constrain_to_constant(scalar_mul_result.x, F::zero(), Some(-x_val));
+                        pubout.insert(x_wire.clone(), x_val);
+                    } else {
+                        self.wires.insert(x_wire.clone(), Some(scalar_mul_result.x));
+                    }
+
+                    // Add additional constraint if output wire is public
+                    if let Some(pos_y) = self.pub_wires.get_mut(y_wire) {
+                        *pos_y = Some(composer.circuit_size());
+                        let y_val = *composer.variables.get(&scalar_mul_result.y).unwrap();
+                        composer.constrain_to_constant(scalar_mul_result.y, F::zero(), Some(-y_val));
+                        pubout.insert(y_wire.clone(), y_val);
+                    } else {
+                        self.wires.insert(y_wire.clone(), Some(scalar_mul_result.y));
+                    }
                 },
                 _ => {
 
@@ -472,7 +521,7 @@ poly_gate[1 0 0 0 0] y y y y
         let mut circuit = synth::Synthesizer::<Fr, JubJubParameters>::default();
         circuit.from_ast(ast_circuit);
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 10, None, &mut OsRng).unwrap();
+        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
 
         let pk_p = circuit.compile_prover::<PC>(&pp).unwrap();
         assert_eq!(pk_p.n, 8);
@@ -488,7 +537,7 @@ bit_range[6] y
         let mut circuit = synth::Synthesizer::<Fr, JubJubParameters>::default();
         circuit.from_ast(ast_circuit);
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 10, None, &mut OsRng).unwrap();
+        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
 
         let pk_p = circuit.compile_prover::<PC>(&pp).unwrap();
         assert_eq!(pk_p.n, 16);
@@ -498,7 +547,7 @@ bit_range[6] y
     fn compile() {
         // Generate CRS
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
+        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("");
@@ -535,7 +584,7 @@ bit_range[6] y
     fn pubout_poly_gate() {
         // Generate CRS
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
+        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
@@ -569,7 +618,7 @@ pubout_poly_gate[0 1 0 0 0] y y y x
     fn poly_gate() {
         // Generate CRS
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
+        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
@@ -597,10 +646,10 @@ poly_gate[0 1 0 1 0] y y x
     }
 
     #[test]
-    fn add_and_mul() {
+    fn add_mul_pubadd() {
         // Generate CRS
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
+        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
@@ -634,16 +683,17 @@ z = add a b
     }
 
     #[test]
-    fn xor_and() {
+    fn xor_and_pubadd() {
         // Generate CRS
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 12, None, &mut OsRng).unwrap();
+        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
-pub a b
+pub c
 a = xor[10] x y
 b = and[10] x y
+c = add a b
 ");
 
         // Runtime inputs
@@ -651,6 +701,43 @@ b = and[10] x y
         let witnesses: HashMap<String, Fr> = HashMap::from([
                 ("x".to_string(), Fr::from(321u64)),
                 ("y".to_string(), Fr::from(678u64))
+            ]);
+
+
+        // Prover POV
+        let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
+        circuit_prover.from_ast(ast_circuit.clone());
+        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
+        let (proof, pubout) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
+
+        // Verifier POV
+        let mut circuit_verifier = synth::Synthesizer::<Fr, JubJubParameters>::default();
+        circuit_verifier.from_ast(ast_circuit.clone());
+        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
+        verify(&pp, vk, &mut circuit_verifier, &pubout, &proof).unwrap();
+    }
+
+    #[test]
+    fn test_circuit() {
+        // Generate CRS
+        type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
+        let pp = PC::setup(1 << 14, None, &mut OsRng).unwrap();
+
+        // Circuit
+        let ast_circuit = ast::parse_circuit_from_string("
+pub c d x y
+bit_range[64] a
+bit_range[32] b
+c = add a b
+d = mul a b
+x y = fixed_base_scalar_mul e");
+
+        // Runtime inputs
+        let public_inputs: HashMap<String, Fr> = HashMap::from([]);
+        let witnesses: HashMap<String, Fr> = HashMap::from([
+                ("a".to_string(), Fr::from(20u64)),
+                ("b".to_string(), Fr::from(5u64)),
+                ("e".to_string(), Fr::from(2u64)),
             ]);
 
 
