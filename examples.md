@@ -46,7 +46,7 @@ The public input table `PI.json` is actually empty, since all public wires are
 output wires and can be computed by the backend during prover runtime.
 
 ```
-// PI.json
+// PI-prover.json
 {}
 ```
 
@@ -64,18 +64,16 @@ The witness input table `W.json` contain values for `a`, `b`, and `e`.
 To generate a proof, we run
 
 ```
-pir proof circuit.prover.bin PI W -o proof.bin
+pir proof circuit.prover.bin PI W --proof proof.bin --PI PI-verifier.json
 ```
 
-The above command should (1) populate the table `PI.json` and (2) generate a
-binary file containing the Plonk proof.
+The above command should (1) generate a binary file containing the Plonk proof
+and (2) generate a table `pubout.json`.
 
-Table `PI.json` should now contain the computed values of `c`, `d`, `f`. (For
-general circuits, both PI and W both could contain more values than they
-started with after proof generation).
+Table `PI-verifier.json` should now contain the computed values of `c`, `d`, `f`.
 
 ```
-// PI.json, after proof generation
+// PI-verifier.json, after proof generation
 {
   "c": 25,
   "d": 100,
@@ -89,5 +87,5 @@ To verify a proof, we can run the following command to determine the validity of
 a proof.
 
 ```
-pir verify circuit.verifier.bin PI proof.bin
+pir verify circuit.verifier.bin PI-verifier.json proof.bin
 ```

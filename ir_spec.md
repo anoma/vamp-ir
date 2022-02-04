@@ -13,11 +13,11 @@ terminology.
 - All wires are assigned values in $F_p$ (either at compile-time or at prover / verifier run-time), where $p$ is a globally fixed (usually ~256-bit) prime. TODO: should we add `#pragma` declarations for specifying $p$?
 
 ### Public wires
-Public wires are public inputs into the circuit that are not known at compile-time. To allocate the variable `contract_public_key` as public we simply say:
+Public wires are public inputs into the circuit that are not known at compile-time. To allocate the variable `contract_public_key` as public we simply declare it in the following statement:
 ```
 pub contract_public_key
 ```
-The variable `contract_public_key` can then be used in a polynomial constraint like any other variable.
+The variable `contract_public_key` can then be used in a polynomial constraint like any other variable. Alternatively, one can declare a wire to be public by adding the keyword `pub` when referring to the wire.
 
 ### Private wires
 Private wires are the Prover's secret witnesses. Any variable not explicitly made public is a private wire.
@@ -76,6 +76,8 @@ Since this is not *true* assignment, but merely a constraint, it is also valid t
 42 = x_1 * x_2
 ```
 
+Equality statements involving general expressions are compiled down to gate statements by the backend.
+
 ### Gate statement
 
 A gate constraint is formed when a gate is called with all input and output wires.
@@ -107,6 +109,22 @@ output_1 output_2 ... = my_alias input_1 input_2 ...
 In arithmetic constraints there really is no distinction between inputs and outputs. We make the distinction here to tell the backend compiler how to interpret a constraint written in "assignment" mode and how to compose constraints.
 
 Since aliased subcircuits are likely to be used more than once, a backend compiler may decide to replace an aliased subcircuit with a lookup gate or custom gate if it has those features available.
+
+Often times, the gates supported by the backend are not agnostic to the wire types. To build alias gates for these built-in gates, one needs to declare the required wire types in the alias definition. For example:
+```
+def eq (priv x) -> (priv y) {
+  y = poly_gate[0 1 0 -1 0] x x
+}
+
+def eq (priv x) -> (pub y) {
+  y = pubout_poly_gate[0 1 0 0 0] x x x
+}
+
+def eq (priv x) -> (const y) {
+  poly_gate[0 1 0 0 y] x x x
+}
+```
+[More examples](./tests/arithmetic_aliases.pir).
 
 ### Examples
 #### No-output Gate

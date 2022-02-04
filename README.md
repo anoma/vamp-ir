@@ -78,8 +78,7 @@ gates / aliases.
 ## Ordered TODO List
 
 1. Implement internal AST structs that can be easily manipulated (for alias
-   expansion / algebraic manipulations)
+   expansion, expression evaluation, and algebraic manipulations)
 2. Support alias expansion
-3. Support marking of output wires at compile time and derivation of their values at prover runtime
+3. Support expressions
 4. CLI interfaces. (Use `clap`?)
-5. Support general expressions
