@@ -2,7 +2,7 @@
 
 Proof system agnostic representation of circuits / constraint systems.
 
-- [Design rationale](./ir_design.md) / [Spec](./ir_spec.md)
+- [Design rationale](https://spec.anoma.network/master/architecture/j1/vampir/ir_design.html) / [Spec](https://spec.anoma.network/master/architecture/j1/vampir/ir_spec.html)
 - Provides interfaces for `compile`, `prove`, and `verify` using IR.
 - Calls interfaces of `plonk-core`.
 
