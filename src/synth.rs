@@ -410,7 +410,6 @@ where
             verifier_key.
             expect("Unexpected error. Missing VerifierKey in compilation"))
     }
-
 }
 
 pub fn run_and_prove<F, P, PC> (
@@ -554,11 +553,11 @@ mod tests {
 
         // Runtime inputs
         let public_inputs: HashMap<String, Fr> = HashMap::from([
-                ("x".to_string(), Fr::from(1u64)),
+            ("x".to_string(), Fr::from(1u64)),
         ]);
         let witnesses: HashMap<String, Fr> = HashMap::from([
-                ("y".to_string(), -Fr::from(1u64))
-            ]);
+            ("y".to_string(), -Fr::from(1u64))
+        ]);
 
 
         let mut circuit = synth::Synthesizer::<Fr, JubJubParameters>::default();
@@ -594,12 +593,11 @@ mod tests {
 
         // Runtime inputs
         let public_inputs: HashMap<String, Fr> = HashMap::from([
-                ("x".to_string(), Fr::from(1u64)),
+            ("x".to_string(), Fr::from(1u64)),
         ]);
         let witnesses: HashMap<String, Fr> = HashMap::from([
-                ("y".to_string(), -Fr::from(1u64))
-            ]);
-
+            ("y".to_string(), -Fr::from(1u64))
+        ]);
 
         // Prover POV
         let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
@@ -628,9 +626,9 @@ mod tests {
         // Runtime inputs
         let public_inputs: HashMap<String, Fr> = HashMap::from([]);
         let witnesses: HashMap<String, Fr> = HashMap::from([
-                ("x".to_string(), Fr::from(1u64)),
-                ("y".to_string(), -Fr::from(1u64))
-            ]);
+            ("x".to_string(), Fr::from(1u64)),
+            ("y".to_string(), -Fr::from(1u64))
+        ]);
 
         // Prover POV
         let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
@@ -662,9 +660,9 @@ mod tests {
         // Runtime inputs
         let public_inputs: HashMap<String, Fr> = HashMap::from([]);
         let witnesses: HashMap<String, Fr> = HashMap::from([
-                ("x".to_string(), Fr::from(2u64)),
-                ("y".to_string(), Fr::from(3u64))
-            ]);
+            ("x".to_string(), Fr::from(2u64)),
+            ("y".to_string(), Fr::from(3u64))
+        ]);
 
         // Prover POV
         let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
@@ -699,11 +697,9 @@ mod tests {
         // Runtime inputs
         let public_inputs: HashMap<String, Fr> = HashMap::from([]);
         let witnesses: HashMap<String, Fr> = HashMap::from([
-                ("x".to_string(), Fr::from(321u64)),
-                ("y".to_string(), Fr::from(678u64))
-            ]);
-
-
+            ("x".to_string(), Fr::from(321u64)),
+            ("y".to_string(), Fr::from(678u64))
+        ]);
         // Prover POV
         let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
         circuit_prover.from_ast(ast_circuit.clone());
@@ -718,7 +714,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    //#[ignore]
     fn test_circuit() {
         // Generate CRS
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
@@ -726,22 +722,24 @@ mod tests {
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
-            pub c d x y
+            pub c d// x y
             bit_range[64] a
             bit_range[32] b
             c = add a b
             d = mul a b
-            x y = fixed_base_scalar_mul e
+            //x y = fixed_base_scalar_mul e
         ");
 
         // Runtime inputs
-        let public_inputs: HashMap<String, Fr> = HashMap::from([]);
+        let public_inputs: HashMap<String, Fr> = HashMap::from([
+            ("c".to_string(), Fr::from(25u64)),
+            ("d".to_string(), Fr::from(100u64)),
+        ]);
         let witnesses: HashMap<String, Fr> = HashMap::from([
-                ("a".to_string(), Fr::from(20u64)),
-                ("b".to_string(), Fr::from(5u64)),
-                ("e".to_string(), Fr::from(2u64)),
-            ]);
-
+            ("a".to_string(), Fr::from(20u64)),
+            ("b".to_string(), Fr::from(5u64)),
+            //("e".to_string(), Fr::from(2u64)),
+        ]);
 
         // Prover POV
         let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
