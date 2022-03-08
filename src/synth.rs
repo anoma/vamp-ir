@@ -500,10 +500,10 @@ mod tests {
     #[test]
     fn synth_pub_and_gate() {
         let ast_circuit = ast::parse_circuit_from_string("
-pub a d
-gate a pub b
-gate b c
-");
+            pub a d
+            gate a pub b
+            gate b c
+        ");
         let mut circuit = synth::Synthesizer::<Fr, JubJubParameters>::default();
         circuit.from_ast(ast_circuit);
         assert_eq!(circuit.pub_wires.len(), 3);
@@ -514,10 +514,10 @@ gate b c
     #[test]
     fn synth_builtin() {
         let ast_circuit = ast::parse_circuit_from_string("
-pub x
-pubout_poly_gate[0 1 0 0 0] y y y x
-poly_gate[1 0 0 0 0] y y y y
-");
+            pub x
+            pubout_poly_gate[0 1 0 0 0] y y y x
+            poly_gate[1 0 0 0 0] y y y y
+        ");
         let mut circuit = synth::Synthesizer::<Fr, JubJubParameters>::default();
         circuit.from_ast(ast_circuit);
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
@@ -530,10 +530,10 @@ poly_gate[1 0 0 0 0] y y y y
     #[test]
     fn synth_bit_range() {
         let ast_circuit = ast::parse_circuit_from_string("
-pub x y
-bit_range[4] x
-bit_range[6] y
-");
+            pub x y
+            bit_range[4] x
+            bit_range[6] y
+        ");
         let mut circuit = synth::Synthesizer::<Fr, JubJubParameters>::default();
         circuit.from_ast(ast_circuit);
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
@@ -588,9 +588,9 @@ bit_range[6] y
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
-pub x
-pubout_poly_gate[0 1 0 0 0] y y y x
-");
+            pub x
+            pubout_poly_gate[0 1 0 0 0] y y y x
+        ");
 
         // Runtime inputs
         let public_inputs: HashMap<String, Fr> = HashMap::from([
@@ -622,8 +622,8 @@ pubout_poly_gate[0 1 0 0 0] y y y x
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
-poly_gate[0 1 0 1 0] y y x
-");
+            poly_gate[0 1 0 1 0] y y x
+        ");
 
         // Runtime inputs
         let public_inputs: HashMap<String, Fr> = HashMap::from([]);
@@ -653,11 +653,11 @@ poly_gate[0 1 0 1 0] y y x
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
-pub z
-a = add x y
-b = mul x y
-z = add a b
-");
+            pub z
+            a = add x y
+            b = mul x y
+            z = add a b
+        ");
 
         // Runtime inputs
         let public_inputs: HashMap<String, Fr> = HashMap::from([]);
@@ -690,11 +690,11 @@ z = add a b
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
-pub c
-a = xor[10] x y
-b = and[10] x y
-c = add a b
-");
+            pub c
+            a = xor[10] x y
+            b = and[10] x y
+            c = add a b
+        ");
 
         // Runtime inputs
         let public_inputs: HashMap<String, Fr> = HashMap::from([]);
@@ -718,6 +718,7 @@ c = add a b
     }
 
     #[test]
+    #[ignore]
     fn test_circuit() {
         // Generate CRS
         type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
@@ -725,12 +726,13 @@ c = add a b
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
-pub c d x y
-bit_range[64] a
-bit_range[32] b
-c = add a b
-d = mul a b
-x y = fixed_base_scalar_mul e");
+            pub c d x y
+            bit_range[64] a
+            bit_range[32] b
+            c = add a b
+            d = mul a b
+            x y = fixed_base_scalar_mul e
+        ");
 
         // Runtime inputs
         let public_inputs: HashMap<String, Fr> = HashMap::from([]);
