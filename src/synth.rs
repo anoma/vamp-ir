@@ -620,7 +620,7 @@ mod tests {
 
         // Circuit
         let ast_circuit = ast::parse_circuit_from_string("
-            poly_gate[0 1 0 1 0] y y x
+            -y^2 = 3*x - 5^6 + 8*y^3
         ");
 
         // Runtime inputs

@@ -64,10 +64,46 @@ pub enum Expression {
 }
 
 //TODO
+
+#[derive(Debug, FromPest, PartialEq, Clone)]
+#[pest_ast(rule(Rule::base))]
+pub enum Base {
+    Constant(Constant),
+    Wire(Wire),
+    GateInvocation(GateInvocation),
+}
+
+#[derive(Debug, FromPest, PartialEq, Clone)]
+#[pest_ast(rule(Rule::monomial))]
+pub struct Monomial {
+    pub base: Base,
+    pub _exponent: Option<Constant>,
+}
+
+#[derive(Debug, FromPest, PartialEq, Clone)]
+#[pest_ast(rule(Rule::term))]
+pub struct Term {
+    monomials: Vec<Monomial>,
+}
+
+#[derive(Debug, FromPest, PartialEq, Clone)]
+#[pest_ast(rule(Rule::signed_term))]
+pub struct SignedTerm {
+    pub _sign: Option<Op>,
+    pub term: Term,
+}
+
+#[derive(Debug, FromPest, PartialEq, Clone)]
+#[pest_ast(rule(Rule::op))]
+pub struct Op {
+    #[pest_ast(outer(with(span_into_str)))]
+    pub value: String,
+}
+
 #[derive(Debug, FromPest, PartialEq, Clone)]
 #[pest_ast(rule(Rule::poly))]
 pub struct PolyExpression {
-    // signed_terms: Vec<SignedTerm>
+    terms: Vec<SignedTerm>,
 }
 
 #[derive(Debug, FromPest, PartialEq, Clone)]

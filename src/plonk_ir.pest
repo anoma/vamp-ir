@@ -1,7 +1,7 @@
 WHITESPACE = _{ " " | "\t" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0'..'9' )* }
-constant = @{ "-"? ~ ASCII_DIGIT+ }
+constant = @{ ASCII_DIGIT+ }
 
 // A circuit is a collection of statements
 circuit = { SOI ~ statement* ~ EOI }
@@ -24,11 +24,13 @@ wire_list = _{ wire+ } // e.g. x y -- no arithmetics allowed
 // Polynomial is a arithmetic expression involving wires as mathematical
 // variables.
 op = { "+" | "-" }
-op_prec_2 = { "*" }
-op_prec_3 = { "^" }
-monomial = { (constant | wire | "(" ~ gate_invocation ~ ")" ) ~ (op_prec_3 ~ constant)? }
+op_prec_2 = _{ "*" }
+op_prec_3 = _{ "^" }
+base = { constant | wire | "(" ~ gate_invocation ~ ")" }
+monomial = { base ~ (op_prec_3 ~ constant)? }
 term = { monomial ~ (op_prec_2 ~ monomial)* }
-poly = { term ~ (op ~ term)* }
+signed_term = { op? ~ term }
+poly = { signed_term+ }
 
 // An expression returns a list of unnamed wires, and is eiter a poly
 // expression or a gate expression, which must be enclosed in "()".
