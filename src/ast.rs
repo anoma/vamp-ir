@@ -128,31 +128,37 @@ mod tests {
 
     #[test]
     fn no_expr() {
-        let circuit = ast::parse_circuit_from_string("def gate a -> b { gate a }
-(a b) = (b c)
-");
+        let circuit = ast::parse_circuit_from_string("
+            def gate a -> b { gate a }
+            (a b) = (b c)
+        ");
         assert_eq!(circuit.size(), 2);
     }
 
     #[test]
     fn built_in_gate() {
-        ast::parse_circuit_from_string("pubout_poly_gate[0 1 0 0 0 0] y y y y x");
+        ast::parse_circuit_from_string("
+            pubout_poly_gate[0 1 0 0 0 0] y y y y x
+        ");
     }
 
     #[test]
     #[ignore] // not implemented
     fn expr() {
-        ast::parse_circuit_from_string("c = d * (fi a b c) + b ^ 5");
+        ast::parse_circuit_from_string("
+            c = d * (fi a b c) + b ^ 5
+        ");
     }
 
     #[test]
     #[ignore] // not implemented
     fn test_circuit() {
         ast::parse_circuit_from_string("
-bit_range[6] a
-bit_range[5] b
-pub c = a + b
-pub d = a * b
-pub f = (fixed_base_scalar_mul e)");
+            bit_range[6] a
+            bit_range[5] b
+            pub c = a + b
+            pub d = a * b
+            pub f = (fixed_base_scalar_mul e)
+        ");
     }
 }
