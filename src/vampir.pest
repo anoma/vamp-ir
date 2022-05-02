@@ -22,9 +22,9 @@ alias_invocation = { "(" ~ identifier ~ wire_list? ~ ")" }
 plus = { "+" }
 minus = { "-" }
 times = { "*" }
-equals = { "=" }
+//equals = { "=" }
 
-op = _{ plus | minus | times | equals }
+op = _{ plus | minus | times }
 
 base = { whole | wire | "(" ~ alias_invocation ~ ")" }
 
@@ -32,8 +32,10 @@ exponential = { base ~ "^" ~ exponent }
 
 monomial = { exponential | base }
 
-// an expression is a chain of monomials delimited by an operation
+// an expression is a chain of monomials delimited by an arithmetic operation
 expression = { monomial ~ ( op ~ monomial )* }
+
+equation = { expression ~ "=" ~ expression }
 
 // a constraint is an expression on its own line
 constraint = { NEWLINE* ~ expression ~ NEWLINE* }
