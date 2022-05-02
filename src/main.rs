@@ -40,7 +40,7 @@ use std::fmt;
 struct VampirParser;
 
 #[derive(Debug)]
-struct Circuit(Vec<Wire>);
+struct Circuit(Vec<Node>);
 
 impl fmt::Display for Circuit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -52,22 +52,22 @@ enum CircuitObject{
     Circuit,
     Constraint,
     Expression,
-    Wire,
+    Node,
 }
 
 #[derive(Debug, Clone)]
-enum Wire {
-    Gate(String, Box<Wire>, Box<Wire>),
+enum Node {
+    Gate(String, Box<Node>, Box<Node>),
     Input(String),
     Constant(u64),
-    Exponential(Box<Wire>, usize),
+    Exponential(Box<Node>, usize),
     EOI(),
 }
 
-impl fmt::Display for Wire {
+impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Wire::Gate(name, left, right) => match name.as_str() {
+            Node::Gate(name, left, right) => match name.as_str() {
                 "sub" => {
                     write!(f, "({} - {})", left, right)
                 }
@@ -81,16 +81,16 @@ impl fmt::Display for Wire {
                     write!(f, "{}({} {})", name, left, right)
                 }
             },
-            Wire::Exponential(wire, power) => write!(f, "{}^{}", wire, power),
-            Wire::Input(name) => write!(f, "{}", name),
-            Wire::Constant(num) => write!(f, "{}", num),
-            Wire::EOI() => write!(f, ""),
+            Node::Exponential(Node, power) => write!(f, "{}^{}", Node, power),
+            Node::Input(name) => write!(f, "{}", name),
+            Node::Constant(num) => write!(f, "{}", num),
+            Node::EOI() => write!(f, ""),
         }
     }
 }
 
 fn main() {
-    let test_poly = "
+    let test_circuit= "
         x^6 - 4*y*y + 3*x  + 7
         4 - z + other_var^3
     ";
@@ -99,18 +99,17 @@ fn main() {
 
     println!("raw pairs: {:?}\n", pairs);
 
-    fn build_base(pair: Pair<Rule>) -> Wire {
+    fn build_base(pair: Pair<Rule>) -> Node {
         let inner = pair.into_inner().next().unwrap();
         println!("in build base:\n\t{:?}\n\t{:?}", inner.as_rule(), inner.as_str());
         match inner.as_rule() {
-            Rule::whole => Wire::Constant(inner.as_str().to_string().parse::<u64>().unwrap()),
-            Rule::wire => Wire::Input(inner.as_str().to_string()),
-            // alias invocation goes here
+            Rule::whole => Node::Constant(inner.as_str().to_string().parse::<u64>().unwrap()),
+            Rule::Node => Node::Input(inner.as_str().to_string()),
             _ => unreachable!(),
         }
     }
 
-    fn expand_exponential(pair: Pair<Rule>) -> Wire {
+    fn expand_exponential(pair: Pair<Rule>) -> Node {
         let mut exp_sequence = pair.clone().into_inner().flatten();
 
         let base_pair = exp_sequence.next().unwrap();
@@ -125,7 +124,7 @@ fn main() {
         let mut res = build_base(base_pair.clone());
         let base = build_base(base_pair);
         for i in 1..exp {
-            res = Wire::Gate(
+            res = Node::Gate(
                 "mul".to_string(),
                 Box::new(base.clone()),
                 Box::new(res.clone()),
@@ -134,7 +133,7 @@ fn main() {
         res
     }
 
-    fn build_exponential(pair: Pair<Rule>) -> Wire {
+    fn build_exponential(pair: Pair<Rule>) -> Node {
         let mut exp_sequence = pair.clone().into_inner().flatten();
         let base_pair = exp_sequence.next().unwrap();
         let exp = exp_sequence
@@ -144,13 +143,13 @@ fn main() {
             .to_string()
             .parse::<usize>()
             .unwrap();
-        Wire::Exponential(
+        Node::Exponential(
             Box::new(build_base(base_pair)),
             exp,
         )
     }
 
-    fn build_expression(pair: Pair<Rule>) -> Wire {
+    fn build_expression(pair: Pair<Rule>) -> Node {
         // primaries are monomials, which can be either a base or an exponential
         let inner_pair = pair.into_inner().next().unwrap();
         println!("in build expression:\n\t{:?}\n\t{:?}", inner_pair.as_rule(), inner_pair.as_str());
@@ -162,12 +161,12 @@ fn main() {
         }
     }
 
-    fn infix(lhs: Wire, op: Pair<Rule>, rhs: Wire) -> Wire {
+    fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
         match op.as_rule() {
-            Rule::plus => Wire::Gate("add".to_string(), Box::new(lhs), Box::new(rhs)),
-            Rule::minus => Wire::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs)),
-            Rule::times => Wire::Gate("mul".to_string(), Box::new(lhs), Box::new(rhs)),
-            Rule::equals => Wire::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs)),
+            Rule::plus => Node::Gate("add".to_string(), Box::new(lhs), Box::new(rhs)),
+            Rule::minus => Node::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs)),
+            Rule::times => Node::Gate("mul".to_string(), Box::new(lhs), Box::new(rhs)),
+            Rule::equals => Node::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs)),
             _ => unreachable!(),
         }
     }
@@ -180,7 +179,7 @@ fn main() {
 
     fn parse_circuit(mut pairs: Pairs<Rule>, climber: PrecClimber<Rule>) -> Circuit {
 
-        fn parse_object(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Wire {
+        fn parse_object(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Node {
             println!("in parse_circuit:\n\t{:?}\n\t{:?}", pair.as_rule(), pair.as_str());
             match pair.as_rule() {
                 Rule::constraint => {
@@ -190,7 +189,7 @@ fn main() {
                     climber.climb(pair.into_inner(), build_expression, infix)
                 },
                 Rule::EOI => {
-                    Wire::EOI()
+                    Node::EOI()
                 }
                 _ => unreachable!(),
             }
