@@ -2,27 +2,21 @@ WHITESPACE = _{ " " | "\t" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0'..'9' )* }
 
-// constant terms, coefficients, and exponents are strings of digits
-// zero is not allowed as a constant term or coefficient
 whole = @{ (ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) }
 
-// zero and one are not allowed as exponents
+// exponents are neither 0 nor 1
 exponent = @{ (!"1" ~ ASCII_NONZERO_DIGIT) ~ ASCII_DIGIT* }
-
-//integer = @{ "-"? ~ nonneg }
 
 // Atomic and immutable data unit for the IR, a wire
 wire = @{ identifier }
 wire_list = _{ wire+ } // e.g. x y -- no arithmetics allowed
 
 // alias statement defines an alias
-// alias_definition = { NEWLINE* ~ "def" ~ identifier ~ wire_list ~ ("->" ~ wire_list)? ~ "{" ~ expression* ~ "}" ~ NEWLINE* }
+alias_definition = { NEWLINE* ~ "def" ~ identifier ~ wire_list ~ ("->" ~ wire_list)? ~ "{" ~ constraint* ~ "}" ~ NEWLINE* }
 
 // alias invocations need to be surrounded by brackets to distinguish them
 // from wire identifiers
 alias_invocation = { "(" ~ identifier ~ wire_list? ~ ")" }
-
-// Polynomial Parsing
 
 // operations
 plus = { "+" }
@@ -32,42 +26,17 @@ equals = { "=" }
 
 op = _{ plus | minus | times | equals }
 
-// rem: gate needs to be single output to be used this way
-
-// a base is either a whole number, a wire, or the invocation of an alias
 base = { whole | wire | "(" ~ alias_invocation ~ ")" }
 
-// an exponential is a base raised to an exponent
 exponential = { base ~ "^" ~ exponent }
 
 monomial = { exponential | base }
 
+// an expression is a chain of monomials delimited by an operation
 expression = { monomial ~ ( op ~ monomial )* }
 
-// a power product is a monic product of monomials, i.e. no coefficient
-//power_product = { monomial ~ "*" ~ }
-
-// a term is either a monomial or a monomial multiplied by a term on its right
-// term =  { monomial ~ () }
-// term = { (nonneg ~ "*"?)? ~ monomial ~ ( "*" ~ monomial )* }
-
-// gives entire polynomial but gives us problems with "-" being attached to the entire remaining polynomial
-// this is one place where we need operator precedence climbing
-// poly = { term ~ sign ~ poly | term } 
-
-// alias invocations need to be surrounded by brackets to distinguish them
-// from wire identifiers
-// expression = { NEWLINE* ~ alias_invocation ~NEWLINE* | poly }
-
-// equation from two expressions
-//equation = { expression ~ equals ~ expression }
-
-// a constraint can be the equation of two expressions or
-// a single expression (assumed to be constrained to 0)
+// a constraint is an expression on its own line
 constraint = { NEWLINE* ~ expression ~ NEWLINE* }
-
-// a subcircuit is a collection of constraints
-// subcircuit = { constraint+ }
 
 // A circuit is the entire list of constraints
 circuit = { SOI ~ constraint+ ~ EOI }
