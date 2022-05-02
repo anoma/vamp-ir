@@ -33,12 +33,12 @@ exponential = { base ~ "^" ~ exponent }
 monomial = { exponential | base }
 
 // an expression is a chain of monomials delimited by an arithmetic operation
-expression = { monomial ~ ( op ~ monomial )* }
+expression = { ( monomial ~ ( op ~ monomial )* ) }
 
 equation = { expression ~ "=" ~ expression }
 
 // a constraint is an expression on its own line
-constraint = { NEWLINE* ~ expression ~ NEWLINE* }
+constraint = { NEWLINE* ~ ( equation | expression ) ~ NEWLINE* }
 
 // A circuit is the entire list of constraints
 circuit = { SOI ~ constraint+ ~ EOI }

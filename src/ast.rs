@@ -27,14 +27,6 @@ impl fmt::Display for Circuit {
     }
 }
 
-pub enum CircuitObject {
-    Circuit,
-    //Constraint,
-    //Expression,
-    Equation(Node, Node),
-    Node,
-}
-
 pub enum Wire {
     Input(String),
     Internal(String),
@@ -125,34 +117,38 @@ fn build_exponential(pair: Pair<Rule>) -> Node {
     Node::Exponential(Box::new(build_base(base_pair)), exp)
 }
 
-fn build_expression(pair: Pair<Rule>) -> Node {
-    // primaries are monomials, which can be either a base or an exponential
-    let inner_pair = pair.into_inner().next().unwrap();
+fn build_expression(mut pairs: Pairs<Rule>, climber: &PrecClimber<Rule>) -> Node {
+    println!("in build expression:\n\t{:?}", pairs);
+    climber.climb(pairs, build_primary, infix)
+}
+
+fn build_primary(pair: Pair<Rule>) -> Node {
+    // primaries are monomials, which can be either a base, an exponential
+    let inner = pair.into_inner().next().unwrap();
     println!(
-        "in build expression:\n\t{:?}\n\t{:?}",
-        inner_pair.as_rule(),
-        inner_pair.as_str()
+        "in build primary:\n\t{:?}\n\t{:?}",
+        inner.as_rule(),
+        inner.as_str()
     );
-    match inner_pair.as_rule() {
-        Rule::base => build_base(inner_pair),
-        Rule::exponential => build_exponential(inner_pair),
-        Rule::expression => build_expression(inner_pair.into_inner().next().unwrap()),
+    match inner.as_rule() {
+        Rule::base => build_base(inner),
+        Rule::exponential => build_exponential(inner),
         _ => unreachable!(),
     }
 }
 
-fn build_equation(pair: Pair<Rule>) -> Node {
-    // primaries are monomials, which can be either a base or an exponential
-    let inner_pair = pair.into_inner().next().unwrap();
-    println!(
-        "in build expression:\n\t{:?}\n\t{:?}",
-        inner_pair.as_rule(),
-        inner_pair.as_str()
-    );
-    match inner_pair.as_rule() {
-        Rule::base => build_base(inner_pair),
-        Rule::exponential => build_exponential(inner_pair),
-        Rule::expression => build_expression(inner_pair.into_inner().next().unwrap()),
+fn build_equation(mut pairs: Pairs<Rule>, climber: &PrecClimber<Rule>) -> Node {
+    println!("in build equation:\n\t{:?}", pairs);
+    let lhs = build_expression(pairs.next().unwrap().into_inner(), climber);
+    let rhs = build_expression(pairs.next().unwrap().into_inner(), climber);
+    Node::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs))
+}
+
+fn build_constraint(mut pairs: Pairs<Rule>, climber: &PrecClimber<Rule>) -> Node {
+    let inner = pairs.next().unwrap();
+    match inner.as_rule() {
+        Rule::expression => build_expression(inner.into_inner(), climber),
+        Rule::equation => build_equation(inner.into_inner(), climber),
         _ => unreachable!(),
     }
 }
@@ -162,18 +158,14 @@ fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
         Rule::plus => Node::Gate("add".to_string(), Box::new(lhs), Box::new(rhs)),
         Rule::minus => Node::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs)),
         Rule::times => Node::Gate("mul".to_string(), Box::new(lhs), Box::new(rhs)),
-        //Rule::equals => Node::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs)),
         _ => unreachable!(),
     }
 }
 
 pub fn build_circuit(mut pairs: Pairs<Rule>) -> Circuit {
     let climber = PrecClimber::new(vec![
-        Operator::new(Rule::plus, Assoc::Left)
-            //| Operator::new(Rule::equals, Assoc::Left)
-            | Operator::new(Rule::minus, Assoc::Left),
+        Operator::new(Rule::plus, Assoc::Left) | Operator::new(Rule::minus, Assoc::Left),
         Operator::new(Rule::times, Assoc::Left),
-
     ]);
 
     fn build_node(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Node {
@@ -182,10 +174,12 @@ pub fn build_circuit(mut pairs: Pairs<Rule>) -> Circuit {
             pair.as_rule(),
             pair.as_str()
         );
-        match pair.as_rule() {
-            Rule::constraint => build_node(pair.into_inner().next().unwrap(), climber),
-            Rule::expression => climber.climb(pair.into_inner(), build_expression, infix),
-            Rule::equation => build_equation(pair.into_inner().next().unwrap()),
+        let rule = pair.as_rule();
+        let mut inner = pair.into_inner();
+        match rule {
+            Rule::constraint => build_constraint(inner, climber),
+            Rule::expression => build_expression(inner, climber),
+            Rule::equation => build_equation(inner, climber),
             Rule::EOI => Node::EndOfInput(),
             _ => unreachable!(),
         }
@@ -206,14 +200,18 @@ pub fn parse(vampir: &str) -> Circuit {
 
 #[cfg(test)]
 mod tests {
-use crate::ast::{build_circuit, parse};
+    use crate::ast::{build_circuit, parse};
 
     #[test]
     pub(crate) fn test_circuit() {
-        let test_circuit = "
-            x^6 - 4*y*y + 3*x  + 7
-            4 - z - other_var^3
-        ";
+        let test_circuit = "x*z*w - 3 = y - (w + x)";
         let circuit = parse(test_circuit);
     }
+
+    // #[test]
+    // pub(crate) fn test_equation() {
+    //     let eq_circuit = "x*z*w - 3 = y - z";
+    //     let sub_circuit = "x*z*w - 3 = y - z";
+    //     let circuit = parse(test_circuit);
+    // }
 }
