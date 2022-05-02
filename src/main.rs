@@ -60,6 +60,7 @@ enum Wire {
     Gate(String, Box<Wire>, Box<Wire>),
     Input(String),
     Constant(u64),
+    Exponential(Box<Wire>, usize),
     EOI(),
 }
 
@@ -80,6 +81,7 @@ impl fmt::Display for Wire {
                     write!(f, "{}({} {})", name, left, right)
                 }
             },
+            Wire::Exponential(wire, power) => write!(f, "{}^{}", wire, power),
             Wire::Input(name) => write!(f, "{}", name),
             Wire::Constant(num) => write!(f, "{}", num),
             Wire::EOI() => write!(f, ""),
@@ -99,7 +101,7 @@ fn main() {
 
     fn build_base(pair: Pair<Rule>) -> Wire {
         let inner = pair.into_inner().next().unwrap();
-        println!("in build base: {:?}", inner.as_rule());
+        println!("in build base:\n\t{:?}\n\t{:?}", inner.as_rule(), inner.as_str());
         match inner.as_rule() {
             Rule::whole => Wire::Constant(inner.as_str().to_string().parse::<u64>().unwrap()),
             Rule::wire => Wire::Input(inner.as_str().to_string()),
@@ -108,7 +110,7 @@ fn main() {
         }
     }
 
-    fn build_exponential(pair: Pair<Rule>) -> Wire {
+    fn expand_exponential(pair: Pair<Rule>) -> Wire {
         let mut exp_sequence = pair.clone().into_inner().flatten();
 
         let base_pair = exp_sequence.next().unwrap();
@@ -132,10 +134,26 @@ fn main() {
         res
     }
 
+    fn build_exponential(pair: Pair<Rule>) -> Wire {
+        let mut exp_sequence = pair.clone().into_inner().flatten();
+        let base_pair = exp_sequence.next().unwrap();
+        let exp = exp_sequence
+            .last()
+            .unwrap()
+            .as_str()
+            .to_string()
+            .parse::<usize>()
+            .unwrap();
+        Wire::Exponential(
+            Box::new(build_base(base_pair)),
+            exp,
+        )
+    }
+
     fn build_expression(pair: Pair<Rule>) -> Wire {
         // primaries are monomials, which can be either a base or an exponential
         let inner_pair = pair.into_inner().next().unwrap();
-        println!("in build expression: {:?}", inner_pair.as_rule());
+        println!("in build expression:\n\t{:?}\n\t{:?}", inner_pair.as_rule(), inner_pair.as_str());
         match inner_pair.as_rule() {
             Rule::base => build_base(inner_pair),
             Rule::exponential => build_exponential(inner_pair),
@@ -160,15 +178,16 @@ fn main() {
         Operator::new(Rule::equals, Assoc::Left),
     ]);
 
-    fn parse_circuit(mut pairs: Pairs<Rule>) -> Circuit {
-        fn parse_object(pair: Pair<Rule>) -> Wire {
-            println!("in parse_circuit: {:?}", pair.as_rule());
+    fn parse_circuit(mut pairs: Pairs<Rule>, climber: PrecClimber<Rule>) -> Circuit {
+
+        fn parse_object(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Wire {
+            println!("in parse_circuit:\n\t{:?}\n\t{:?}", pair.as_rule(), pair.as_str());
             match pair.as_rule() {
                 Rule::constraint => {
-                    parse_object(pair.into_inner().next().unwrap())
+                    parse_object(pair.into_inner().next().unwrap(), &climber)
                 },
                 Rule::expression => {
-                    build_expression(pair.into_inner().next().unwrap())
+                    climber.climb(pair.into_inner(), build_expression, infix)
                 },
                 Rule::EOI => {
                     Wire::EOI()
@@ -176,10 +195,11 @@ fn main() {
                 _ => unreachable!(),
             }
         }
-        Circuit(pairs.next().unwrap().into_inner().map( |pair| parse_object(pair)).collect::<Vec<_>>())
+        Circuit(pairs.next().unwrap().into_inner().map( |pair| parse_object(pair, &climber)).collect::<Vec<_>>())
     }
 
-    let result = parse_circuit(pairs);
+    let result = parse_circuit(pairs, climber);
+    println!("original:\n{}", test_poly);
     println!("results\n{}\n", result);
 }
 >>>>>>> 8d2ca0c... Added precendence climbing and exponential expansion
