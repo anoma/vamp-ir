@@ -49,7 +49,7 @@ impl fmt::Display for Node {
                     write!(f, "({} - {})", left, right)
                 }
                 "add" => {
-                    write!(f, "{} + {}", left, right)
+                    write!(f, "({} + {})", left, right)
                 }
                 "mul" => {
                     write!(f, "{}*{}", left, right)
@@ -117,13 +117,35 @@ fn build_exponential(pair: Pair<Rule>) -> Node {
     Node::Exponential(Box::new(build_base(base_pair)), exp)
 }
 
-fn build_expression(mut pairs: Pairs<Rule>, climber: &PrecClimber<Rule>) -> Node {
-    println!("in build expression:\n\t{:?}", pairs);
-    climber.climb(pairs, build_primary, infix)
+fn build_expression(pair: Pair<Rule>) -> Node {
+    let inner = pair.clone().into_inner();
+    println!("in build_expression:\n\t{:?}\n\t{:?}", pair.as_rule(), inner.clone().map( | pair| pair.as_str()).collect::<Vec<_>>().join(", "));
+    let climber = PrecClimber::new(vec![
+        Operator::new(Rule::plus, Assoc::Left) | Operator::new(Rule::minus, Assoc::Left),
+        Operator::new(Rule::times, Assoc::Left),
+    ]);
+
+    let res = climber.climb(inner, build_primary, infix);
+    println!("results {}", res);
+    res
+}
+
+fn build_monomial(pair: Pair<Rule>) -> Node {
+    let inner = pair.into_inner().next().unwrap();
+    println!(
+        "in build monomial:\n\t{:?}\n\t{:?}",
+        inner.as_rule(),
+        inner.as_str()
+    );
+    match inner.as_rule() {
+        Rule::base => build_base(inner),
+        Rule::exponential => build_exponential(inner),
+        Rule::expression => build_expression(inner),
+        _ => unreachable!(),
+    }
 }
 
 fn build_primary(pair: Pair<Rule>) -> Node {
-    // primaries are monomials, which can be either a base, an exponential
     let inner = pair.into_inner().next().unwrap();
     println!(
         "in build primary:\n\t{:?}\n\t{:?}",
@@ -133,22 +155,7 @@ fn build_primary(pair: Pair<Rule>) -> Node {
     match inner.as_rule() {
         Rule::base => build_base(inner),
         Rule::exponential => build_exponential(inner),
-        _ => unreachable!(),
-    }
-}
-
-fn build_equation(mut pairs: Pairs<Rule>, climber: &PrecClimber<Rule>) -> Node {
-    println!("in build equation:\n\t{:?}", pairs);
-    let lhs = build_expression(pairs.next().unwrap().into_inner(), climber);
-    let rhs = build_expression(pairs.next().unwrap().into_inner(), climber);
-    Node::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs))
-}
-
-fn build_constraint(mut pairs: Pairs<Rule>, climber: &PrecClimber<Rule>) -> Node {
-    let inner = pairs.next().unwrap();
-    match inner.as_rule() {
-        Rule::expression => build_expression(inner.into_inner(), climber),
-        Rule::equation => build_equation(inner.into_inner(), climber),
+        Rule::expression => build_expression(inner),
         _ => unreachable!(),
     }
 }
@@ -163,27 +170,36 @@ fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
 }
 
 pub fn build_circuit(mut pairs: Pairs<Rule>) -> Circuit {
+
     let climber = PrecClimber::new(vec![
         Operator::new(Rule::plus, Assoc::Left) | Operator::new(Rule::minus, Assoc::Left),
         Operator::new(Rule::times, Assoc::Left),
     ]);
 
-    fn build_node(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Node {
+    println!("pairs {:?}", pairs);
+
+    fn build_node (pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Node {
         println!(
             "in parse_circuit:\n\t{:?}\n\t{:?}",
             pair.as_rule(),
             pair.as_str()
         );
         let rule = pair.as_rule();
-        let mut inner = pair.into_inner();
         match rule {
-            Rule::constraint => build_constraint(inner, climber),
-            Rule::expression => build_expression(inner, climber),
-            Rule::equation => build_equation(inner, climber),
+            Rule::constraint => build_node(pair.into_inner().next().unwrap(), climber),
+            Rule::expression => build_expression(pair),
+            Rule::equation => {
+                Node::Gate(
+                    "sub".to_string(),
+                    Box::new(build_node(pair.clone().into_inner().next().unwrap(), climber)),
+                    Box::new(build_node(pair.into_inner().next().unwrap(), climber))
+                )
+            }
             Rule::EOI => Node::EndOfInput(),
             _ => unreachable!(),
         }
-    }
+    };
+
     Circuit(
         pairs
             .next()
@@ -204,14 +220,14 @@ mod tests {
 
     #[test]
     pub(crate) fn test_circuit() {
-        let test_circuit = "x*z*w - 3 = y - (w + x)";
+        let test_circuit = "x*z*w - 3 = y - w + x";
         let circuit = parse(test_circuit);
     }
 
-    // #[test]
-    // pub(crate) fn test_equation() {
-    //     let eq_circuit = "x*z*w - 3 = y - z";
-    //     let sub_circuit = "x*z*w - 3 = y - z";
-    //     let circuit = parse(test_circuit);
-    // }
+    #[test]
+    pub(crate) fn test_bracketing() {
+        let test_circuit = "x - (z*w*(y + z)-x)- (w+z)";
+        let circuit = parse(test_circuit);
+        println!("{}", circuit);
+    }
 }
