@@ -1,186 +1,197 @@
-use pest::{Parser, Span};
-use from_pest::FromPest;
+use pest::Parser;
+
+use pest::iterators::{Pair, Pairs};
+use pest::prec_climber::PrecClimber;
+use pest::prec_climber::{Assoc, Operator};
+
+use std::fmt;
 
 #[derive(Parser)]
 #[grammar = "vampir.pest"]
 struct VampirParser;
 
-#[derive(Debug, FromPest, PartialEq, Clone)]
-#[pest_ast(rule(Rule::nonneg))]
-pub struct Nonneg {
-    #[pest_ast(outer(with(span_into_str)))]
-    pub value: String,
-}
+#[derive(Debug)]
+pub struct Circuit(Vec<Node>);
 
-#[derive(Debug, FromPest, PartialEq, Clone)]
-#[pest_ast(rule(Rule::integer))]
-pub struct Integer {
-    #[pest_ast(outer(with(span_into_str)))]
-    pub value: String,
-}
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::identifier))]
-// pub struct Identifier {
-//     #[pest_ast(outer(with(span_into_str)))]
-//     pub value: String,
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::wire))]
-// pub struct Wire{
-//     #[pest_ast(outer(rule(Rule::wire_type), with(span_into_str)))]
-//     pub typ: String,
-//     pub name: Identifier
-// }
-
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::statement))]
-// pub enum Statement {
-//     PubStatement(PubStatement),
-//     AliasStatement(AliasStatement),
-//     ConstraintStatement(ConstraintStatement)
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::pub_statement))]
-// pub struct PubStatement {
-//     pub wires: Vec<Identifier>
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::alias_statement))]
-// pub struct AliasStatement {
-//     pub name: Identifier,
-//     pub inputs: Vec<Wire>,
-//     pub _arrow: Option<AliasArrow>,
-//     pub outputs: Vec<Wire>,
-//     pub body: Vec<ConstraintStatement>,
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::alias_arrow))]
-// pub struct AliasArrow;
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::constraint_statement))]
-// pub enum ConstraintStatement {
-//     GateInvocationWithOutput(GateInvocationWithOutput),
-//     EqualConstraint(Expression, Expression),
-//     GateInvocation(GateInvocation)
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::expression))]
-// pub enum Expression {
-//     GateInvocation(GateInvocation),
-//     PolyExpression(PolyExpression)
-// }
-
-// //TODO
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::base))]
-// pub enum Base {
-//     Constant(Constant),
-//     Wire(Wire),
-//     GateInvocation(GateInvocation),
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::monomial))]
-// pub struct Monomial {
-//     pub base: Base,
-//     pub _exponent: Option<Constant>,
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::term))]
-// pub struct Term {
-//     monomials: Vec<Monomial>,
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::signed_term))]
-// pub struct SignedTerm {
-//     pub _sign: Option<Op>,
-//     pub term: Term,
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::op))]
-// pub struct Op {
-//     #[pest_ast(outer(with(span_into_str)))]
-//     pub value: String,
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::poly))]
-// pub struct PolyExpression {
-//     terms: Vec<SignedTerm>,
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::gate_invocation))]
-// pub struct GateInvocation {
-//     pub name: Identifier,
-//     pub parameters: Vec<Constant>,
-//     // TODO: Support general expressions here
-//     pub wires: Vec<Wire>
-// }
-
-// #[derive(Debug, FromPest, PartialEq, Clone)]
-// #[pest_ast(rule(Rule::gate_invocation_with_output))]
-// pub struct GateInvocationWithOutput {
-//     pub out_wires: Vec<Wire>,
-//     pub name: Identifier,
-//     pub parameters: Vec<Constant>,
-//     // TODO: Support general expressions here
-//     pub wires: Vec<Wire>
-// }
-
-
-#[derive(Debug, FromPest, PartialEq, Clone)]
-#[pest_ast(rule(Rule::constraint))]
-pub struct Constraint {
-
-}
-
-#[derive(Debug, FromPest, PartialEq, Clone)]
-#[pest_ast(rule(Rule::circuit))]
-pub struct Circuit {
-    pub constraints: Vec<Constraint>,
-    //pub eoi: EOI
-}
-
-#[derive(Debug, FromPest, PartialEq, Clone)]
-#[pest_ast(rule(Rule::EOI))]
-pub struct EOI;
-
-impl Circuit {
-    pub fn size(&self) -> usize {
-        self.statements.len()
+impl fmt::Display for Circuit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Circuit\n\t{}",
+            self.0
+                .iter()
+                .map(|constraint| format!("{}", constraint))
+                .collect::<Vec<_>>()
+                .join("\n\t")
+        )
     }
 }
 
-pub fn parse_circuit_from_string(input: &str) -> Circuit {
-    let mut pest_output = VampirParser::parse(Rule::circuit, input).unwrap();
-    Circuit::from_pest(&mut pest_output).unwrap()
+pub enum CircuitObject {
+    Circuit,
+    Constraint,
+    Expression,
+    Node,
 }
 
-fn span_into_str(span: Span) -> String {
-    span.as_str().to_string()
+pub enum Wire {
+    Input(String),
+    Internal(String),
 }
 
+#[derive(Debug, Clone)]
+pub enum Node {
+    Gate(String, Box<Node>, Box<Node>),
+    Wire(String),
+    Constant(u64),
+    Exponential(Box<Node>, usize),
+    EOI(),
+}
+
+impl fmt::Display for Node {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Node::Gate(name, left, right) => match name.as_str() {
+                "sub" => {
+                    write!(f, "({} - {})", left, right)
+                }
+                "add" => {
+                    write!(f, "{} + {}", left, right)
+                }
+                "mul" => {
+                    write!(f, "{}*{}", left, right)
+                }
+                _ => {
+                    write!(f, "{}({} {})", name, left, right)
+                }
+            },
+            Node::Exponential(Node, power) => write!(f, "{}^{}", Node, power),
+            Node::Wire(name) => write!(f, "{}", name),
+            Node::Constant(num) => write!(f, "{}", num),
+            Node::EOI() => write!(f, ""),
+        }
+    }
+}
+
+pub(crate) fn build_base(pair: Pair<Rule>) -> Node {
+    let inner = pair.into_inner().next().unwrap();
+    println!(
+        "in build base:\n\t{:?}\n\t{:?}",
+        inner.as_rule(),
+        inner.as_str()
+    );
+    match inner.as_rule() {
+        Rule::whole => Node::Constant(inner.as_str().to_string().parse::<u64>().unwrap()),
+        Rule::wire => Node::Wire(inner.as_str().to_string()),
+        _ => unreachable!(),
+    }
+}
+
+pub(crate) fn expand_exponential(pair: Pair<Rule>) -> Node {
+    let mut exp_sequence = pair.clone().into_inner().flatten();
+
+    let base_pair = exp_sequence.next().unwrap();
+    let exp = exp_sequence
+        .last()
+        .unwrap()
+        .as_str()
+        .to_string()
+        .parse::<usize>()
+        .unwrap();
+
+    let mut res = build_base(base_pair.clone());
+    let base = build_base(base_pair);
+    for i in 1..exp {
+        res = Node::Gate(
+            "mul".to_string(),
+            Box::new(base.clone()),
+            Box::new(res.clone()),
+        )
+    }
+    res
+}
+
+pub(crate) fn build_exponential(pair: Pair<Rule>) -> Node {
+    let mut exp_sequence = pair.clone().into_inner().flatten();
+    let base_pair = exp_sequence.next().unwrap();
+    let exp = exp_sequence
+        .last()
+        .unwrap()
+        .as_str()
+        .to_string()
+        .parse::<usize>()
+        .unwrap();
+    Node::Exponential(Box::new(build_base(base_pair)), exp)
+}
+
+pub(crate) fn build_expression(pair: Pair<Rule>) -> Node {
+    // primaries are monomials, which can be either a base or an exponential
+    let inner_pair = pair.into_inner().next().unwrap();
+    println!(
+        "in build expression:\n\t{:?}\n\t{:?}",
+        inner_pair.as_rule(),
+        inner_pair.as_str()
+    );
+    match inner_pair.as_rule() {
+        Rule::base => build_base(inner_pair),
+        Rule::exponential => build_exponential(inner_pair),
+        Rule::expression => build_expression(inner_pair.into_inner().next().unwrap()),
+        _ => unreachable!(),
+    }
+}
+
+pub(crate) fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
+    match op.as_rule() {
+        Rule::plus => Node::Gate("add".to_string(), Box::new(lhs), Box::new(rhs)),
+        Rule::minus => Node::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs)),
+        Rule::times => Node::Gate("mul".to_string(), Box::new(lhs), Box::new(rhs)),
+        Rule::equals => Node::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs)),
+        _ => unreachable!(),
+    }
+}
+
+pub(crate) fn build_circuit(mut pairs: Pairs<Rule>) -> Circuit {
+    let climber = PrecClimber::new(vec![
+        Operator::new(Rule::plus, Assoc::Left) | Operator::new(Rule::minus, Assoc::Left),
+        Operator::new(Rule::times, Assoc::Left),
+        Operator::new(Rule::equals, Assoc::Left),
+    ]);
+
+    pub(crate) fn build_node(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Node {
+        println!(
+            "in parse_circuit:\n\t{:?}\n\t{:?}",
+            pair.as_rule(),
+            pair.as_str()
+        );
+        match pair.as_rule() {
+            Rule::constraint => build_node(pair.into_inner().next().unwrap(), &climber),
+            Rule::expression => climber.climb(pair.into_inner(), build_expression, infix),
+            Rule::EOI => Node::EOI(),
+            _ => unreachable!(),
+        }
+    }
+    Circuit(
+        pairs
+            .next()
+            .unwrap()
+            .into_inner()
+            .map(|pair| build_node(pair, &climber))
+            .collect::<Vec<_>>(),
+    )
+}
 
 #[cfg(test)]
 mod tests {
-    use crate::ast;
+    use crate::ast::*;
 
     #[test]
-    fn test_polynomial() {
-        let poly = VampirParser::parse(Rule::poly, "x^3 + a*x + b - y*y").unwrap();
-        println!("{:?}", poly);
+    pub(crate) fn test_circuit() {
+        let test_circuit = "
+            x^6 - 4*y*y + 3*x  + 7
+            4 - z + other_var^3
+        ";
+        let raw = VampirParser::parse(Rule::circuit, test_circuit).unwrap();
+        let circuit = build_circuit(raw);
+        println!("{}", circuit);
     }
 }
