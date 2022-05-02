@@ -10,7 +10,7 @@ use std::fmt;
 #[grammar = "vampir.pest"]
 struct VampirParser;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Circuit(Vec<Node>);
 
 impl fmt::Display for Circuit {
@@ -39,13 +39,13 @@ pub enum Wire {
     Internal(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Gate(String, Box<Node>, Box<Node>),
     Wire(String),
     Constant(u64),
     Exponential(Box<Node>, usize),
-    EOI(),
+    EndOfInput(),
 }
 
 impl fmt::Display for Node {
@@ -65,15 +65,15 @@ impl fmt::Display for Node {
                     write!(f, "{}({} {})", name, left, right)
                 }
             },
-            Node::Exponential(Node, power) => write!(f, "{}^{}", Node, power),
+            Node::Exponential(node, power) => write!(f, "{}^{}", node, power),
             Node::Wire(name) => write!(f, "{}", name),
             Node::Constant(num) => write!(f, "{}", num),
-            Node::EOI() => write!(f, ""),
+            Node::EndOfInput() => write!(f, ""),
         }
     }
 }
 
-pub(crate) fn build_base(pair: Pair<Rule>) -> Node {
+fn build_base(pair: Pair<Rule>) -> Node {
     let inner = pair.into_inner().next().unwrap();
     println!(
         "in build base:\n\t{:?}\n\t{:?}",
@@ -87,7 +87,7 @@ pub(crate) fn build_base(pair: Pair<Rule>) -> Node {
     }
 }
 
-pub(crate) fn expand_exponential(pair: Pair<Rule>) -> Node {
+fn expand_exponential(pair: Pair<Rule>) -> Node {
     let mut exp_sequence = pair.clone().into_inner().flatten();
 
     let base_pair = exp_sequence.next().unwrap();
@@ -111,7 +111,7 @@ pub(crate) fn expand_exponential(pair: Pair<Rule>) -> Node {
     res
 }
 
-pub(crate) fn build_exponential(pair: Pair<Rule>) -> Node {
+fn build_exponential(pair: Pair<Rule>) -> Node {
     let mut exp_sequence = pair.clone().into_inner().flatten();
     let base_pair = exp_sequence.next().unwrap();
     let exp = exp_sequence
@@ -124,7 +124,7 @@ pub(crate) fn build_exponential(pair: Pair<Rule>) -> Node {
     Node::Exponential(Box::new(build_base(base_pair)), exp)
 }
 
-pub(crate) fn build_expression(pair: Pair<Rule>) -> Node {
+fn build_expression(pair: Pair<Rule>) -> Node {
     // primaries are monomials, which can be either a base or an exponential
     let inner_pair = pair.into_inner().next().unwrap();
     println!(
@@ -140,7 +140,7 @@ pub(crate) fn build_expression(pair: Pair<Rule>) -> Node {
     }
 }
 
-pub(crate) fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
+fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     match op.as_rule() {
         Rule::plus => Node::Gate("add".to_string(), Box::new(lhs), Box::new(rhs)),
         Rule::minus => Node::Gate("sub".to_string(), Box::new(lhs), Box::new(rhs)),
@@ -150,23 +150,23 @@ pub(crate) fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     }
 }
 
-pub(crate) fn build_circuit(mut pairs: Pairs<Rule>) -> Circuit {
+pub fn build_circuit(mut pairs: Pairs<Rule>) -> Circuit {
     let climber = PrecClimber::new(vec![
-        Operator::new(Rule::plus, Assoc::Left) | Operator::new(Rule::minus, Assoc::Left),
+        Operator::new(Rule::plus, Assoc::Left) | Operator::new(Rule::equals, Assoc::Left) | Operator::new(Rule::minus, Assoc::Left),
         Operator::new(Rule::times, Assoc::Left),
-        Operator::new(Rule::equals, Assoc::Left),
+
     ]);
 
-    pub(crate) fn build_node(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Node {
+    fn build_node(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Node {
         println!(
             "in parse_circuit:\n\t{:?}\n\t{:?}",
             pair.as_rule(),
             pair.as_str()
         );
         match pair.as_rule() {
-            Rule::constraint => build_node(pair.into_inner().next().unwrap(), &climber),
+            Rule::constraint => build_node(pair.into_inner().next().unwrap(), climber),
             Rule::expression => climber.climb(pair.into_inner(), build_expression, infix),
-            Rule::EOI => Node::EOI(),
+            Rule::EOI => Node::EndOfInput(),
             _ => unreachable!(),
         }
     }
@@ -180,18 +180,33 @@ pub(crate) fn build_circuit(mut pairs: Pairs<Rule>) -> Circuit {
     )
 }
 
+pub fn parse(vampir: &str) -> Circuit {
+    build_circuit(VampirParser::parse(Rule::circuit, vampir).unwrap())
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::ast::*;
+use crate::ast::{build_circuit, parse};
 
     #[test]
     pub(crate) fn test_circuit() {
         let test_circuit = "
             x^6 - 4*y*y + 3*x  + 7
-            4 - z + other_var^3
+            4 - z = other_var^3
         ";
-        let raw = VampirParser::parse(Rule::circuit, test_circuit).unwrap();
-        let circuit = build_circuit(raw);
-        println!("{}", circuit);
+        let circuit = parse(test_circuit);
+    }
+
+    #[test]
+    pub(crate) fn test_equation() {
+        let equation_string = "
+            x - y = z^3
+        ";
+        let expression_string = "
+            x - y - z^3
+        ";
+        let equation = parse(equation_string);
+        let expression = parse(expression_string);
+        assert_eq!(equation, expression);
     }
 }

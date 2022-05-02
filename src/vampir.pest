@@ -30,7 +30,7 @@ minus = { "-" }
 times = { "*" }
 equals = { "=" }
 
-op = _{ plus | minus | times }
+op = _{ plus | minus | times | equals }
 
 // rem: gate needs to be single output to be used this way
 
