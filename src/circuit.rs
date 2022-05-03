@@ -1,7 +1,14 @@
+use std::fmt;
+use crate::VampirParser;
+
 #[derive(Debug, PartialEq)]
 pub struct Circuit(pub Vec<Node>);
 
-use std::fmt;
+impl From<&str> for Circuit {
+    fn from(item: &str) -> Self {
+        VampirParser::parse_circuit(item)
+    }
+}
 
 impl fmt::Display for Circuit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

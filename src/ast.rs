@@ -1,6 +1,6 @@
 use pest::{
     Parser,
-    iterators::{Pair, Pairs},
+    iterators::Pair,
     prec_climber::{Assoc, Operator, PrecClimber}
 };
 
@@ -22,6 +22,47 @@ lazy_static! {
     );
 }
 
+impl VampirParser {
+    pub fn parse_circuit(input: &str) -> Circuit {
+        Circuit(
+            VampirParser::parse(Rule::circuit, input).unwrap()
+                .next()
+                .unwrap()
+                .into_inner()
+                .map(VampirParser::build_node)
+                .collect::<Vec<_>>()
+        )
+    }
+
+    pub fn build_node(pair: Pair<Rule>) -> Node {
+        let rule = pair.as_rule();
+        let mut inner = pair.into_inner();
+        match rule {
+            Rule::constraint => VampirParser::build_node(inner.next().unwrap()),
+            Rule::expression => CLIMBER.climb(inner, primary, infix),
+            Rule::equation => {
+                Node::Gate(
+                    "sub".to_string(),
+                    Box::new(VampirParser::build_node(inner.next().unwrap())),
+                    Box::new(VampirParser::build_node(inner.next().unwrap()))
+                )
+            }
+            Rule::EOI => Node::EndOfInput(),
+            _ => unreachable!(),
+        }
+    }
+    pub fn build_exponential(pair: Pair<Rule>) -> Node {
+        let mut inner = pair.into_inner();
+        let base = inner.next().unwrap();
+        let exp = inner.next().unwrap().as_str().to_string().parse::<usize>().unwrap();
+        match base.as_rule() {
+            Rule::wire => Node::Exponential(Box::new(Wire(base.as_str().to_string())), exp),
+            Rule::whole => Node::Exponential(Box::new(Constant(base.as_str().to_string().parse::<u64>().unwrap())), exp),
+            _ => unreachable!(),
+        }
+    }
+}
+
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     match op.as_rule() {
@@ -37,55 +78,15 @@ fn primary(pair: Pair<Rule>) -> Node {
     match inner.as_rule() {
         Rule::whole => Node::Constant(inner.as_str().to_string().parse::<u64>().unwrap()),
         Rule::wire => Node::Wire(inner.as_str().to_string()),
-        Rule::exponential => build_exponential(inner),
+        Rule::exponential => VampirParser::build_exponential(inner),
         Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
         _ => unreachable!(),
     }
 }
 
-fn build_exponential(pair: Pair<Rule>) -> Node {
-    let mut inner = pair.into_inner();
-    let base = inner.next().unwrap();
-    let exp = inner.next().unwrap().as_str().to_string().parse::<usize>().unwrap();
-    match base.as_rule() {
-        Rule::wire => Node::Exponential(Box::new(Wire(base.as_str().to_string())), exp),
-        Rule::whole => Node::Exponential(Box::new(Constant(base.as_str().to_string().parse::<u64>().unwrap())), exp),
-        _ => unreachable!(),
-    }
-}
-
-fn build_node(pair: Pair<Rule>) -> Node {
-    let rule = pair.as_rule();
-    let mut inner = pair.into_inner();
-    match rule {
-        Rule::constraint => build_node(inner.next().unwrap()),
-        Rule::expression => CLIMBER.climb(inner, primary, infix),
-        Rule::equation => {
-            Node::Gate(
-                "sub".to_string(),
-                Box::new(build_node(inner.next().unwrap())),
-                Box::new(build_node(inner.next().unwrap()))
-            )
-        }
-        Rule::EOI => Node::EndOfInput(),
-        _ => unreachable!(),
-    }
-}
-
-fn build_circuit(mut pairs: Pairs<Rule>) -> Circuit {
-    Circuit(
-        pairs
-            .next()
-            .unwrap()
-            .into_inner()
-            .map(|pair| build_node(pair))
-            .collect::<Vec<_>>()
-    )
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::ast::*;
+    use crate::ast::VampirParser;
 
     #[test]
     pub(crate) fn test_circuit() {
@@ -93,12 +94,12 @@ mod tests {
             x*z*w - 3 = y - w + x
             x^3 + a*x + b - y^2
             ";
-        build_circuit(VampirParser::parse(Rule::circuit, test_circuit).unwrap());
+        VampirParser::parse_circuit(test_circuit);
     }
 
     #[test]
     pub(crate) fn test_bracketing() {
         let test_circuit = "x - (w*(y - z - w)-x)*(w+z)";
-        build_circuit(VampirParser::parse(Rule::circuit, test_circuit).unwrap());
+        VampirParser::parse_circuit(test_circuit);
     }
 }
