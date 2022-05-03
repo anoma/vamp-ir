@@ -10,7 +10,17 @@ use crate::circuit::{Circuit, Node, Node::Wire, Node::Constant};
 
 #[derive(Parser)]
 #[grammar = "vampir.pest"]
-struct VampirParser;
+pub struct VampirParser;
+
+
+lazy_static! {
+    static ref CLIMBER: PrecClimber<Rule> = PrecClimber::new(
+        vec![
+            Operator::new(Rule::plus, Assoc::Right) | Operator::new(Rule::minus, Assoc::Left),
+            Operator::new(Rule::times, Assoc::Right),
+        ]
+    );
+}
 
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
@@ -22,20 +32,16 @@ fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     }
 }
 
-// returns a closure that captures PrecClimber but has the required
-// signature for the `primary` function required by PrecClimber
-fn prepare_primary(climber: &PrecClimber<Rule>) -> impl Fn(Pair<Rule>) -> Node + '_ {
-    move | pair: Pair<Rule> | {
-        let inner = pair.into_inner().next().unwrap();
-        match inner.as_rule() {
-            Rule::whole => Node::Constant(inner.as_str().to_string().parse::<u64>().unwrap()),
-            Rule::wire => Node::Wire(inner.as_str().to_string()),
-            Rule::exponential => build_exponential(inner),
-            Rule::expression => climber.climb(inner.into_inner(), prepare_primary(climber), infix),
-            _ => unreachable!(),
-        }
+fn primary(pair: Pair<Rule>) -> Node {
+    let inner = pair.into_inner().next().unwrap();
+    match inner.as_rule() {
+        Rule::whole => Node::Constant(inner.as_str().to_string().parse::<u64>().unwrap()),
+        Rule::wire => Node::Wire(inner.as_str().to_string()),
+        Rule::exponential => build_exponential(inner),
+        Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
+        _ => unreachable!(),
     }
-}  
+}
 
 fn build_exponential(pair: Pair<Rule>) -> Node {
     let mut inner = pair.into_inner();
@@ -48,17 +54,17 @@ fn build_exponential(pair: Pair<Rule>) -> Node {
     }
 }
 
-fn build_node(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Node {
+fn build_node(pair: Pair<Rule>) -> Node {
     let rule = pair.as_rule();
     let mut inner = pair.into_inner();
     match rule {
-        Rule::constraint => build_node(inner.next().unwrap(), climber),
-        Rule::expression => climber.climb(inner, prepare_primary(climber), infix),
+        Rule::constraint => build_node(inner.next().unwrap()),
+        Rule::expression => CLIMBER.climb(inner, primary, infix),
         Rule::equation => {
             Node::Gate(
                 "sub".to_string(),
-                Box::new(build_node(inner.next().unwrap(), &climber)),
-                Box::new(build_node(inner.next().unwrap(), &climber))
+                Box::new(build_node(inner.next().unwrap())),
+                Box::new(build_node(inner.next().unwrap()))
             )
         }
         Rule::EOI => Node::EndOfInput(),
@@ -66,30 +72,20 @@ fn build_node(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Node {
     }
 }
 
-fn build_circuit(mut pairs: Pairs<Rule>, climber: &PrecClimber<Rule>) -> Circuit {
+fn build_circuit(mut pairs: Pairs<Rule>) -> Circuit {
     Circuit(
         pairs
             .next()
             .unwrap()
             .into_inner()
-            .map(|pair| build_node(pair, climber))
+            .map(|pair| build_node(pair))
             .collect::<Vec<_>>()
     )
 }
 
-pub fn parse(vampir: &str) -> Circuit {
-    let climber = PrecClimber::new(
-        vec![
-            Operator::new(Rule::plus, Assoc::Left) | Operator::new(Rule::minus, Assoc::Left),
-            Operator::new(Rule::times, Assoc::Left),
-        ]
-    );
-    build_circuit(VampirParser::parse(Rule::circuit, vampir).unwrap(), &climber)
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::ast::parse;
+    use crate::ast::*;
 
     #[test]
     pub(crate) fn test_circuit() {
@@ -97,12 +93,12 @@ mod tests {
             x*z*w - 3 = y - w + x
             x^3 + a*x + b - y^2
             ";
-        parse(test_circuit);
+        build_circuit(VampirParser::parse(Rule::circuit, test_circuit).unwrap());
     }
 
     #[test]
     pub(crate) fn test_bracketing() {
         let test_circuit = "x - (w*(y - z - w)-x)*(w+z)";
-        parse(test_circuit);
+        build_circuit(VampirParser::parse(Rule::circuit, test_circuit).unwrap());
     }
 }
