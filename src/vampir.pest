@@ -25,11 +25,11 @@ times = { "*" }
 
 op = _{ plus | minus | times }
 
-base = { whole | wire }
+//base = { whole | wire }
 
-exponential = { base ~ "^" ~ exponent }
+exponential = { (whole | wire) ~ "^" ~ exponent }
 
-monomial = { exponential | base | "(" ~ expression ~ ")"}
+monomial = { exponential | whole | wire | "(" ~ expression ~ ")"}
 
 expression = { monomial ~ ( op ~ monomial )* }
 
