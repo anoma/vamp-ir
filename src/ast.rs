@@ -42,8 +42,8 @@ fn build_exponential(pair: Pair<Rule>) -> Node {
     let base = inner.next().unwrap();
     let exp = inner.next().unwrap().as_str().to_string().parse::<usize>().unwrap();
     match base.as_rule() {
-        Rule::whole => Node::Exponential(Box::new(Wire(base.as_str().to_string())), exp),
-        Rule::wire => Node::Exponential(Box::new(Constant(base.as_str().to_string().parse::<u64>().unwrap())), exp),
+        Rule::wire => Node::Exponential(Box::new(Wire(base.as_str().to_string())), exp),
+        Rule::whole => Node::Exponential(Box::new(Constant(base.as_str().to_string().parse::<u64>().unwrap())), exp),
         _ => unreachable!(),
     }
 }
@@ -53,7 +53,7 @@ fn build_node(pair: Pair<Rule>, climber: &PrecClimber<Rule>) -> Node {
     let mut inner = pair.into_inner();
     match rule {
         Rule::constraint => build_node(inner.next().unwrap(), climber),
-        Rule::expression => build_expression(inner, climber),
+        Rule::expression => climber.climb(inner, prepare_primary(climber), infix),
         Rule::equation => {
             Node::Gate(
                 "sub".to_string(),
@@ -93,13 +93,16 @@ mod tests {
 
     #[test]
     pub(crate) fn test_circuit() {
-        let test_circuit = "x*z*w - 3 = y - w + x";
-        let circuit = parse(test_circuit);
+        let test_circuit = "
+            x*z*w - 3 = y - w + x
+            x^3 + a*x + b - y^2
+            ";
+        parse(test_circuit);
     }
 
     #[test]
     pub(crate) fn test_bracketing() {
         let test_circuit = "x - (w*(y - z - w)-x)*(w+z)";
-        let circuit = parse(test_circuit);
+        parse(test_circuit);
     }
 }
