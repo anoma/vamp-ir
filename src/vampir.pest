@@ -9,7 +9,7 @@ exponent = @{ (!"1" ~ ASCII_NONZERO_DIGIT) ~ ASCII_DIGIT* }
 
 // Atomic and immutable data unit for the IR, a wire
 wire = @{ identifier }
-wire_list = _{ wire+ } // e.g. x y -- no arithmetics allowed
+wire_list = { wire+ } // e.g. x y -- no arithmetics allowed
 
 // alias statement defines an alias
 alias_definition = { NEWLINE* ~ "def" ~ identifier ~ wire_list ~ ("->" ~ wire_list)? ~ "{" ~ constraint* ~ "}" ~ NEWLINE* }
@@ -38,5 +38,8 @@ equation = { expression ~ "=" ~ expression }
 // a constraint is an expression on its own line
 constraint = { NEWLINE* ~ ( equation | expression ) ~ NEWLINE* }
 
-// A circuit is the entire list of constraints
-circuit = { SOI ~ constraint+ ~ EOI }
+// a circuit is a list of constraints
+circuit = { constraint+ }
+
+// a preamble is a list of alias definitions
+preamble = { alias_definition+ }
