@@ -3,8 +3,10 @@ use pest::{
     prec_climber::{Assoc, Operator, PrecClimber},
 };
 
+use crate::pest::Parser;
+
+use crate::preamble::{Definition, Preamble};
 use crate::Circuit;
-//use crate::preamble::{Preamble, Definition};
 use std::fmt;
 
 #[derive(Parser)]
@@ -66,7 +68,7 @@ impl fmt::Display for Constant {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Wire {
-    name: Identifier,
+    pub name: Identifier,
 }
 
 impl fmt::Display for Node {
@@ -106,7 +108,7 @@ impl fmt::Display for Node {
                         "{}({} -> {})",
                         gate.name,
                         gate.inputs[0],
-                        gate.outputs.as_ref().unwrap()[0]
+                        outputs[0]
                     ),
                     None => write!(f, "{}({})", gate.name, gate.inputs[0]),
                 },
@@ -124,10 +126,6 @@ lazy_static! {
     ]);
 }
 
-pub fn build_circuit(pairs: Pairs<Rule>) -> Circuit {
-    Circuit(pairs.next().unwrap().into_inner().map(build_node).collect::<Vec<Node>>())
-}
-
 pub fn build_node(pair: Pair<Rule>) -> Node {
     match pair.as_rule() {
         Rule::constraint => build_node(pair.into_inner().next().unwrap()),
@@ -135,88 +133,77 @@ pub fn build_node(pair: Pair<Rule>) -> Node {
         Rule::equation => Node::Gate(Gate {
             name: Identifier("sub".to_string()),
             inputs: vec![Box::new(build_node(
-                pair.into_inner().next().unwrap(),
+                pair.clone().into_inner().next().unwrap(),
             ))],
             outputs: Some(vec![Box::new(build_node(
                 pair.into_inner().next().unwrap(),
             ))]),
             constant: None,
         }),
-        
-        // Rule::definition => {
-        //     VampirObject::Definition{
+        _ => unreachable!(),
+    }
+}
 
-        //     }
-        // }
+pub fn build_definition(pair: Pair<Rule>) -> Definition {
+    let mut inner = pair.into_inner();
+    Definition {
+        name: Identifier(inner.next().unwrap().as_str().to_string()),
+        inputs: inner
+            .next()
+            .unwrap()
+            .into_inner()
+            .map(|pair| Node::Wire( Wire {
+                name: Identifier(pair.as_str().to_string()),
+            }))
+            .collect::<Vec<_>>(),
+        outputs: match inner.peek().unwrap().as_rule() {
+            Rule::wire_list => Some(
+                inner
+                    .next()
+                    .unwrap()
+                    .into_inner()
+                    .map(|pair| Node::Wire( Wire {
+                        name: Identifier(pair.as_str().to_string()),
+                    }))
+                    .collect::<Vec<_>>(),
+            ),
+            Rule::circuit => None,
+            _ => unreachable!(),
+        },
+        circuit: VampirParser::build_circuit(inner),
     }
 }
 
 impl VampirParser {
-    // pub fn parse_circuit(input: &str) -> Circuit {
-    //     Circuit(
-    //         VampirParser::parse(Rule::circuit, input).unwrap()
-    //             .next()
-    //             .unwrap()
-    //             .into_inner()
-    //             .map(VampirParser::build_node)
-    //             .collect::<Vec<_>>()
-    //     )
-    // }
+    pub fn build_circuit(mut pairs: Pairs<Rule>) -> Circuit {
+        Circuit(
+            pairs
+                .next()
+                .unwrap()
+                .into_inner()
+                .map(build_node)
+                .collect::<Vec<Node>>(),
+        )
+    }
 
-    // pub fn parse_preamble(input: &str) -> Preamble {
-    //     Preamble(
-    //         VampirParser::parse(Rule::preamble, input).unwrap()
-    //             .next()
-    //             .unwrap()
-    //             .into_inner()
-    //             .map(VampirParser::build_definition)
-    //             .collect::<Vec<_>>()
-    //     )
-    // }
+    pub fn build_preamble(mut pairs: Pairs<Rule>) -> Preamble {
+        Preamble(
+            pairs
+                .next()
+                .unwrap()
+                .into_inner()
+                .map(build_definition)
+                .collect::<Vec<Definition>>(),
+        )
+    }
 
-    // pub fn build_node(pair: Pair<Rule>) -> Node {
-    //     let rule = pair.as_rule();
-    //     let mut inner = pair.into_inner();
-    //     match rule {
-    //         Rule::constraint => VampirParser::build_node(inner.next().unwrap()),
-    //         Rule::expression => CLIMBER.climb(inner, primary, infix),
-    //         Rule::equation => {
-    //             Node::Gate(
-    //                 "sub".to_string(),
-    //                 Box::new(VampirParser::build_node(inner.next().unwrap())),
-    //                 Box::new(VampirParser::build_node(inner.next().unwrap()))
-    //             )
-    //         }
-    //         //Rule::EOI => Node::EndOfInput(),
-    //         _ => unreachable!(),
-    //     }
-    // }
-    // pub fn build_exponential(pair: Pair<Rule>) -> Node {
-    //     let mut inner = pair.into_inner();
-    //     let base = inner.next().unwrap();
-    //     let exp = inner.next().unwrap().as_str().to_string().parse::<usize>().unwrap();
-    //     match base.as_rule() {
-    //         Rule::wire => Node::Exponential(Box::new(Node::Wire(base.as_str().to_string())), exp),
-    //         Rule::whole => Node::Exponential(Box::new(Node::Constant(base.as_str().to_string().parse::<u64>().unwrap())), exp),
-    //         _ => unreachable!(),
-    //     }
-    // }
+    pub fn parse_circuit(input: &str) -> Circuit {
+        VampirParser::build_circuit(VampirParser::parse(Rule::circuit, input).unwrap())
+    }
 
-    // pub fn build_definition(pair: Pair<Rule>) -> Definition {
-    //     // TODO: build a helper function that decomposes a parser subtree
-    //     // I want a dictionary (?)
-    //     let name_pair = &pair.into_inner().next().unwrap();
-    //     let inputs_pair = &name_pair.into_inner().next().unwrap();
-    //     let mut inputs_pair_inner = inputs_pair.into_inner();
-    //     let outputs_pair = match inputs_pair_inner.peek().unwrap().as_rule() {Rule::wire_list => Some(inputs_pair_inner.next().unwrap()), _ => None};
-    //     let constraints_pair = match outputs_pair { Some(pair) => pair.into_inner().next().unwrap(), None => inputs_pair_inner.next().unwrap()};
-    //     Definition {
-    //         name: name_pair.as_str().to_string(),
-    //         inputs: inputs_pair.into_inner().map(|pair| Node::Wire(pair.as_str().to_string())).collect::<Vec<_>>(),
-    //         outputs: match outputs_pair { Some(pair) => Some(pair.into_inner().map(|pair| Node::Wire(pair.as_str().to_string())).collect::<Vec<_>>()), None => None },
-    //         constraints: constraints_pair.into_inner().map(|pair| VampirParser::build_node(pair)).collect::<Vec<_>>(),
-    //     }
-    // }
+    pub fn parse_preamble(input: &str) -> Preamble {
+        VampirParser::build_preamble(VampirParser::parse(Rule::preamble, input).unwrap())
+    }
 }
 
 // folds two primaries according to operator precedence
@@ -260,36 +247,32 @@ fn primary(pair: Pair<Rule>) -> Node {
 #[cfg(test)]
 mod tests {
     use crate::ast::VampirParser;
-    use crate::ast::build_circuit;
-    use pest::Parser;
 
-    // #[test]
-    // pub(crate) fn test_circuit() {
-    //     let test_circuit = "
-    //         x*z*w - 3 = y - w + x
-    //         //x^3 + a*x + b - y^2
-    //         ";
-    //     VampirParser::parse_circuit(test_circuit);
-    // }
+    #[test]
+    pub(crate) fn test_circuit() {
+        let test_circuit = "
+            x*z*w - 3 = y - w + x
+            //x^3 + a*x + b - y^2
+            ";
+        VampirParser::parse_circuit(test_circuit);
+    }
 
-    // #[test]
-    // pub(crate) fn test_bracketing() {
-    //     let test_circuit = "x - (w*(y - z - w)-x)*(w+z)";
-    //     VampirParser::parse_circuit(test_circuit);
-    // }
+    #[test]
+    pub(crate) fn test_bracketing() {
+        let test_circuit = "x - (w*(y - z - w)-x)*(w+z)";
+        VampirParser::parse_circuit(test_circuit);
+    }
 
     #[test]
     pub(crate) fn test_refactor() {
-
         let test_circuit = "x - (w*(y - z - w)-x)*(w+z)";
-        build_circuit(
-            VampirParser::parse(Rule::circuit, test_circuit).unwrap()
-        );
+        VampirParser::parse_circuit(test_circuit);
     }
 
-    // #[test]
-    // pub(crate) fn test_definition() {
-    //     let test_definition = "def dist x y -> z { x*x + y*y = z*z }";
-    //     VampirParser::parse_preamble(test_definition);
-    // }
+    #[test]
+    pub(crate) fn test_definition() {
+        let test_definition = "def dist x y -> z { x*x + y*y = z*z }";
+        let preamble = VampirParser::parse_preamble(test_definition);
+        println!("{}", preamble);
+    }
 }

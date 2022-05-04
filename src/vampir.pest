@@ -12,7 +12,7 @@ wire = @{ identifier }
 wire_list = { wire+ } // e.g. x y -- no arithmetics allowed
 
 // alias statement defines an alias
-alias_definition = { NEWLINE* ~ "def" ~ identifier ~ wire_list ~ ("->" ~ wire_list)? ~ "{" ~ constraint* ~ "}" ~ NEWLINE* }
+alias_definition = { NEWLINE* ~ "def" ~ identifier ~ wire_list ~ ("->" ~ wire_list)? ~ "{" ~ circuit ~ "}" ~ NEWLINE* }
 
 // alias invocations need to be surrounded by brackets to distinguish them
 // from wire identifiers

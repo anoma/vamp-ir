@@ -1,6 +1,6 @@
 pub mod ast;
 pub mod circuit;
-//pub mod preamble;
+pub mod preamble;
 
 use crate::circuit::Circuit;
 
