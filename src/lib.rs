@@ -1,8 +1,6 @@
 pub mod ast;
 pub mod circuit;
-pub mod preamble;
-
-use crate::circuit::Circuit;
+pub mod parser;
 
 extern crate pest;
 #[macro_use]
