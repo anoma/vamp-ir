@@ -19,7 +19,7 @@ Proof system agnostic representation of circuits / constraint systems.
 ## Testing
 
 ```=sh
-cd plonk-ir
+cd vamp-ir
 cargo test
 ```
 
