@@ -1,23 +1,19 @@
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Identifier(pub String);
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct Gate {
-    pub name: Identifier,
+    pub name: String,
     pub inputs: Vec<Box<Node>>,
     pub outputs: Option<Vec<Box<Node>>>,
-    pub constant: Option<Constant>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Wire {
-    pub name: Identifier,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Constant(pub u64);
+pub struct Constant(pub i64);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
@@ -31,7 +27,7 @@ pub struct Circuit(pub Vec<Node>);
 
 #[derive(Debug, PartialEq)]
 pub struct Definition {
-    pub name: Identifier,
+    pub name: String,
     pub inputs: Vec<Node>,
     pub outputs: Option<Vec<Node>>,
     pub circuit: Circuit,
@@ -46,23 +42,10 @@ pub struct Vampir {
     pub circuit: Circuit,
 }
 
-// impls for elements common to Circuits and Preambles
-impl fmt::Display for Identifier {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<&str> for Identifier {
-    fn from(item: &str) -> Self {
-        Self(item.to_string())
-    }
-}
-
 impl From<&str> for Wire {
     fn from(item: &str) -> Self {
         Self {
-            name: Identifier::from(item),
+            name: String::from(item),
         }
     }
 }
@@ -76,19 +59,19 @@ impl fmt::Display for Constant {
 impl fmt::Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Node::Gate(gate) => match gate.name.0.as_str() {
-                "sub" => {
+            Node::Gate(gate) => match gate.name.as_str() {
+                "add" => {
                     write!(
                         f,
-                        "({} - {})",
+                        "{} + {}",
                         gate.inputs[0],
                         gate.outputs.as_ref().unwrap()[0]
                     )
                 }
-                "add" => {
+                "sub" => {
                     write!(
                         f,
-                        "({} + {})",
+                        "{} - {}",
                         gate.inputs[0],
                         gate.outputs.as_ref().unwrap()[0]
                     )
@@ -102,7 +85,20 @@ impl fmt::Display for Node {
                     )
                 }
                 "exp" => {
-                    write!(f, "{}^{}", gate.inputs[0], gate.constant.as_ref().unwrap())
+                    write!(
+                        f,
+                        "{}^{}",
+                        gate.inputs[0],
+                        gate.outputs.as_ref().unwrap()[0],
+                    )
+                }
+                "eq" => {
+                    write!(
+                        f,
+                        "{} = {}",
+                        gate.inputs[0],
+                        gate.outputs.as_ref().unwrap()[0],
+                    )
                 }
                 _ => match &gate.outputs {
                     Some(outputs) => {
@@ -121,7 +117,7 @@ impl fmt::Display for Circuit {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "{}",
+            "\t{}",
             self.0
                 .iter()
                 .map(|constraint| format!("{}", constraint))

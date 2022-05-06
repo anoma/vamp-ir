@@ -1,45 +1,35 @@
 WHITESPACE = _{ " " | "\t" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+
 identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0'..'9' )* }
-
-whole = @{ (ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) }
-
-// exponents are neither 0 nor 1
-exponent = @{ (!"1" ~ ASCII_NONZERO_DIGIT) ~ ASCII_DIGIT* }
+constant = @{ "-"? ~ (ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) }
 
 // Atomic and immutable data unit for the IR, a wire
-wire = @{ identifier }
+wire = @{ constant | identifier }
 wire_list = { wire+ } // e.g. x y -- no arithmetics allowed
 
 // alias statement defines an alias
-alias_definition = { NEWLINE* ~ "def" ~ identifier ~ wire_list ~ ("->" ~ wire_list)? ~ "{" ~ circuit ~ "}" ~ NEWLINE* }
+alias_definition = { NEWLINE* ~ "def" ~ identifier ~ wire_list ~ ("->" ~ wire_list)? ~ circuit ~ NEWLINE* }
 
 // alias invocations need to be surrounded by brackets to distinguish them
 // from wire identifiers
 alias_invocation = { "(" ~ identifier ~ wire_list? ~ ")" }
 
-// operations
+// binary operations
 plus = { "+" }
 minus = { "-" }
 times = { "*" }
+power = { "^" }
+equals = { "=" }
 
-op = _{ plus | minus | times }
+op = _{ plus | minus | times | power | equals }
 
-//base = { whole | wire }
+primary = { wire | "(" ~ expression ~ ")" }
 
-exponential = { (whole | wire) ~ "^" ~ exponent }
+expression = { NEWLINE* ~ primary ~ ( op ~ primary )* ~ NEWLINE* }
 
-monomial = { exponential | whole | wire | "(" ~ expression ~ ")"}
-
-expression = { monomial ~ ( op ~ monomial )* }
-
-equation = { expression ~ "=" ~ expression }
-
-// a constraint is an expression on its own line
-constraint = { NEWLINE* ~ ( equation | expression ) ~ NEWLINE* }
-
-// a circuit is a list of constraints
-circuit = { constraint+ }
+// a circuit is a list of expressions surrounded in curly braces
+circuit = { NEWLINE* ~ "{" ~ expression+ ~ "}"  ~ NEWLINE* }
 
 // a preamble is a list of alias definitions
 preamble = { alias_definition+ }

@@ -12,32 +12,18 @@ pub struct VampirParser;
 
 lazy_static! {
     static ref CLIMBER: PrecClimber<Rule> = PrecClimber::new(vec![
+        Operator::new(Rule::equals, Assoc::Left),
         Operator::new(Rule::plus, Assoc::Left) | Operator::new(Rule::minus, Assoc::Left),
         Operator::new(Rule::times, Assoc::Left),
+        Operator::new(Rule::power, Assoc::Right),
     ]);
-}
-
-impl From<Pair<'_, Rule>> for Identifier {
-    fn from(pair: Pair<'_, Rule>) -> Self {
-        Identifier::from(pair.as_str())
-    }
 }
 
 impl From<Pair<'_, Rule>> for Node {
     fn from(pair: Pair<Rule>) -> Node {
-        let rule = &pair.as_rule();
-        let name = pair.as_str();
-        let mut inner = pair.into_inner();
-        match rule {
-            Rule::constraint => Node::from(inner.next().unwrap()),
-            Rule::expression => CLIMBER.climb(inner, primary, infix),
-            Rule::equation => Node::Gate(Gate {
-                name: Identifier::from("sub"),
-                inputs: vec![Box::new(Node::from(inner.next().unwrap()))],
-                outputs: Some(vec![Box::new(Node::from(inner.next().unwrap()))]),
-                constant: None,
-            }),
-            Rule::wire => Node::Wire(Wire::from(name)),
+        match pair.as_rule() {
+            Rule::expression => CLIMBER.climb(pair.into_inner(), primary, infix),
+            Rule::wire => Node::Wire(Wire::from(pair)),
             _ => unreachable!(),
         }
     }
@@ -53,7 +39,7 @@ impl From<Pair<'_, Rule>> for Definition {
     fn from(pair: Pair<Rule>) -> Definition {
         let mut inner = pair.into_inner();
         Definition {
-            name: Identifier::from(inner.next().unwrap()),
+            name: inner.next().unwrap().as_str().into(),
             inputs: inner
                 .next()
                 .unwrap()
@@ -74,6 +60,18 @@ impl From<Pair<'_, Rule>> for Definition {
             },
             circuit: Circuit::from(inner),
         }
+    }
+}
+
+impl From<&str> for Constant {
+    fn from(input: &str) -> Self {
+        Self(String::from(input).parse::<i64>().unwrap())
+    }
+}
+
+impl From<Pair<'_, Rule>> for Constant {
+    fn from(pair: Pair<'_, Rule>) -> Self {
+        Self::from(pair.as_str())
     }
 }
 
@@ -119,22 +117,29 @@ impl From<Pairs<'_, Rule>> for Preamble {
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     match op.as_rule() {
         Rule::plus => Node::Gate(Gate {
-            name: Identifier("add".to_string()),
+            name: String::from("add"),
             inputs: vec![Box::new(lhs)],
             outputs: Some(vec![Box::new(rhs)]),
-            constant: None,
         }),
         Rule::minus => Node::Gate(Gate {
-            name: Identifier("sub".to_string()),
+            name: String::from("sub"),
             inputs: vec![Box::new(lhs)],
             outputs: Some(vec![Box::new(rhs)]),
-            constant: None,
         }),
         Rule::times => Node::Gate(Gate {
-            name: Identifier("mul".to_string()),
+            name: String::from("mul"),
             inputs: vec![Box::new(lhs)],
             outputs: Some(vec![Box::new(rhs)]),
-            constant: None,
+        }),
+        Rule::power => Node::Gate(Gate {
+            name: String::from("exp"),
+            inputs: vec![Box::new(lhs)],
+            outputs: Some(vec![Box::new(rhs)]),
+        }),
+        Rule::equals => Node::Gate(Gate {
+            name: String::from("eq"),
+            inputs: vec![Box::new(lhs)],
+            outputs: Some(vec![Box::new(rhs)]),
         }),
         _ => unreachable!(),
     }
@@ -143,10 +148,8 @@ fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
 fn primary(pair: Pair<Rule>) -> Node {
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
-        Rule::whole => Node::Constant(Constant(inner.as_str().to_string().parse::<u64>().unwrap())),
-        Rule::wire => Node::Wire(Wire {
-            name: Identifier(inner.as_str().to_string()),
-        }),
+        Rule::constant => Node::Constant(Constant::from(inner)),
+        Rule::wire => Node::Wire(Wire::from(inner)),
         Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
         _ => unreachable!(),
     }
@@ -158,17 +161,18 @@ mod tests {
 
     #[test]
     pub(crate) fn test_circuit() {
-        // exponentials not handled currently
         let test_circuit = "
+        {
+            x - 3 y - 5
             x*z*w - 3 = y - w + x
-            //x^3 + a*x + b - y^2
-            ";
+            x^3--10*x +7-y^2
+        }";
         let circuit = Circuit::from(test_circuit);
     }
 
     #[test]
     pub(crate) fn test_bracketing() {
-        let test_circuit = "x - (w*(y - z - w)-x)*(w+z)";
+        let test_circuit = "{x - (w*(y - z - w)-x)*(w+z)}";
         let circuit = Circuit::from(test_circuit);
     }
 
