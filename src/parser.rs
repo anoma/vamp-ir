@@ -148,7 +148,6 @@ fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
 fn primary(pair: Pair<Rule>) -> Node {
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
-        Rule::constant => Node::Constant(Constant::from(inner)),
         Rule::wire => Node::Wire(Wire::from(inner)),
         Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
         _ => unreachable!(),

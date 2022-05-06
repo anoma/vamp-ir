@@ -19,7 +19,6 @@ pub struct Constant(pub i64);
 pub enum Node {
     Gate(Gate),
     Wire(Wire),
-    Constant(Constant),
 }
 
 #[derive(Debug, PartialEq)]
@@ -108,7 +107,6 @@ impl fmt::Display for Node {
                 },
             },
             Node::Wire(wire) => write!(f, "{}", wire.name),
-            Node::Constant(constant) => write!(f, "{}", constant.0),
         }
     }
 }
