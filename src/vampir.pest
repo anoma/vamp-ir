@@ -1,15 +1,16 @@
-WHITESPACE = _{ " " | "\t" }
+// TODO add newline here
+WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
 identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0'..'9' )* }
 constant = @{ "-"? ~ (ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) }
 
 // Atomic and immutable data unit for the IR, a wire
-wire = @{ constant | identifier }
+wire = @{ identifier }
 wire_list = { wire+ } // e.g. x y -- no arithmetics allowed
 
 // alias statement defines an alias
-alias_definition = { NEWLINE* ~ "def" ~ identifier ~ wire_list ~ ("->" ~ wire_list)? ~ circuit ~ NEWLINE* }
+alias_definition = { "def" ~ identifier ~ wire_list ~ ("->" ~ wire_list)? ~ "{" ~ expression_list ~ "}" }
 
 // alias invocations need to be surrounded by brackets to distinguish them
 // from wire identifiers
@@ -24,12 +25,11 @@ equals = { "=" }
 
 op = _{ plus | minus | times | power | equals }
 
-primary = { wire | "(" ~ expression ~ ")" }
+primary = { constant | wire | alias_invocation | "(" ~ expression ~ ")" }
 
-expression = { NEWLINE* ~ primary ~ ( op ~ primary )* ~ NEWLINE* }
+expression = { primary ~ ( op ~ primary )* }
 
-// a circuit is a list of expressions surrounded in curly braces
-circuit = { NEWLINE* ~ "{" ~ expression+ ~ "}"  ~ NEWLINE* }
+expression_list = { expression+ }
 
 // a preamble is a list of alias definitions
 preamble = { alias_definition+ }
