@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::Node;
+use crate::ast::{Node, Vampir};
 
 #[derive(Debug)]
 pub struct Circuit {
@@ -41,6 +41,17 @@ impl From<Vec<Node>> for Circuit {
         }
     }
 
+}
+
+impl From<Vampir> for Circuit {
+    fn from(vampir: Vampir) -> Self {
+        let inputs = Self::construct_wire_map(&vampir.expressions);
+        let gates = Self::construct_gate_list(&vampir.expressions, &inputs);
+        Self {
+            inputs,
+            gates,
+        }
+    }
 }
 
 impl Circuit {
@@ -92,28 +103,33 @@ impl Circuit {
 
 #[cfg(test)]
 mod tests {
-    use crate::{circuit::Circuit, parser::from_str};
+    use crate::{circuit::Circuit, parser::{from_str, pairs}, ast::Vampir};
 
     #[test]
     pub(crate) fn test_record_wires() {
-        let test_expressions = "x * (ec_check y z) + (ec_check x y)";
-        let expressions = from_str(test_expressions);
-        let wires = Circuit::construct_wire_map(&expressions);
+        let test_str = "x * (ec_check y z) + (ec_check x y)";
+        let vampir = Vampir::from(test_str);
+        let wires = Circuit::construct_wire_map(&vampir.expressions);
     }
 
     #[test]
     pub(crate) fn test_record_gates() {
-        let test_expressions = "x * (ec_check y z) + (ec_check x y)";
-        let expressions = from_str(test_expressions);
-        let wires = Circuit::construct_wire_map(&expressions);
-        let gates = Circuit::construct_gate_list(&expressions, &wires);
+        let test_str = "x * (ec_check y z) + (ec_check x y)";
+        let vampir = Vampir::from(test_str);
+        let wires = Circuit::construct_wire_map(&vampir.expressions);
+        let gates = Circuit::construct_gate_list(&vampir.expressions, &wires);
     }
 
     #[test]
     pub(crate) fn test_circuit_construction() {
-        let test_expressions = "x * (ec_check y z) + (ec_check x y)";
-        let expressions = from_str(test_expressions);
-        let circuit = Circuit::from(expressions);
+        let test_expressions = "
+                def ec_check x y {
+                    x^3 + 3 = y^2
+                }
+                x * (ec_check y z) + (ec_check x y)
+            ";
+        let vampir = Vampir::from(test_expressions);
+        let circuit = Circuit::from(vampir);
         println!("{:?}", circuit);
     }
 }

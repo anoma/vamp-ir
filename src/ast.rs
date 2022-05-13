@@ -26,8 +26,8 @@ pub struct Preamble(pub Vec<Definition>);
 
 #[derive(Debug, PartialEq)]
 pub struct Vampir {
-    pub preamble: Preamble,
-    pub nodes: Vec<Node>,
+    pub definitions: Vec<Definition>,
+    pub expressions: Vec<Node>,
 }
 
 // impl From<&str> for Wire {

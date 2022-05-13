@@ -29,39 +29,55 @@ impl From<Pair<'_, Rule>> for Node {
     }
 }
 
-// impl From<Pair<'_, Rule>> for Wire {
-//     fn from(pair: Pair<'_, Rule>) -> Self {
-//         Self::from(pair.as_str())
-//     }
-// }
+impl From<&str> for Vampir {
+    fn from(input: &str) -> Vampir {
+        Vampir::from(VampirParser::parse(Rule::vampir, input).unwrap().next().unwrap())
+    }
+}
 
-// impl From<Pair<'_, Rule>> for Definition {
-//     fn from(pair: Pair<Rule>) -> Definition {
-//         let mut inner = pair.into_inner();
-//         Definition {
-//             name: inner.next().unwrap().as_str().into(),
-//             inputs: inner
-//                 .next()
-//                 .unwrap()
-//                 .into_inner()
-//                 .map(|pair| Node::Wire(String::from(pair.as_str()))
-//                 .collect::<Vec<_>>(),
-//             outputs: match inner.peek().unwrap().as_rule() {
-//                 Rule::wire_list => Some(
-//                     inner
-//                         .next()
-//                         .unwrap()
-//                         .into_inner()
-//                         .map(|pair| Node::Wire(String::from(pair.as_str()))
-//                         .collect::<Vec<_>>(),
-//                 ),
-//                 Rule::expression_list => None,
-//                 _ => unreachable!(),
-//             },
-//             nodes: inner.map(Node::from).collect::<Vec<Node>>(),
-//         }
-//     }
-// }
+impl From<Pair<'_, Rule>> for Vampir {
+    fn from(pair: Pair<Rule>) -> Vampir {
+        let inner = pair.into_inner();
+        let mut definitions: Vec<Definition> = vec![];
+        let mut expressions: Vec<Node> = vec![];
+        inner.for_each(|pair| {
+            match pair.as_rule() {
+                Rule::alias_definition => definitions.push(Definition::from(pair)),
+                Rule::expression => expressions.push(Node::from(pair)),
+                Rule::EOI => (),
+                _ => unreachable!(),
+            }
+        });
+        Vampir { definitions, expressions }
+    }
+}
+
+impl From<Pair<'_, Rule>> for Definition {
+    fn from(pair: Pair<Rule>) -> Definition {
+        let mut inner = pair.into_inner();
+        Definition {
+            name: inner.next().unwrap().as_str().into(),
+            inputs: inner
+                .next()
+                .unwrap()
+                .into_inner()
+                .map(|pair| Node::Wire(String::from(pair.as_str())))
+                .collect::<Vec<_>>(),
+            outputs: match inner.peek().unwrap().as_rule() {
+                Rule::outputs => Some(
+                    inner
+                        .next()
+                        .unwrap()
+                        .into_inner()
+                        .map(|pair| Node::Wire(String::from(pair.as_str())))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            },
+            nodes: inner.map(Node::from).collect::<Vec<Node>>(),
+        }
+    }
+}
 
 impl From<&str> for Constant {
     fn from(input: &str) -> Self {
@@ -75,16 +91,6 @@ impl From<Pair<'_, Rule>> for Constant {
     }
 }
 
-// impl From<Pair<'_, Rule>> for AliasInvocation {
-//     fn from(pair: Pair<'_, Rule>) -> Self {
-//         let mut inner = pair.into_inner();
-//         Self {
-//             name: inner.next().unwrap().as_str().into(),
-//             inputs: inner.next().unwrap().into_inner().map(|pair|String::from(pair.as_str())).collect::<Vec<_>>(),
-//         }
-//     }
-// }
-
 pub fn from_pairs(mut pairs: Pairs<Rule>) -> Vec<Node> {
     pairs
         .next()
@@ -95,31 +101,12 @@ pub fn from_pairs(mut pairs: Pairs<Rule>) -> Vec<Node> {
 }
 
 pub fn from_str(input: &str) -> Vec<Node> {
-    from_pairs(VampirParser::parse(Rule::expression_list, input).unwrap())
+    from_pairs(VampirParser::parse(Rule::vampir, input).unwrap())
 }
 
 pub fn pairs(input: &str) -> Pairs<Rule> {
-    VampirParser::parse(Rule::expression_list, input).unwrap()
+    VampirParser::parse(Rule::vampir, input).unwrap()
 }
-
-// impl From<&str> for Preamble {
-//     fn from(input: &str) -> Self {
-//         Preamble::from(VampirParser::parse(Rule::preamble, input).unwrap())
-//     }
-// }
-
-// impl From<Pairs<'_, Rule>> for Preamble {
-//     fn from(mut pairs: Pairs<'_, Rule>) -> Self {
-//         Preamble(
-//             pairs
-//                 .next()
-//                 .unwrap()
-//                 .into_inner()
-//                 .map(Definition::from)
-//                 .collect::<Vec<Definition>>(),
-//         )
-//     }
-// }
 
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
@@ -152,11 +139,7 @@ fn primary(pair: Pair<Rule>) -> Node {
 
 #[cfg(test)]
 mod tests {
-    use pest::iterators::Pairs;
-
-    use crate::ast::Preamble;
-    use crate::parser::{from_str, pairs, VampirParser};
-    use crate::pest::Parser;
+    use crate::parser::Vampir;
 
     #[test]
     pub(crate) fn test_expressions() {
@@ -165,27 +148,31 @@ mod tests {
             x*z*w - 3 = y - w + x
             x^3--10*x +7-y^2
         ";
-        let expressions = from_str(test_expressions);
-        println!("{:?}", expressions);
+        let expressions = Vampir::from(test_expressions);
     }
 
     #[test]
     pub(crate) fn test_bracketing() {
         let test_expressions = "x - (w*(y - z - w)-x)*(w+z)";
-        let expressions = from_str(test_expressions);
+        let expressions = Vampir::from(test_expressions);
     }
 
     #[test]
     pub(crate) fn test_invocation_one_output() {
         let test_expressions = "x + -7*(ec_check y z)";
-        let pairs = pairs(test_expressions);
-        let expressions = from_str(test_expressions);
-        println!("{:?}\n{:?}", pairs, expressions);
+        let _expressions = Vampir::from(test_expressions);
     }
 
-    // #[test]
-    // pub(crate) fn test_definition() {
-    //     let test_definition = "def dist x y -> z { x*x + y*y = z*z }";
-    //     let preamble = Preamble::from(test_definition);
-    // }
+    #[test]
+    pub(crate) fn test_definition() {
+        let test_definition = "
+        def dist x y -> z { 
+            x*x + 
+            y*y = z*z
+        }
+        euclidean_distance = (dist a b)
+        taxicab_distance = a + b
+        ";
+        let _vampir = Vampir::from(test_definition);
+    }
 }
