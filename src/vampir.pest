@@ -1,4 +1,3 @@
-// TODO add newline here
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
@@ -7,14 +6,14 @@ constant = @{ "-"? ~ (ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) }
 
 // Atomic and immutable data unit for the IR, a wire
 wire = @{ identifier }
-wire_list = { wire+ } // e.g. x y -- no arithmetics allowed
+inputs = { wire+ }
+outputs = { "->" ~ wire+ }
 
-// alias statement defines an alias
-alias_definition = { "def" ~ identifier ~ wire_list ~ ("->" ~ wire_list)? ~ "{" ~ expression_list ~ "}" }
+alias_definition = { "def" ~ identifier ~ inputs ~ outputs? ~ "{" ~ expression+ ~ "}" }
 
 // alias invocations need to be surrounded by brackets to distinguish them
 // from wire identifiers
-alias_invocation = { "(" ~ identifier ~ wire_list? ~ ")" }
+alias_invocation = { "(" ~ identifier ~ inputs? ~ ")" }
 
 // binary operations
 plus = { "+" }
@@ -29,7 +28,4 @@ primary = { constant | wire | alias_invocation | "(" ~ expression ~ ")" }
 
 expression = { primary ~ ( op ~ primary )* }
 
-expression_list = { expression+ }
-
-// a preamble is a list of alias definitions
-preamble = { alias_definition+ }
+vampir = { SOI ~ ( alias_definition | expression )* ~ EOI }
