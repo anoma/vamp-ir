@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use pest::{
     iterators::{Pair, Pairs},
     prec_climber::{Assoc, Operator, PrecClimber},
@@ -38,11 +40,15 @@ impl From<&str> for Vampir {
 impl From<Pair<'_, Rule>> for Vampir {
     fn from(pair: Pair<Rule>) -> Vampir {
         let inner = pair.into_inner();
-        let mut definitions: Vec<Definition> = vec![];
+        let mut definitions: HashMap<String, Definition> = HashMap::new();
         let mut expressions: Vec<Node> = vec![];
         inner.for_each(|pair| {
             match pair.as_rule() {
-                Rule::alias_definition => definitions.push(Definition::from(pair)),
+                Rule::alias_definition => {
+                    let mut inner = pair.into_inner();
+                    let name = inner.next().unwrap().as_str().into();
+                    definitions.insert(name, Definition::from(inner));
+                },
                 Rule::expression => expressions.push(Node::from(pair)),
                 Rule::EOI => (),
                 _ => unreachable!(),
@@ -52,29 +58,27 @@ impl From<Pair<'_, Rule>> for Vampir {
     }
 }
 
-impl From<Pair<'_, Rule>> for Definition {
-    fn from(pair: Pair<Rule>) -> Definition {
-        let mut inner = pair.into_inner();
+impl From<Pairs<'_, Rule>> for Definition {
+    fn from(mut pairs: Pairs<Rule>) -> Definition {
         Definition {
-            name: inner.next().unwrap().as_str().into(),
-            inputs: inner
+            inputs: pairs
                 .next()
                 .unwrap()
                 .into_inner()
                 .map(|pair| Node::Wire(String::from(pair.as_str())))
                 .collect::<Vec<_>>(),
-            outputs: match inner.peek().unwrap().as_rule() {
-                Rule::outputs => Some(
-                    inner
+            outputs: match pairs.peek().unwrap().as_rule() {
+                Rule::outputs => {
+                    pairs
                         .next()
                         .unwrap()
                         .into_inner()
                         .map(|pair| Node::Wire(String::from(pair.as_str())))
-                        .collect::<Vec<_>>(),
-                ),
-                _ => None,
+                        .collect::<Vec<_>>()
+                },
+                _ => vec![],
             },
-            nodes: inner.map(Node::from).collect::<Vec<Node>>(),
+            nodes: pairs.map(Node::from).collect::<Vec<Node>>(),
         }
     }
 }
@@ -174,5 +178,6 @@ mod tests {
         taxicab_distance = a + b
         ";
         let _vampir = Vampir::from(test_definition);
+        println!("{:?}", _vampir);
     }
 }

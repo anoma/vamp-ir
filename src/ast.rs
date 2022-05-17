@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, collections::HashMap};
 
 use crate::circuit::Wire;
 
@@ -15,18 +15,14 @@ pub enum Node {
 
 #[derive(Debug, PartialEq)]
 pub struct Definition {
-    pub name: String,
     pub inputs: Vec<Node>,
-    pub outputs: Option<Vec<Node>>,
+    pub outputs: Vec<Node>,
     pub nodes: Vec<Node>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Preamble(pub Vec<Definition>);
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Vampir {
-    pub definitions: Vec<Definition>,
+    pub definitions: HashMap<String, Definition>,
     pub expressions: Vec<Node>,
 }
 

@@ -54,6 +54,15 @@ impl From<Vampir> for Circuit {
     }
 }
 
+// to do here:
+// - alias invocations do not need their own struct--make them nodes
+// - traverse the tree and create new wires with auto generated names 
+// for the outputs of every alias invocation
+// - flatmap over the the tree making a list of inputs for each node
+// using the newly named outputs of each alias invocation
+
+// i.e. add (mul a b) c becomes add d c, where d = mul a b
+
 impl Circuit {
     fn construct_wire_map(nodes: &Vec<Node>) -> HashMap<Wire, usize> {
         let mut wires = HashMap::<Wire, usize>::new();
