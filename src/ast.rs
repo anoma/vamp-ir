@@ -22,9 +22,6 @@ pub struct Definition {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Preamble(pub Vec<Definition>);
-
-#[derive(Debug, PartialEq)]
 pub struct Vampir {
     pub definitions: Vec<Definition>,
     pub expressions: Vec<Node>,
