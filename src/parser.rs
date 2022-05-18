@@ -115,11 +115,11 @@ pub fn pairs(input: &str) -> Pairs<Rule> {
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     match op.as_rule() {
-        Rule::plus => Node::Node(String::from("add"), Box::new(lhs), Box::new(rhs)),
-        Rule::minus => Node::Node(String::from("sub"), Box::new(lhs), Box::new(rhs)),
-        Rule::times => Node::Node(String::from("mul"), Box::new(lhs), Box::new(rhs)),
-        Rule::power => Node::Node(String::from("exp"), Box::new(lhs), Box::new(rhs)),
-        Rule::equals => Node::Node(String::from("eq"), Box::new(lhs), Box::new(rhs)),
+        Rule::plus => Node::Node(String::from("add"), vec![Box::new(lhs), Box::new(rhs)]),
+        Rule::minus => Node::Node(String::from("sub"), vec![Box::new(lhs), Box::new(rhs)]),
+        Rule::times => Node::Node(String::from("mul"), vec![Box::new(lhs), Box::new(rhs)]),
+        Rule::power => Node::Node(String::from("exp"), vec![Box::new(lhs), Box::new(rhs)]),
+        Rule::equals => Node::Node(String::from("eq"), vec![Box::new(lhs), Box::new(rhs)]),
         _ => unreachable!(),
     }
 }
@@ -132,9 +132,9 @@ fn primary(pair: Pair<Rule>) -> Node {
         Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
         Rule::alias_invocation => {
             let mut inner = inner.into_inner();
-            Node::AliasInvocation(
+            Node::Node(
                 inner.next().unwrap().as_str().into(),
-                inner.next().unwrap().into_inner().map(|pair| Wire(String::from(pair.as_str()))).collect(),
+                inner.next().unwrap().into_inner().map(|pair| Box::new(Node::Wire(String::from(pair.as_str())))).collect(),
             )
         }
         _ => unreachable!(),

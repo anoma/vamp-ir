@@ -7,8 +7,7 @@ pub struct Constant(pub i64);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
-    Node(String, Box<Node>, Box<Node>),
-    AliasInvocation(String, Vec<Wire>),
+    Node(String, Vec<Box<Node>>),
     Wire(String),
     Constant(i64),
 }
