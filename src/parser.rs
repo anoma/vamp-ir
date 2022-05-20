@@ -33,7 +33,12 @@ impl From<Pair<'_, Rule>> for Node {
 
 impl From<&str> for Vampir {
     fn from(input: &str) -> Vampir {
-        Vampir::from(VampirParser::parse(Rule::vampir, input).unwrap().next().unwrap())
+        Vampir::from(
+            VampirParser::parse(Rule::vampir, input)
+                .unwrap()
+                .next()
+                .unwrap(),
+        )
     }
 }
 
@@ -41,20 +46,21 @@ impl From<Pair<'_, Rule>> for Vampir {
     fn from(pair: Pair<Rule>) -> Vampir {
         let inner = pair.into_inner();
         let mut definitions: HashMap<String, Definition> = HashMap::new();
-        let mut expressions: Vec<Node> = vec![];
-        inner.for_each(|pair| {
-            match pair.as_rule() {
-                Rule::alias_definition => {
-                    let mut inner = pair.into_inner();
-                    let name = inner.next().unwrap().as_str().into();
-                    definitions.insert(name, Definition::from(inner));
-                },
-                Rule::expression => expressions.push(Node::from(pair)),
-                Rule::EOI => (),
-                _ => unreachable!(),
+        let mut expressions: Vec<Box<Node>> = vec![];
+        inner.for_each(|pair| match pair.as_rule() {
+            Rule::alias_definition => {
+                let mut inner = pair.into_inner();
+                let name = inner.next().unwrap().as_str().into();
+                definitions.insert(name, Definition::from(inner));
             }
+            Rule::expression => expressions.push(Box::new(Node::from(pair))),
+            Rule::EOI => (),
+            _ => unreachable!(),
         });
-        Vampir { definitions, expressions }
+        Vampir {
+            definitions,
+            expressions,
+        }
     }
 }
 
@@ -68,14 +74,12 @@ impl From<Pairs<'_, Rule>> for Definition {
                 .map(|pair| Node::Wire(String::from(pair.as_str())))
                 .collect::<Vec<_>>(),
             outputs: match pairs.peek().unwrap().as_rule() {
-                Rule::outputs => {
-                    pairs
-                        .next()
-                        .unwrap()
-                        .into_inner()
-                        .map(|pair| Node::Wire(String::from(pair.as_str())))
-                        .collect::<Vec<_>>()
-                },
+                Rule::outputs => pairs
+                    .next()
+                    .unwrap()
+                    .into_inner()
+                    .map(|pair| Node::Wire(String::from(pair.as_str())))
+                    .collect::<Vec<_>>(),
                 _ => vec![],
             },
             nodes: pairs.map(Node::from).collect::<Vec<Node>>(),
@@ -134,7 +138,12 @@ fn primary(pair: Pair<Rule>) -> Node {
             let mut inner = inner.into_inner();
             Node::Node(
                 inner.next().unwrap().as_str().into(),
-                inner.next().unwrap().into_inner().map(|pair| Box::new(Node::Wire(String::from(pair.as_str())))).collect(),
+                inner
+                    .next()
+                    .unwrap()
+                    .into_inner()
+                    .map(|pair| Box::new(Node::Wire(String::from(pair.as_str()))))
+                    .collect(),
             )
         }
         _ => unreachable!(),
