@@ -1,4 +1,4 @@
-use std::{fmt, collections::HashMap};
+use std::{collections::HashMap, fmt};
 
 use crate::circuit::Wire;
 
@@ -22,7 +22,7 @@ pub struct Definition {
 #[derive(Debug)]
 pub struct Vampir {
     pub definitions: HashMap<String, Definition>,
-    pub expressions: Vec<Node>,
+    pub expressions: Vec<Box<Node>>,
 }
 
 // impl From<&str> for Wire {
