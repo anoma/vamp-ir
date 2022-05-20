@@ -81,16 +81,28 @@ impl From<Pairs<'_, Rule>> for Definition {
                 .collect::<Vec<_>>(),
             _ => vec![],
         };
-        let nodes = pairs.map(|pair| remove_names(Box::new(Node::from(pair)), &inputs)).collect::<Vec<Box<Node>>>();
+        let nodes = pairs
+            .map(|pair| remove_names(Box::new(Node::from(pair)), &inputs))
+            .collect::<Vec<Box<Node>>>();
 
-        Definition {inputs, outputs, nodes}
+        Definition {
+            inputs,
+            outputs,
+            nodes,
+        }
     }
 }
 
 fn remove_names(node: Box<Node>, inputs: &Vec<Wire>) -> Box<Node> {
     match *node {
         Node::Wire(wire) => Box::new(Node::Index(inputs.iter().position(|w| wire == *w).unwrap())), // this unwrapping should be an error like "undeclared wire" or similar
-        Node::Node(name, nodes) => Box::new(Node::Node(name, nodes.into_iter().map(|node| remove_names(node, inputs)).collect::<Vec<_>>())),
+        Node::Node(name, nodes) => Box::new(Node::Node(
+            name,
+            nodes
+                .into_iter()
+                .map(|node| remove_names(node, inputs))
+                .collect::<Vec<_>>(),
+        )),
         _ => node,
     }
 }

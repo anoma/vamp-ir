@@ -4,18 +4,18 @@ use crate::ast::{Node, Vampir};
 
 #[derive(Debug)]
 pub struct Circuit {
-    inputs: HashMap<Wire, usize>,
+    nodes: Vec<Box<Node>>,
+    wires: Vec<Wire>,
     gates: Vec<Gate>,
 }
 
 #[derive(Debug)]
 pub struct Gate {
-    name: String,
-    inputs: Vec<Wire>,
-    // TODO maybe include outputs
+    gate_type: String,
+    output: usize,
 }
 /*
-################################################# 
+#################################################
 to do:
 - gates should change from (gate_type: String, offset: usize) to (gate_type: String, offset: usize, length: usize)
     to accomodate gates with multiple outputs
@@ -110,23 +110,34 @@ pub struct Wire(pub String);
 
 // (String, usize) is how I am referring to a "gate" right now. This will be changed
 // consider incorporating these into `From` functions
-fn flatten(node_forest: Vec<Box<Node>>) -> (Vec<Wire>, Vec<(String, usize)>) {
-    let mut wires = vec![];
-    let mut nodes = vec![];
-    node_forest.iter().for_each(|node_tree| flatten_node_tree(node_tree, &mut wires, &mut nodes));
+fn flatten(nodes: Vec<Box<Node>>) -> (Vec<Wire>, Vec<Gate>) {
+    let mut wire_list = vec![];
+    let mut gate_list = vec![];
+    nodes
+        .iter()
+        .for_each(|node| flatten_node(node, &mut wire_list, &mut gate_list));
 
-    (wires, nodes)
+    (wire_list, gate_list)
 }
 
-fn flatten_node_tree(node_tree: &Node, wires: &mut Vec<Wire>, nodes: &mut Vec<(String, usize)>) {
-    match node_tree {
-        Node::Wire(wire) => if !wires.contains(&wire.clone()) {wires.push(wire.clone())},
-        Node::Node(node_type, node_forest) => {
-            node_forest.iter().for_each(|node_tree| flatten_node_tree(node_tree, wires, nodes));
-            nodes.push((node_type.into(), wires.len()));
+fn flatten_node(node: &Node, wire_list: &mut Vec<Wire>, gate_list: &mut Vec<Gate>) {
+    match node {
+        Node::Wire(wire) => {
+            if !wire_list.contains(&wire.clone()) {
+                wire_list.push(wire.clone())
+            }
+        }
+        Node::Node(gate_type, nodes) => {
+            nodes
+                .iter()
+                .for_each(|node| flatten_node(node, wire_list, gate_list));
+            gate_list.push(Gate {
+                gate_type: gate_type.into(),
+                output: wire_list.len(),
+            });
             // following line should actually be a for_each on the outputs of this node type
             // to accodmodate gates with more than one output
-            wires.push(Wire(format!("w_{}", wires.len())));
+            wire_list.push(Wire(format!("w_{}", wire_list.len())));
         }
         _ => unreachable!(),
     }
@@ -136,7 +147,7 @@ fn flatten_node_tree(node_tree: &Node, wires: &mut Vec<Wire>, nodes: &mut Vec<(S
 mod tests {
     use crate::{
         ast::Vampir,
-        circuit::{Circuit, flatten},
+        circuit::{flatten, Circuit},
         parser::{from_str, pairs},
     };
 
