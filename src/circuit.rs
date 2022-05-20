@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Node, Vampir};
+use crate::ast::{Node, Vampir, Definition};
 
 #[derive(Debug)]
 pub struct Circuit {
@@ -12,7 +12,8 @@ pub struct Circuit {
 #[derive(Debug)]
 pub struct Gate {
     gate_type: String,
-    output: usize,
+    inputs: Vec<usize>,
+    outputs: Vec<usize>,
 }
 /*
 #################################################
@@ -110,44 +111,57 @@ pub struct Wire(pub String);
 
 // (String, usize) is how I am referring to a "gate" right now. This will be changed
 // consider incorporating these into `From` functions
-fn flatten(nodes: Vec<Box<Node>>) -> (Vec<Wire>, Vec<Gate>) {
-    let mut wire_list = vec![];
+fn flatten(nodes: Vec<Box<Node>>, definitions: &HashMap<String, Definition>) -> (Vec<Wire>, Vec<Gate>) {
+    let mut wire_list = vec![Wire("zero".into())];
     let mut gate_list = vec![];
     nodes
         .iter()
-        .for_each(|node| flatten_node(node, &mut wire_list, &mut gate_list));
-
+        .map(|node| flatten_node(node, &mut wire_list, &mut gate_list, &definitions)).collect::<Vec<_>>();
     (wire_list, gate_list)
 }
 
-fn flatten_node(node: &Node, wire_list: &mut Vec<Wire>, gate_list: &mut Vec<Gate>) {
+fn flatten_node(node: &Node, wire_list: &mut Vec<Wire>, gate_list: &mut Vec<Gate>, definitions: &HashMap<String, Definition>) -> Vec<usize> {
     match node {
         Node::Wire(wire) => {
-            if !wire_list.contains(&wire.clone()) {
-                wire_list.push(wire.clone())
-            }
-        }
+            let position = wire_list.iter().position(|w| wire == w);
+            let output = match position {
+                Some(index) => index,
+                None => {wire_list.push(wire.clone()); wire_list.len()-1}
+            };
+            vec![output]
+        },
         Node::Node(gate_type, nodes) => {
-            nodes
+            let inputs = nodes
                 .iter()
-                .for_each(|node| flatten_node(node, wire_list, gate_list));
+                .flat_map(|node| flatten_node(node, wire_list, gate_list, definitions)).collect();
+
+            let num_outputs = definitions[gate_type].outputs.len();
+            // if a gate has "no output" we use the zero wire as its output
+            let outputs = match num_outputs {
+                0 => vec![0],
+                _ => (0..num_outputs).map(|i| {
+                    wire_list.push(Wire(format!("w_{}", wire_list.len())));
+                    wire_list.len()-1
+                }).collect(),
+            };
+
             gate_list.push(Gate {
                 gate_type: gate_type.into(),
-                output: wire_list.len(),
+                inputs,
+                outputs: outputs.clone(),
             });
-            // following line should actually be a for_each on the outputs of this node type
-            // to accodmodate gates with more than one output
-            wire_list.push(Wire(format!("w_{}", wire_list.len())));
+            outputs
         }
         _ => unreachable!(),
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use crate::{
         ast::Vampir,
-        circuit::{flatten, Circuit},
+        circuit::{Circuit, flatten},
         parser::{from_str, pairs},
     };
 
@@ -157,12 +171,16 @@ mod tests {
                 def ec_check x y {
                     x^3 + 3 = y^2
                 }
+                def add x y -> z {}
+                def mul x y -> z {}
+                def eq x y -> z {}
+                def exp x y -> z {}
                 x * (ec_check y z) + (ec_check x y)
             ";
         let vampir = Vampir::from(test_expressions);
         println!("{:?}", vampir);
-        let (wires, nodes) = flatten(vampir.expressions);
-        println!("wires: {:?}\nexpressions: {:?}", wires, nodes);
+        let (wires, gates) = flatten(vampir.expressions, &vampir.definitions);
+        println!("wires: {:?}\nexpressions: {:?}", wires, gates);
         // let circuit = Circuit::from(vampir);
         // println!("{:?}", circuit);
     }

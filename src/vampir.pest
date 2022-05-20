@@ -9,7 +9,7 @@ wire = @{ identifier }
 inputs = { wire+ }
 outputs = { "->" ~ wire+ }
 
-alias_definition = { "def" ~ identifier ~ inputs ~ outputs? ~ "{" ~ expression+ ~ "}" }
+alias_definition = { "def" ~ identifier ~ inputs ~ outputs? ~ "{" ~ expression* ~ "}" }
 
 // alias invocations need to be surrounded by brackets to distinguish them
 // from wire identifiers
