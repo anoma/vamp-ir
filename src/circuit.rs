@@ -120,7 +120,7 @@ fn flatten(node_forest: Vec<Box<Node>>) -> (Vec<Wire>, Vec<(String, usize)>) {
 
 fn flatten_node_tree(node_tree: &Node, wires: &mut Vec<Wire>, nodes: &mut Vec<(String, usize)>) {
     match node_tree {
-        Node::Wire(string) => if !wires.contains(&Wire(string.into())) {wires.push(Wire(string.into()))},
+        Node::Wire(wire) => if !wires.contains(&wire.clone()) {wires.push(wire.clone())},
         Node::Node(node_type, node_forest) => {
             node_forest.iter().for_each(|node_tree| flatten_node_tree(node_tree, wires, nodes));
             nodes.push((node_type.into(), wires.len()));

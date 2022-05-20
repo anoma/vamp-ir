@@ -8,15 +8,16 @@ pub struct Constant(pub i64);
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Node(String, Vec<Box<Node>>),
-    Wire(String),
+    Wire(Wire),
     Constant(i64),
+    Index(usize),
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Definition {
-    pub inputs: Vec<Node>,
-    pub outputs: Vec<Node>,
-    pub nodes: Vec<Node>,
+    pub inputs: Vec<Wire>,
+    pub outputs: Vec<Wire>,
+    pub nodes: Vec<Box<Node>>,
 }
 
 #[derive(Debug)]
