@@ -73,7 +73,7 @@ impl From<Pairs<'_, Rule>> for Definition {
             .map(|pair| Wire(String::from(pair.as_str())))
             .collect::<Vec<_>>();
         let outputs = match pairs.peek().unwrap().as_rule() {
-            Rule::outputs => pairs
+            Rule::definition_outputs => pairs
                 .next()
                 .unwrap()
                 .into_inner()
@@ -149,6 +149,7 @@ fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
 }
 
 fn primary(pair: Pair<Rule>) -> Node {
+    println!("pair {:?}", pair);
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
         Rule::wire => Node::Wire(String::from(inner.as_str())),
@@ -156,15 +157,18 @@ fn primary(pair: Pair<Rule>) -> Node {
         Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
         Rule::alias_invocation => {
             let mut inner = inner.into_inner();
-            Node::Node(
-                inner.next().unwrap().as_str().into(),
-                inner
+            println!("inner {:?}", inner);
+            Node::Invocation(Invocation{
+                name: inner.next().unwrap().as_str().into(),
+                inputs: inner
                     .next()
                     .unwrap()
                     .into_inner()
-                    .map(|pair| Box::new(Node::Wire(String::from(pair.as_str()))))
+                    .map(|pair| Box::new(primary(pair)))
                     .collect(),
-            )
+                outputs: vec![],
+                nodes: vec![],
+            })
         }
         _ => unreachable!(),
     }

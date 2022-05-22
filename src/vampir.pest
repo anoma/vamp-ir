@@ -6,14 +6,15 @@ constant = @{ "-"? ~ (ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) }
 
 // Atomic and immutable data unit for the IR, a wire
 wire = @{ identifier }
-inputs = { wire+ }
-outputs = { "->" ~ wire+ }
+invocation_inputs = { primary+ }
+definition_inputs = { wire+ }
+definition_outputs = { "->" ~ wire+ }
 
-alias_definition = { "def" ~ identifier ~ inputs ~ outputs? ~ "{" ~ expression* ~ "}" }
+alias_definition = { "def" ~ identifier ~ definition_inputs ~ definition_outputs? ~ "{" ~ expression* ~ "}" }
 
 // alias invocations need to be surrounded by brackets to distinguish them
 // from wire identifiers
-alias_invocation = { "(" ~ identifier ~ inputs? ~ ")" }
+alias_invocation = { "(" ~ identifier ~ invocation_inputs ~ ")" }
 
 // binary operations
 plus = { "+" }
