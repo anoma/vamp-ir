@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, default};
 
 use crate::ast::{Node, Vampir, Definition};
 
@@ -109,8 +109,8 @@ pub struct Wire(pub String);
 //     }
 // }
 
-// (String, usize) is how I am referring to a "gate" right now. This will be changed
-// consider incorporating these into `From` functions
+
+// rewrite these in a better way
 fn flatten(nodes: Vec<Box<Node>>, definitions: &HashMap<String, Definition>) -> (Vec<Wire>, Vec<Gate>) {
     let mut wire_list = vec![Wire("zero".into())];
     let mut gate_list = vec![];
@@ -122,20 +122,24 @@ fn flatten(nodes: Vec<Box<Node>>, definitions: &HashMap<String, Definition>) -> 
 
 fn flatten_node(node: &Node, wire_list: &mut Vec<Wire>, gate_list: &mut Vec<Gate>, definitions: &HashMap<String, Definition>) -> Vec<usize> {
     match node {
-        Node::Wire(wire) => {
-            let position = wire_list.iter().position(|w| wire == w);
+        // if the wire exists already we return its index, otherwise we append a new one and return the new index
+        Node::Wire(name) => {
+            let position = wire_list.iter().position(|Wire(n)| name == n);
             let output = match position {
                 Some(index) => index,
-                None => {wire_list.push(wire.clone()); wire_list.len()-1}
+                None => {wire_list.push(Wire(name.into())); wire_list.len()-1}
             };
             vec![output]
         },
         Node::Node(gate_type, nodes) => {
+            // the inputs of a gate is the flattened list of the outputs of the child nodes
             let inputs = nodes
                 .iter()
                 .flat_map(|node| flatten_node(node, wire_list, gate_list, definitions)).collect();
 
+            // look up how many outputs a gate is supposed to have
             let num_outputs = definitions[gate_type].outputs.len();
+
             // if a gate has "no output" we use the zero wire as its output
             let outputs = match num_outputs {
                 0 => vec![0],
@@ -156,6 +160,42 @@ fn flatten_node(node: &Node, wire_list: &mut Vec<Wire>, gate_list: &mut Vec<Gate
     }
 }
 
+// looks up the supplied node from the definitions and returns a list of nodes that replace it
+fn lookup_node(node: &Node, definitions: &HashMap<String, Definition>) -> Option<Definition> {
+    match node {
+        Node::Node(gate_type, inputs) => 
+            match definitions.get(gate_type) {
+                Some(definition) => Some(definition.clone()),
+                None => None,
+            }
+        _ => None,
+    }
+}
+
+// loops through a list of nodes, retrieves its definition nodes if it finds one, and flat_maps the results
+fn expand_nodes(nodes: &Vec<Box<Node>>, definitions: &HashMap<String, Definition>) -> Vec<Box<Node>> {
+    println!("expanding {:?}", nodes);
+    nodes.into_iter().flat_map(|node| {
+        match &**node {
+            Node::Node(name, inputs) => match lookup_node(node, definitions) {
+                Some(Definition{nodes,..}) => expand_nodes(&nodes, definitions),
+                None => vec![Box::new(Node::Node(name.into(), expand_nodes(&inputs, definitions)))],
+            },
+            _ => vec![node.clone()]
+        }
+    }).collect()
+}
+
+impl Vampir {
+
+    // replaces a leaf node of `gate_type: String` with the root node of an alias definition of that type if it finds one
+    fn expand(&mut self) {
+        self.expressions = expand_nodes(&self.expressions, &self.definitions)
+    }
+}
+
+
+
 
 #[cfg(test)]
 mod tests {
@@ -171,16 +211,18 @@ mod tests {
                 def ec_check x y {
                     x^3 + 3 = y^2
                 }
-                def add x y -> z {}
-                def mul x y -> z {}
-                def eq x y -> z {}
-                def exp x y -> z {}
+                //def add x y -> z {}
+                //def mul x y -> z {}
+                //def eq x y -> z {}
+                //def exp x y -> z {}
                 x * (ec_check y z) + (ec_check x y)
             ";
-        let vampir = Vampir::from(test_expressions);
+        let mut vampir = Vampir::from(test_expressions);
         println!("{:?}", vampir);
-        let (wires, gates) = flatten(vampir.expressions, &vampir.definitions);
-        println!("wires: {:?}\nexpressions: {:?}", wires, gates);
+        //let (wires, gates) = flatten(vampir.expressions, &vampir.definitions);
+        //println!("wires: {:?}\nexpressions: {:?}", wires, gates);
+        vampir.expand();
+        println!("{:?}", vampir);
         // let circuit = Circuit::from(vampir);
         // println!("{:?}", circuit);
     }

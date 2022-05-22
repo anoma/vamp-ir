@@ -8,19 +8,19 @@ pub struct Constant(pub i64);
 #[derive(Debug, Clone, PartialEq)]
 pub enum Node {
     Node(String, Vec<Box<Node>>),
-    Wire(Wire),
+    Wire(String),
     Constant(i64),
     Index(usize),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Definition {
     pub inputs: Vec<Wire>,
     pub outputs: Vec<Wire>,
     pub nodes: Vec<Box<Node>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Vampir {
     pub definitions: HashMap<String, Definition>,
     pub expressions: Vec<Box<Node>>,

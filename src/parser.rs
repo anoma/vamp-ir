@@ -25,7 +25,7 @@ impl From<Pair<'_, Rule>> for Node {
     fn from(pair: Pair<Rule>) -> Node {
         match pair.as_rule() {
             Rule::expression => CLIMBER.climb(pair.into_inner(), primary, infix),
-            Rule::wire => Node::Wire(Wire(String::from(pair.as_str()))),
+            Rule::wire => Node::Wire(String::from(pair.as_str())),
             _ => unreachable!(),
         }
     }
@@ -95,7 +95,7 @@ impl From<Pairs<'_, Rule>> for Definition {
 
 fn remove_names(node: Box<Node>, inputs: &Vec<Wire>) -> Box<Node> {
     match *node {
-        Node::Wire(wire) => Box::new(Node::Index(inputs.iter().position(|w| wire == *w).unwrap())), // this unwrapping should be an error like "undeclared wire" or similar
+        Node::Wire(name) => Box::new(Node::Index(inputs.iter().position(|Wire(n)| name == *n).unwrap())), // this unwrapping should be an error like "undeclared wire" or similar
         Node::Node(name, nodes) => Box::new(Node::Node(
             name,
             nodes
@@ -151,7 +151,7 @@ fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
 fn primary(pair: Pair<Rule>) -> Node {
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
-        Rule::wire => Node::Wire(Wire(String::from(inner.as_str()))),
+        Rule::wire => Node::Wire(String::from(inner.as_str())),
         Rule::constant => Node::Constant(inner.as_str().to_string().parse::<i64>().unwrap()),
         Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
         Rule::alias_invocation => {
@@ -162,7 +162,7 @@ fn primary(pair: Pair<Rule>) -> Node {
                     .next()
                     .unwrap()
                     .into_inner()
-                    .map(|pair| Box::new(Node::Wire(Wire(String::from(pair.as_str())))))
+                    .map(|pair| Box::new(Node::Wire(String::from(pair.as_str()))))
                     .collect(),
             )
         }
