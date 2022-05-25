@@ -136,6 +136,17 @@ fn flatten_nodes(nodes: Vec<Node>) -> Vec<Node> {
         .collect()
 }
 
+// traverses the nodes and applies the supplied function
+// to each node
+fn traverse(nodes: Vec<Node>, f: fn(Node) -> Node) -> Vec<Node> {
+    nodes.into_iter().map(|node| {
+        match node {
+            Node::Gate(name, inputs, outputs) => f(Node::Gate(name, traverse(inputs, f), outputs)),
+            _ => f(node),
+        }
+    }).collect()
+}
+
 impl Vampir {
     // mutates the nodes in a vampir circuit to be partially flattened. each alias
     // invocation becomes the root of its own tree
@@ -162,6 +173,8 @@ impl Vampir {
                 _ => unreachable!(),
             }).collect();
     }
+
+
 
     // // queries the definition of an alias and creates the right number of wires to serve as its outputs, and returns them
     // fn set_outputs(
