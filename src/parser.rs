@@ -140,13 +140,13 @@ pub fn from_pairs(mut pairs: Pairs<Rule>) -> Vec<Node> {
         .collect::<Vec<Node>>()
 }
 
-pub fn from_str(input: &str) -> Vec<Node> {
-    from_pairs(VampirParser::parse(Rule::vampir, input).unwrap())
-}
+// pub fn from_str(input: &str) -> Vec<Node> {
+//     from_pairs(VampirParser::parse(Rule::vampir, input).unwrap())
+// }
 
-pub fn pairs(input: &str) -> Pairs<Rule> {
-    VampirParser::parse(Rule::vampir, input).unwrap()
-}
+// pub fn pairs(input: &str) -> Pairs<Rule> {
+//     VampirParser::parse(Rule::vampir, input).unwrap()
+// }
 
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {

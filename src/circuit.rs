@@ -78,18 +78,6 @@ fn lookup_invocation<'a>(
     }
 }
 
-// this is an initial flattening step that creates new wires for the outputs of each invocation
-// and separates the each invocation into its own expression
-// for instance:
-//      Invocation(range_2 inputs: [Invocation(volume, inputs:[a, Invocation(div_mod, inputs: [b, c])])])
-// becomes
-//      Invocation(range_2 inputs: [Invocation(volume, inputs:[a, w_2, w_3])])
-//      Expression(div_mod, inputs: [b, c], outputs: [w_2, w_3])
-// becomes
-//      Expression(range_2 inputs: [w_5], outputs: [])
-//      Expression(volume, inputs:[a, w_2, w_3], outputs: [w_5])
-//      Expression(div_mod, inputs: [b, c], outputs: [w_2, w_3])
-
 fn wire_to_node(wire: Wire) -> Node {
     match wire {
         Wire(string) => Node::Wire(string),
@@ -112,100 +100,18 @@ fn rename_node(node: Node, wires: &[Node]) -> Node {
     }
 }
 
-// flatten_node and flatten_nodes are a recursive pair of functionstakes a parent node that may have other nodes as children, creates the correct number of output wires for each
-// child, and flat_maps the outputs of the children together to give the inputs of the parent.
-// parent(child1(..), child2(..), ...)
-// [flatten_node(child1), flatten_node(child2), ..., parent(child1(..), child2(..))]
-fn flatten_node(node: &Node) -> Vec<Node> {
-    match node {
-        Node::Gate(_, inputs, _) => {
-            let children = flatten_nodes(inputs.to_vec());
-            [children, vec![node.clone()]].concat()
-        }
-        _ => vec![node.clone()],
-    }
-}
-
-fn flatten_nodes(nodes: Vec<Node>) -> Vec<Node> {
-    nodes
-        .into_iter()
-        .flat_map(|node| match node {
-            Node::Gate(_, _, _) => flatten_node(&node),
-            _ => vec![],
-        })
-        .collect()
-}
-
-// traverses the nodes and applies the supplied function
-// to each node
-fn traverse(nodes: Vec<Node>, f: fn(Node) -> Node) -> Vec<Node> {
-    nodes.into_iter().map(|node| {
-        match node {
-            Node::Gate(name, inputs, outputs) => f(Node::Gate(name, traverse(inputs, f), outputs)),
-            _ => f(node),
-        }
-    }).collect()
-}
-
 impl Vampir {
     // mutates the nodes in a vampir circuit to be partially flattened. each alias
     // invocation becomes the root of its own tree
     fn flatten(&mut self) {
-        self.nodes = self.nodes.clone()
-            .into_iter()
-            .flat_map(|node| flatten_node(&node))
-            .collect();        
+        self.nodes = self.nodes.clone().into_iter().flat_map(|node| node.into_iter().collect::<Vec<Node>>()).collect();
     }
 
-    // replaces input nodes of parent with output wires of child
-    fn replace_inputs(mut self) {
-        self.nodes = self.nodes.into_iter().map(|node| 
-            match node {
-                Node::Gate(name, inputs, outputs) => 
-                    Node::Gate(
-                        name.to_string(), 
-                        inputs
-                        .into_iter()
-                        .flat_map(|node| {
-                            node.outputs()
-                        }).collect(),
-                        outputs),
-                _ => unreachable!(),
-            }).collect();
-    }
-
-
-
-    // // queries the definition of an alias and creates the right number of wires to serve as its outputs, and returns them
-    // fn set_outputs(
-    //     mut self,
-    //     node: Node,
-    // ) -> Node {
-    //     match node {
-    //         Node::Gate(name, inputs, outputs) => match lookup_invocation(&node, &self.definitions) {
-    //             Some(def) => {
-    //                 let new_outputs = (0..def.outputs.len())
-    //                     .map(|_| {
-    //                         let new_wire = Wire(format!("w_{}", &self.wires.len()));
-    //                         self.wires.push(new_wire.clone());
-    //                         new_wire
-    //                     })
-    //                     .collect();
-    //                 Node::Gate(name.to_string(), inputs.clone(), new_outputs)
-    //             }
-    //             None => node.clone(),
-    //         },
-    //         _ => node.clone(),
-    //     }
-    // }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        ast::{Node, Vampir},
-        parser::{from_str, pairs},
-    };
+    use crate::ast::Vampir;
 
     #[test]
     pub(crate) fn test_circuit_construction() {
