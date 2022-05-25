@@ -6,7 +6,7 @@ use pest::{
     Parser,
 };
 
-use crate::{ast::*, circuit::Wire};
+use crate::ast::*;
 
 #[derive(Parser)]
 #[grammar = "vampir.pest"]
@@ -46,20 +46,23 @@ impl From<Pair<'_, Rule>> for Vampir {
     fn from(pair: Pair<Rule>) -> Vampir {
         let inner = pair.into_inner();
         let mut definitions: HashMap<String, Definition> = HashMap::new();
-        let mut expressions: Vec<Box<Node>> = vec![];
+        let mut nodes: Vec<Node> = vec![];
         inner.for_each(|pair| match pair.as_rule() {
             Rule::alias_definition => {
                 let mut inner = pair.into_inner();
                 let name = inner.next().unwrap().as_str().into();
                 definitions.insert(name, Definition::from(inner));
             }
-            Rule::expression => expressions.push(Box::new(Node::from(pair))),
+            Rule::expression => nodes.push(Node::from(pair)),
             Rule::EOI => (),
             _ => unreachable!(),
         });
+
+        let inputs = nodes.iter().flat_map(|node| node.inputs()).collect();
         Vampir {
             definitions,
-            expressions,
+            inputs,
+            nodes,
         }
     }
 }
@@ -81,9 +84,11 @@ impl From<Pairs<'_, Rule>> for Definition {
                 .collect::<Vec<_>>(),
             _ => vec![],
         };
+
+        let mut wires = [&inputs[..], &outputs[..]].concat();
         let nodes = pairs
-            .map(|pair| remove_names(Box::new(Node::from(pair)), &inputs))
-            .collect::<Vec<Box<Node>>>();
+            .map(|pair| remove_name(Node::from(pair), &mut wires))
+            .collect();
 
         Definition {
             inputs,
@@ -93,18 +98,25 @@ impl From<Pairs<'_, Rule>> for Definition {
     }
 }
 
-fn remove_names(node: Box<Node>, inputs: &Vec<Wire>) -> Box<Node> {
-    match *node {
-        Node::Wire(name) => Box::new(Node::Index(inputs.iter().position(|Wire(n)| name == *n).unwrap())), // this unwrapping should be an error like "undeclared wire" or similar
-        Node::Node(name, nodes) => Box::new(Node::Node(
-            name,
-            nodes
-                .into_iter()
-                .map(|node| remove_names(node, inputs))
-                .collect::<Vec<_>>(),
-        )),
+fn remove_name(node: Node, wires: &mut Vec<Wire>) -> Node {
+    match node {
+        Node::Wire(name) => match wires.iter().position(|Wire(n)| name == *n) {
+            Some(num) => Node::Index(num),
+            None => {
+                wires.push(Wire(name.clone()));
+                Node::Index(wires.len() - 1)
+            }
+        },
+        Node::Gate(name, inputs, outputs) => Node::Gate(name, remove_names(inputs, wires), outputs),
         _ => node,
     }
+}
+
+fn remove_names(nodes: Vec<Node>, wires: &mut Vec<Wire>) -> Vec<Node> {
+    nodes
+        .into_iter()
+        .map(|node| remove_name(node, wires))
+        .collect()
 }
 
 impl From<&str> for Constant {
@@ -139,17 +151,16 @@ pub fn pairs(input: &str) -> Pairs<Rule> {
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     match op.as_rule() {
-        Rule::plus => Node::Node(String::from("add"), vec![Box::new(lhs), Box::new(rhs)]),
-        Rule::minus => Node::Node(String::from("sub"), vec![Box::new(lhs), Box::new(rhs)]),
-        Rule::times => Node::Node(String::from("mul"), vec![Box::new(lhs), Box::new(rhs)]),
-        Rule::power => Node::Node(String::from("exp"), vec![Box::new(lhs), Box::new(rhs)]),
-        Rule::equals => Node::Node(String::from("eq"), vec![Box::new(lhs), Box::new(rhs)]),
+        Rule::plus => Node::Gate(String::from("add"), vec![lhs, rhs], vec![]),
+        Rule::minus => Node::Gate(String::from("sub"), vec![lhs, rhs], vec![]),
+        Rule::times => Node::Gate(String::from("mul"), vec![lhs, rhs], vec![]),
+        Rule::power => Node::Gate(String::from("pow"), vec![lhs, rhs], vec![]),
+        Rule::equals => Node::Gate(String::from("eq"), vec![lhs, rhs], vec![]),
         _ => unreachable!(),
     }
 }
 
 fn primary(pair: Pair<Rule>) -> Node {
-    println!("pair {:?}", pair);
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
         Rule::wire => Node::Wire(String::from(inner.as_str())),
@@ -157,18 +168,16 @@ fn primary(pair: Pair<Rule>) -> Node {
         Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
         Rule::alias_invocation => {
             let mut inner = inner.into_inner();
-            println!("inner {:?}", inner);
-            Node::Invocation(Invocation{
-                name: inner.next().unwrap().as_str().into(),
-                inputs: inner
+            Node::Gate(
+                inner.next().unwrap().as_str().into(),
+                inner
                     .next()
                     .unwrap()
                     .into_inner()
-                    .map(|pair| Box::new(primary(pair)))
+                    .map(primary)
                     .collect(),
-                outputs: vec![],
-                nodes: vec![],
-            })
+                vec![],
+            )
         }
         _ => unreachable!(),
     }

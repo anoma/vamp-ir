@@ -1,20 +1,7 @@
-use std::{collections::HashMap, default};
+use std::collections::HashMap;
 
-use crate::ast::{Node, Vampir, Definition};
+use crate::ast::{Definition, Node, Vampir, Wire, Gate};
 
-#[derive(Debug)]
-pub struct Circuit {
-    nodes: Vec<Box<Node>>,
-    wires: Vec<Wire>,
-    gates: Vec<Gate>,
-}
-
-#[derive(Debug)]
-pub struct Gate {
-    gate_type: String,
-    inputs: Vec<usize>,
-    outputs: Vec<usize>,
-}
 /*
 #################################################
 to do:
@@ -77,153 +64,155 @@ to do:
 #################################################
 */
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Wire(pub String);
-
-// impl From<&Node> for Gate {
-//     fn from(node: &Node) -> Self {
-//         match node {
-//             Node::AliasInvocation(name, inputs) =>
-//                 Self {
-//                     name: name.into(),
-//                     inputs: inputs.to_vec(),
-//                 },
-//             _ => unreachable!(),
-//         }
-//     }
-// }
-
-// impl From<Vec<Node>> for Circuit {
-//     fn from(nodes: Vec<Node>) -> Self {
-//         let inputs = construct_wire_map(&nodes);
-//         let gates = construct_gate_list(&nodes, &inputs);
-//         Self { inputs, gates }
-//     }
-// }
-
-// impl From<Vampir> for Circuit {
-//     fn from(vampir: Vampir) -> Self {
-//         let inputs = construct_wire_map(&vampir.expressions);
-//         let gates = construct_gate_list(&vampir.expressions, &inputs);
-//         Self { inputs, gates }
-//     }
-// }
-
-
-// rewrite these in a better way
-fn flatten(nodes: Vec<Box<Node>>, definitions: &HashMap<String, Definition>) -> (Vec<Wire>, Vec<Gate>) {
-    let mut wire_list = vec![Wire("zero".into())];
-    let mut gate_list = vec![];
-    nodes
-        .iter()
-        .map(|node| flatten_node(node, &mut wire_list, &mut gate_list, &definitions)).collect::<Vec<_>>();
-    (wire_list, gate_list)
-}
-
-fn flatten_node(node: &Node, wire_list: &mut Vec<Wire>, gate_list: &mut Vec<Gate>, definitions: &HashMap<String, Definition>) -> Vec<usize> {
+// looks up the supplied invocation from the definitions and returns a list of nodes that replace it
+fn lookup_invocation<'a>(
+    node: &Node,
+    definitions: &'a HashMap<String, Definition>,
+) -> Option<&'a Definition> {
     match node {
-        // if the wire exists already we return its index, otherwise we append a new one and return the new index
-        Node::Wire(name) => {
-            let position = wire_list.iter().position(|Wire(n)| name == n);
-            let output = match position {
-                Some(index) => index,
-                None => {wire_list.push(Wire(name.into())); wire_list.len()-1}
-            };
-            vec![output]
+        Node::Gate(name, _, _) => match definitions.get(name) {
+            Some(definition) => Some(definition),
+            None => None,
         },
-        Node::Node(gate_type, nodes) => {
-            // the inputs of a gate is the flattened list of the outputs of the child nodes
-            let inputs = nodes
-                .iter()
-                .flat_map(|node| flatten_node(node, wire_list, gate_list, definitions)).collect();
-
-            // look up how many outputs a gate is supposed to have
-            let num_outputs = definitions[gate_type].outputs.len();
-
-            // if a gate has "no output" we use the zero wire as its output
-            let outputs = match num_outputs {
-                0 => vec![0],
-                _ => (0..num_outputs).map(|i| {
-                    wire_list.push(Wire(format!("w_{}", wire_list.len())));
-                    wire_list.len()-1
-                }).collect(),
-            };
-
-            gate_list.push(Gate {
-                gate_type: gate_type.into(),
-                inputs,
-                outputs: outputs.clone(),
-            });
-            outputs
-        }
-        _ => unreachable!(),
-    }
-}
-
-// looks up the supplied node from the definitions and returns a list of nodes that replace it
-fn lookup_node(node: &Node, definitions: &HashMap<String, Definition>) -> Option<Definition> {
-    match node {
-        Node::Node(gate_type, inputs) => 
-            match definitions.get(gate_type) {
-                Some(definition) => Some(definition.clone()),
-                None => None,
-            }
         _ => None,
     }
 }
 
-// loops through a list of nodes, retrieves its definition nodes if it finds one, and flat_maps the results
-fn expand_nodes(nodes: &Vec<Box<Node>>, definitions: &HashMap<String, Definition>) -> Vec<Box<Node>> {
-    println!("expanding {:?}", nodes);
-    nodes.into_iter().flat_map(|node| {
-        match &**node {
-            Node::Node(name, inputs) => match lookup_node(node, definitions) {
-                Some(Definition{nodes,..}) => expand_nodes(&nodes, definitions),
-                None => vec![Box::new(Node::Node(name.into(), expand_nodes(&inputs, definitions)))],
-            },
-            _ => vec![node.clone()]
-        }
-    }).collect()
-}
+// this is an initial flattening step that creates new wires for the outputs of each invocation
+// and separates the each invocation into its own expression
+// for instance:
+//      Invocation(range_2 inputs: [Invocation(volume, inputs:[a, Invocation(div_mod, inputs: [b, c])])])
+// becomes
+//      Invocation(range_2 inputs: [Invocation(volume, inputs:[a, w_2, w_3])])
+//      Expression(div_mod, inputs: [b, c], outputs: [w_2, w_3])
+// becomes
+//      Expression(range_2 inputs: [w_5], outputs: [])
+//      Expression(volume, inputs:[a, w_2, w_3], outputs: [w_5])
+//      Expression(div_mod, inputs: [b, c], outputs: [w_2, w_3])
 
-impl Vampir {
-
-    // replaces a leaf node of `gate_type: String` with the root node of an alias definition of that type if it finds one
-    fn expand(&mut self) {
-        self.expressions = expand_nodes(&self.expressions, &self.definitions)
+fn wire_to_node(wire: Wire) -> Node {
+    match wire {
+        Wire(string) => Node::Wire(string),
     }
 }
 
+// lookup an index in the current list of wires and replace the index with the wire
+fn rename_node(node: Node, wires: &[Node]) -> Node {
+    match node {
+        Node::Index(i) => wires[i].clone(),
+        Node::Gate(name, inputs, outputs) => Node::Gate(
+            name,
+            inputs
+                .iter()
+                .map(|node| rename_node(node.clone(), wires))
+                .collect(),
+            outputs,
+        ),
+        _ => node.clone(),
+    }
+}
 
+// flatten_node and flatten_nodes are a recursive pair of functionstakes a parent node that may have other nodes as children, creates the correct number of output wires for each
+// child, and flat_maps the outputs of the children together to give the inputs of the parent.
+// parent(child1(..), child2(..), ...)
+// [flatten_node(child1), flatten_node(child2), ..., parent(child1(..), child2(..))]
+fn flatten_node(node: &Node) -> Vec<Node> {
+    match node {
+        Node::Gate(_, inputs, _) => {
+            let children = flatten_nodes(inputs.to_vec());
+            [children, vec![node.clone()]].concat()
+        }
+        _ => vec![node.clone()],
+    }
+}
 
+fn flatten_nodes(nodes: Vec<Node>) -> Vec<Node> {
+    nodes
+        .into_iter()
+        .flat_map(|node| match node {
+            Node::Gate(_, _, _) => flatten_node(&node),
+            _ => vec![],
+        })
+        .collect()
+}
+
+impl Vampir {
+    // mutates the nodes in a vampir circuit to be partially flattened. each alias
+    // invocation becomes the root of its own tree
+    fn flatten(&mut self) {
+        self.nodes = self.nodes.clone()
+            .into_iter()
+            .flat_map(|node| flatten_node(&node))
+            .collect();        
+    }
+
+    // replaces input nodes of parent with output wires of child
+    fn replace_inputs(mut self) {
+        self.nodes = self.nodes.into_iter().map(|node| 
+            match node {
+                Node::Gate(name, inputs, outputs) => 
+                    Node::Gate(
+                        name.to_string(), 
+                        inputs
+                        .into_iter()
+                        .flat_map(|node| {
+                            node.outputs()
+                        }).collect(),
+                        outputs),
+                _ => unreachable!(),
+            }).collect();
+    }
+
+    // // queries the definition of an alias and creates the right number of wires to serve as its outputs, and returns them
+    // fn set_outputs(
+    //     mut self,
+    //     node: Node,
+    // ) -> Node {
+    //     match node {
+    //         Node::Gate(name, inputs, outputs) => match lookup_invocation(&node, &self.definitions) {
+    //             Some(def) => {
+    //                 let new_outputs = (0..def.outputs.len())
+    //                     .map(|_| {
+    //                         let new_wire = Wire(format!("w_{}", &self.wires.len()));
+    //                         self.wires.push(new_wire.clone());
+    //                         new_wire
+    //                     })
+    //                     .collect();
+    //                 Node::Gate(name.to_string(), inputs.clone(), new_outputs)
+    //             }
+    //             None => node.clone(),
+    //         },
+    //         _ => node.clone(),
+    //     }
+    // }
+}
 
 #[cfg(test)]
 mod tests {
     use crate::{
-        ast::Vampir,
-        circuit::{Circuit, flatten},
+        ast::{Node, Vampir},
         parser::{from_str, pairs},
     };
 
     #[test]
     pub(crate) fn test_circuit_construction() {
         let test_expressions = "
-                def ec_check x y {
-                    x^3 + 3 = y^2
-                }
-                //def add x y -> z {}
-                //def mul x y -> z {}
-                //def eq x y -> z {}
-                //def exp x y -> z {}
-                x * (ec_check y z) + (ec_check x y)
-            ";
+            def volume x y z -> v {
+                x*y*z-v
+            }
+            def range_2 x {
+                b0 * b0 - b0
+                b1 * b1 - b1
+                2*b1 + b0 - x
+            }
+            def div_mod x y -> q r {
+                q * y + r - x
+            }
+            (range_2 (volume a (div_mod b c)))
+        ";
         let mut vampir = Vampir::from(test_expressions);
         println!("{:?}", vampir);
-        //let (wires, gates) = flatten(vampir.expressions, &vampir.definitions);
-        //println!("wires: {:?}\nexpressions: {:?}", wires, gates);
-        vampir.expand();
+        vampir.flatten();
         println!("{:?}", vampir);
-        // let circuit = Circuit::from(vampir);
-        // println!("{:?}", circuit);
     }
 }
