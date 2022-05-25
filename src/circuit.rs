@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Definition, Node, Vampir, Wire, Gate};
+use crate::ast::{Definition, Node, Vampir, Wire};
 
 /*
 #################################################
@@ -104,9 +104,13 @@ impl Vampir {
     // mutates the nodes in a vampir circuit to be partially flattened. each alias
     // invocation becomes the root of its own tree
     fn flatten(&mut self) {
-        self.nodes = self.nodes.clone().into_iter().flat_map(|node| node.into_iter().collect::<Vec<Node>>()).collect();
+        self.nodes = self
+            .nodes
+            .clone()
+            .into_iter()
+            .flat_map(|node| node.into_iter().collect::<Vec<Node>>())
+            .collect();
     }
-
 }
 
 #[cfg(test)]

@@ -35,7 +35,6 @@ pub struct Vampir {
     pub nodes: Vec<Node>,
 }
 
-
 impl Node {
     pub fn outputs(self) -> Vec<Node> {
         match self {
@@ -58,15 +57,17 @@ impl Node {
 
 impl IntoIterator for Node {
     type Item = Node;
-    type IntoIter = std::iter::Chain<std::vec::IntoIter<Self::Item>, std::vec::IntoIter<Self::Item>>;
+    type IntoIter =
+        std::iter::Chain<std::vec::IntoIter<Self::Item>, std::vec::IntoIter<Self::Item>>;
     fn into_iter(self) -> Self::IntoIter {
         match &self {
-            Node::Gate(_, inputs, _) => 
-                vec![self.clone()].into_iter().chain(
-                    inputs.into_iter().flat_map(|node| 
-                        node.clone().into_iter()
-                    ).collect::<Vec<Node>>().into_iter()
-                ),
+            Node::Gate(_, inputs, _) => vec![self.clone()].into_iter().chain(
+                inputs
+                    .iter()
+                    .flat_map(|node| node.clone().into_iter())
+                    .collect::<Vec<Node>>()
+                    .into_iter(),
+            ),
             Node::Wire(_) => vec![self].into_iter().chain(vec![]),
             Node::Constant(_) => vec![self].into_iter().chain(vec![]),
             Node::Index(_) => vec![self].into_iter().chain(vec![]),
