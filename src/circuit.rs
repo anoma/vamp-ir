@@ -65,12 +65,12 @@ to do:
 */
 
 // looks up the supplied invocation from the definitions and returns a list of nodes that replace it
-fn lookup_invocation<'a>(
+fn lookup_nodes<'a>(
     node: &Node,
     definitions: &'a HashMap<String, Definition>,
 ) -> Option<&'a Definition> {
     match node {
-        Node::Gate(name, _, _) => match definitions.get(name) {
+        Node::Gate(name, _) => match definitions.get(name) {
             Some(definition) => Some(definition),
             None => None,
         },
@@ -88,54 +88,93 @@ fn wire_to_node(wire: Wire) -> Node {
 fn rename_node(node: Node, wires: &[Node]) -> Node {
     match node {
         Node::Index(i) => wires[i].clone(),
-        Node::Gate(name, inputs, outputs) => Node::Gate(
+        Node::Gate(name, inputs) => Node::Gate(
             name,
             inputs
                 .iter()
                 .map(|node| rename_node(node.clone(), wires))
                 .collect(),
-            outputs,
         ),
         _ => node.clone(),
     }
 }
 
 impl Vampir {
-    // mutates the nodes in a vampir circuit to be partially flattened. each alias
+    // creates a new Vampir struct after applying the transformation `f` to its nodes
+    fn transform(self, f: fn(&Node) -> Node) -> Self {
+        Vampir {
+            definitions: self.definitions,
+            inputs: self.inputs,
+            nodes: self.nodes.iter().map(|n| n.traverse(f)).collect(),
+        }
+    }
+
+    // creates a new Vampir struct after applying the transformation `f` to its nodes and flattening the results
+    fn flat_transform(self, f: fn(&Node) -> Vec<Node>) -> Self {
+        Vampir {
+            definitions: self.definitions,
+            inputs: self.inputs,
+            nodes: self.nodes.iter().flat_map(f).collect(),
+        }
+    }
+
+    // creates a partially flattened representation of vampir where each alias
     // invocation becomes the root of its own tree
-    fn flatten(&mut self) {
-        self.nodes = self
-            .nodes
-            .clone()
-            .into_iter()
-            .flat_map(|node| node.into_iter().collect::<Vec<Node>>())
-            .collect();
+    fn flatten_to_invocations(self) -> Self {
+        self.flat_transform(|n| n.into_iter().collect::<Vec<Node>>())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ast::Vampir;
+    use crate::ast::{Node, Vampir};
 
     #[test]
     pub(crate) fn test_circuit_construction() {
         let test_expressions = "
             def volume x y z -> v {
-                x*y*z-v
+                x*y*z = v
             }
             def range_2 x {
-                b0 * b0 - b0
-                b1 * b1 - b1
-                2*b1 + b0 - x
+                b0 * b0 = b0
+                b1 * b1 = b1
+                2*b1 + b0 = x
             }
             def div_mod x y -> q r {
-                q * y + r - x
+                q * y + r = x
             }
             (range_2 (volume a (div_mod b c)))
         ";
-        let mut vampir = Vampir::from(test_expressions);
-        println!("{:?}", vampir);
-        vampir.flatten();
-        println!("{:?}", vampir);
+        let vampir = Vampir::from(test_expressions);
+    }
+
+    #[test]
+    pub(crate) fn test_power_expansion() {
+        let with_powers = "
+            y^2 = x^3 + 3
+        ";
+        let with_mul = "
+            y*y = x*x*x + 3
+        ";
+        assert_eq!(
+            Vampir::from(with_mul).nodes,
+            Vampir::from(with_powers)
+                .transform(Node::expand_powers)
+                .nodes
+        );
+    }
+
+    #[test]
+    pub(crate) fn test_eq_to_sub() {
+        let with_eq = "
+            y^2 = x^3 + 3
+        ";
+        let with_sub = "
+            y^2 - (x^3 + 3)
+        ";
+        assert_eq!(
+            Vampir::from(with_sub).nodes,
+            Vampir::from(with_eq).transform(Node::eq_to_sub).nodes
+        );
     }
 }

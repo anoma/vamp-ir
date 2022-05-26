@@ -1,4 +1,5 @@
 pub mod ast;
+#[allow(unused)]
 pub mod circuit;
 pub mod parser;
 

@@ -107,7 +107,7 @@ fn remove_name(node: Node, wires: &mut Vec<Wire>) -> Node {
                 Node::Index(wires.len() - 1)
             }
         },
-        Node::Gate(name, inputs, outputs) => Node::Gate(name, remove_names(inputs, wires), outputs),
+        Node::Gate(name, inputs) => Node::Gate(name, remove_names(inputs, wires)),
         _ => node,
     }
 }
@@ -143,11 +143,11 @@ pub fn from_pairs(mut pairs: Pairs<Rule>) -> Vec<Node> {
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     match op.as_rule() {
-        Rule::plus => Node::Gate(String::from("add"), vec![lhs, rhs], vec![]),
-        Rule::minus => Node::Gate(String::from("sub"), vec![lhs, rhs], vec![]),
-        Rule::times => Node::Gate(String::from("mul"), vec![lhs, rhs], vec![]),
-        Rule::power => Node::Gate(String::from("pow"), vec![lhs, rhs], vec![]),
-        Rule::equals => Node::Gate(String::from("eq"), vec![lhs, rhs], vec![]),
+        Rule::plus => Node::Gate(String::from("add"), vec![lhs, rhs]),
+        Rule::minus => Node::Gate(String::from("sub"), vec![lhs, rhs]),
+        Rule::times => Node::Gate(String::from("mul"), vec![lhs, rhs]),
+        Rule::power => Node::Gate(String::from("pow"), vec![lhs, rhs]),
+        Rule::equals => Node::Gate(String::from("eq"), vec![lhs, rhs]),
         _ => unreachable!(),
     }
 }
@@ -162,13 +162,7 @@ fn primary(pair: Pair<Rule>) -> Node {
             let mut inner = inner.into_inner();
             Node::Gate(
                 inner.next().unwrap().as_str().into(),
-                inner
-                    .next()
-                    .unwrap()
-                    .into_inner()
-                    .map(primary)
-                    .collect(),
-                vec![],
+                inner.next().unwrap().into_inner().map(primary).collect(),
             )
         }
         _ => unreachable!(),
@@ -186,13 +180,13 @@ mod tests {
             x*z*w - 3 = y - w + x
             x^3--10*x +7-y^2
         ";
-        let expressions = Vampir::from(test_expressions);
+        let _expressions = Vampir::from(test_expressions);
     }
 
     #[test]
     pub(crate) fn test_bracketing() {
         let test_expressions = "x - (w*(y - z - w)-x)*(w+z)";
-        let expressions = Vampir::from(test_expressions);
+        let _expressions = Vampir::from(test_expressions);
     }
 
     #[test]
@@ -212,6 +206,5 @@ mod tests {
         taxicab_distance = a + b
         ";
         let _vampir = Vampir::from(test_definition);
-        println!("{:?}", _vampir);
     }
 }
