@@ -86,10 +86,8 @@ impl From<Pairs<'_, Rule>> for Definition {
         };
 
         let mut wires = [&inputs[..], &outputs[..]].concat();
-        let nodes = pairs
-            .map(|pair| remove_name(Node::from(pair), &mut wires))
-            .collect();
-
+        let nodes = pairs.map(|pair| remove_name(Node::from(pair), &mut wires)).collect::<Vec<Node>>();
+        
         Definition {
             inputs,
             outputs,
@@ -107,16 +105,9 @@ fn remove_name(node: Node, wires: &mut Vec<Wire>) -> Node {
                 Node::Index(wires.len() - 1)
             }
         },
-        Node::Gate(name, inputs) => Node::Gate(name, remove_names(inputs, wires)),
+        Node::Gate(gate) => Node::Gate(Gate{name: gate.name, inputs: gate.inputs.iter().map(|node| remove_name(node.clone(), wires)).collect(), wires: gate.wires}),
         _ => node,
     }
-}
-
-fn remove_names(nodes: Vec<Node>, wires: &mut Vec<Wire>) -> Vec<Node> {
-    nodes
-        .into_iter()
-        .map(|node| remove_name(node, wires))
-        .collect()
 }
 
 impl From<&str> for Constant {
@@ -143,11 +134,11 @@ pub fn from_pairs(mut pairs: Pairs<Rule>) -> Vec<Node> {
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     match op.as_rule() {
-        Rule::plus => Node::Gate(String::from("add"), vec![lhs, rhs]),
-        Rule::minus => Node::Gate(String::from("sub"), vec![lhs, rhs]),
-        Rule::times => Node::Gate(String::from("mul"), vec![lhs, rhs]),
-        Rule::power => Node::Gate(String::from("pow"), vec![lhs, rhs]),
-        Rule::equals => Node::Gate(String::from("eq"), vec![lhs, rhs]),
+        Rule::plus => Node::Gate(Gate{name: String::from("add"), inputs: vec![lhs, rhs], wires: vec![]}),
+        Rule::minus => Node::Gate(Gate{name: String::from("sub"), inputs: vec![lhs, rhs], wires: vec![]}),
+        Rule::times => Node::Gate(Gate{name: String::from("mul"), inputs: vec![lhs, rhs], wires: vec![]}),
+        Rule::power => Node::Gate(Gate{name: String::from("pow"), inputs: vec![lhs, rhs], wires: vec![]}),
+        Rule::equals => Node::Gate(Gate{name: String::from("eq"), inputs: vec![lhs, rhs], wires: vec![]}),
         _ => unreachable!(),
     }
 }
@@ -160,10 +151,11 @@ fn primary(pair: Pair<Rule>) -> Node {
         Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
         Rule::alias_invocation => {
             let mut inner = inner.into_inner();
-            Node::Gate(
-                inner.next().unwrap().as_str().into(),
-                inner.next().unwrap().into_inner().map(primary).collect(),
-            )
+            Node::Gate(Gate{
+                name: inner.next().unwrap().as_str().into(),
+                inputs: inner.next().unwrap().into_inner().map(primary).collect(),
+                wires: vec![],
+            })
         }
         _ => unreachable!(),
     }

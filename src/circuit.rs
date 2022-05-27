@@ -70,7 +70,7 @@ fn lookup_nodes<'a>(
     definitions: &'a HashMap<String, Definition>,
 ) -> Option<&'a Definition> {
     match node {
-        Node::Gate(name, _) => match definitions.get(name) {
+        Node::Gate(gate) => match definitions.get(&gate.name) {
             Some(definition) => Some(definition),
             None => None,
         },
@@ -85,17 +85,11 @@ fn wire_to_node(wire: Wire) -> Node {
 }
 
 // lookup an index in the current list of wires and replace the index with the wire
-fn rename_node(node: Node, wires: &[Node]) -> Node {
+fn rename_node(mut node: Node, wires: &[Node]) {
     match node {
-        Node::Index(i) => wires[i].clone(),
-        Node::Gate(name, inputs) => Node::Gate(
-            name,
-            inputs
-                .iter()
-                .map(|node| rename_node(node.clone(), wires))
-                .collect(),
-        ),
-        _ => node.clone(),
+        Node::Index(i) => node = wires[i].clone(),
+        Node::Gate(gate) => gate.inputs.iter().for_each(|node| rename_node(node.clone(), wires)),
+        _ => (),
     }
 }
 
