@@ -88,7 +88,10 @@ fn wire_to_node(wire: Wire) -> Node {
 fn rename_node(mut node: Node, wires: &[Node]) {
     match node {
         Node::Index(i) => node = wires[i].clone(),
-        Node::Gate(gate) => gate.inputs.iter().for_each(|node| rename_node(node.clone(), wires)),
+        Node::Gate(gate) => gate
+            .inputs
+            .iter()
+            .for_each(|node| rename_node(node.clone(), wires)),
         _ => (),
     }
 }
@@ -170,5 +173,25 @@ mod tests {
             Vampir::from(with_sub).nodes,
             Vampir::from(with_eq).transform(Node::eq_to_sub).nodes
         );
+    }
+    #[test]
+    pub(crate) fn test_flatten() {
+        let test_expressions = "
+            def volume x y z -> v {
+                x*y*z = v
+            }
+            def range_2 x {
+                b0 * b0 = b0
+                b1 * b1 = b1
+                2*b1 + b0 = x
+            }
+            def div_mod x y -> q r {
+                q * y + r = x
+            }
+            (range_2 (volume a (div_mod b c)))
+        ";
+        let vampir = Vampir::from(test_expressions);
+        println!("vampir\n{:?}", vampir.nodes);
+        println!("flattened\n{:?}", vampir.flatten_to_invocations().nodes);
     }
 }

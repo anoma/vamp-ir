@@ -48,7 +48,7 @@ impl Node {
     // traverses a tree and applies `f` to each Node, children first
     pub fn traverse(&self, f: fn(&Self) -> Self) -> Self {
         match self {
-            Node::Gate(gate) => f(&Node::Gate(Gate{
+            Node::Gate(gate) => f(&Node::Gate(Gate {
                 name: gate.name.clone(),
                 inputs: gate.inputs.iter().map(|n| n.traverse(f)).collect(),
                 wires: gate.wires.clone(),
@@ -62,7 +62,11 @@ impl Node {
         match node {
             Node::Gate(gate) => {
                 if gate.name.as_str() == "eq" {
-                    Node::Gate(Gate{name: "sub".into(), inputs: gate.inputs.to_vec(), wires: gate.wires.clone()})
+                    Node::Gate(Gate {
+                        name: "sub".into(),
+                        inputs: gate.inputs.to_vec(),
+                        wires: gate.wires.clone(),
+                    })
                 } else {
                     node.clone()
                 }
@@ -81,10 +85,15 @@ impl Node {
                         (Node::Constant(base), Node::Constant(pow)) => {
                             Node::Constant(base.pow(*pow as u32))
                         }
-                        (_, Node::Constant(pow)) => (0..(*pow as usize - 1))
-                            .fold(left.clone(), |acc, _| {
-                                Node::Gate(Gate{name: "mul".into(), inputs: vec![acc, left.clone()], wires: gate.wires.clone()})
-                            }),
+                        (_, Node::Constant(pow)) => {
+                            (0..(*pow as usize - 1)).fold(left.clone(), |acc, _| {
+                                Node::Gate(Gate {
+                                    name: "mul".into(),
+                                    inputs: vec![acc, left.clone()],
+                                    wires: gate.wires.clone(),
+                                })
+                            })
+                        }
                         (_, Node::Gate(_)) => {
                             panic!("Gate nodes not allowed as powers")
                         }
