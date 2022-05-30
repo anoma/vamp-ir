@@ -189,12 +189,13 @@ mod tests {
                 q * y + r = x
             }
             (range_2 (volume a (div_mod b c)))
+            (volume a b c)
         ";
         let vampir = Vampir::from(test_expressions);
         println!("vampir\n{:?}", vampir.nodes);
         println!(
             "with outputs\n{:?}",
-            vampir.nodes[0].clone().assign_outputs(&vampir.definitions)
+            Node::assign_outputs(vampir.nodes, &vampir.definitions)
         );
     }
 }

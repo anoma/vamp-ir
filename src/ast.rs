@@ -79,7 +79,7 @@ impl Node {
     // traverses the tree and populates gate.wires with the correct number of wires from the definition
     // counts allocated wires as it goes, giving output wires an index 
     // QUESTION: can this be reworked to use `traverse` ?
-    pub fn assign_outputs(self, definitions: &HashMap<String, Definition>) -> Self {
+    pub fn assign_outputs(nodes: Vec<Node>, definitions: &HashMap<String, Definition>) -> Vec<Node> {
         fn add_to_map(
             node: &Node,
             definitions: &HashMap<String, Definition>,
@@ -103,13 +103,13 @@ impl Node {
                     })
                 }
                 _ => {
-                    *n += 1;
                     node.clone()
                 }
             }
         }
+    let mut n = 0usize;
 
-    add_to_map(&self, definitions, &mut 0usize)
+    nodes.iter().map(|node| add_to_map(node, definitions, &mut n)).collect()
     }
 
     // changes an "eq" node into a "sub" node
