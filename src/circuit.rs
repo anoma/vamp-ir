@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Definition, Node, Vampir, Wire};
+use crate::ast::{Definition, Node, Vampir, Wire, Gate};
 
 /*
 #################################################
@@ -98,11 +98,11 @@ fn rename_node(mut node: Node, wires: &[Node]) {
 
 impl Vampir {
     // creates a new Vampir struct after applying the transformation `f` to its nodes
-    fn transform(self, f: fn(&Node) -> Node) -> Self {
+    fn transform(self, f: impl Fn(&Node) -> Node) -> Self {
         Vampir {
             definitions: self.definitions,
             inputs: self.inputs,
-            nodes: self.nodes.iter().map(|n| n.traverse(f)).collect(),
+            nodes: self.nodes.iter().map(|n| n.traverse(&f)).collect(),
         }
     }
 
@@ -119,6 +119,47 @@ impl Vampir {
     // invocation becomes the root of its own tree
     fn flatten_to_invocations(self) -> Self {
         self.flat_transform(|n| n.into_iter().collect::<Vec<Node>>())
+    }
+
+    // traverses the tree and populates gate.wires with the correct number of wires from the definition
+    // counts allocated wires as it goes, giving output wires an index 
+    // QUESTION: can this be reworked to use `traverse` or `transform` ?
+    pub fn assign_outputs(self) -> Self {
+        let mut n = 0usize;
+
+        Vampir {
+            definitions: self.definitions.clone(),
+            inputs: self.inputs.clone(),
+            nodes: self.nodes.iter().map(|node| self.fill_node_wires(node, &mut n)).collect()
+        }
+    }
+
+    fn fill_node_wires(
+        &self,
+        node: &Node,
+        n: &mut usize,
+    ) -> Node {
+        match node {
+            Node::Gate(Gate {
+                ref name,
+                ref inputs,
+                ..
+            }) => {
+                let new_inputs = inputs.iter().map(|node| self.fill_node_wires(node, n)).collect();
+                let wires: Vec<Node> = (0..self.definitions[name].clone().outputs.len())
+                    .map(|i| Node::Wire(format!("w_{}", i+*n)))
+                    .collect();
+                *n += wires.len();
+                Node::Gate(Gate {
+                    name: name.clone(),
+                    inputs: new_inputs,
+                    wires,
+                })
+            }
+            _ => {
+                node.clone()
+            }
+        }
     }
 }
 
@@ -192,10 +233,9 @@ mod tests {
             (volume a b c)
         ";
         let vampir = Vampir::from(test_expressions);
-        println!("vampir\n{:?}", vampir.nodes);
+        println!("vampir\n{:?}", vampir);
         println!(
-            "with outputs\n{:?}",
-            Node::assign_outputs(vampir.nodes, &vampir.definitions)
+            "with outputs\n{:?}", vampir.assign_outputs()
         );
     }
 }

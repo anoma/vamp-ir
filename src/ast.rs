@@ -46,7 +46,7 @@ impl Node {
     }
 
     // traverses a tree and applies `f` to each Node, children first
-    pub fn traverse(&self, f: fn(&Self) -> Node) -> Node {
+    pub fn traverse(&self, f: &impl Fn(&Self) -> Node) -> Node {
         match self {
             Node::Gate(gate) => f(&Node::Gate(Gate {
                 name: gate.name.clone(),
@@ -76,41 +76,28 @@ impl Node {
         }
     }
 
-    // traverses the tree and populates gate.wires with the correct number of wires from the definition
-    // counts allocated wires as it goes, giving output wires an index 
-    // QUESTION: can this be reworked to use `traverse` ?
-    pub fn assign_outputs(nodes: Vec<Node>, definitions: &HashMap<String, Definition>) -> Vec<Node> {
-        fn add_to_map(
-            node: &Node,
-            definitions: &HashMap<String, Definition>,
-            n: &mut usize,
-        ) -> Node {
-            match node {
-                Node::Gate(Gate {
-                    ref name,
-                    ref inputs,
-                    ..
-                }) => {
-                    let new_inputs = inputs.iter().map(|node| add_to_map(node, definitions, n)).collect();
-                    let wires: Vec<Node> = (0..definitions[name].clone().outputs.len())
-                        .map(|i| Node::Wire(format!("w_{}", i+*n)))
-                        .collect();
-                    *n += wires.len();
-                    Node::Gate(Gate {
-                        name: name.clone(),
-                        inputs: new_inputs,
-                        wires,
-                    })
-                }
-                _ => {
-                    node.clone()
-                }
-            }
-        }
-    let mut n = 0usize;
-
-    nodes.iter().map(|node| add_to_map(node, definitions, &mut n)).collect()
-    }
+    // pub fn assign_wires(node: &Node) -> Node {
+    //     match *node {
+    //         Node::Gate(Gate {
+    //             name,
+    //             inputs,
+    //             ..
+    //         }) => {
+    //             let wires: Vec<Node> = (0..definitions[&name].clone().outputs.len())
+    //                 .map(|i| Node::Wire(format!("w_{}", i+*n)))
+    //                 .collect();
+    //             *n += wires.len();
+    //             Node::Gate(Gate {
+    //                 name: name.clone(),
+    //                 inputs,
+    //                 wires,
+    //             })
+    //         }
+    //         _ => {
+    //             node.clone()
+    //         }
+    //     }
+    // }
 
     // changes an "eq" node into a "sub" node
     pub fn eq_to_sub(node: &Node) -> Node {
