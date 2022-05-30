@@ -192,6 +192,9 @@ mod tests {
         ";
         let vampir = Vampir::from(test_expressions);
         println!("vampir\n{:?}", vampir.nodes);
-        println!("flattened\n{:?}", vampir.flatten_to_invocations().nodes);
+        println!(
+            "with outputs\n{:?}",
+            vampir.nodes[0].clone().assign_outputs(&vampir.definitions)
+        );
     }
 }

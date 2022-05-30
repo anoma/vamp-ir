@@ -85,9 +85,10 @@ impl From<Pairs<'_, Rule>> for Definition {
             _ => vec![],
         };
 
-        let mut wires = [&inputs[..], &outputs[..]].concat();
+        let mut all_wires = [&inputs[..], &outputs[..]].concat();
+
         let nodes = pairs
-            .map(|pair| remove_name(Node::from(pair), &mut wires))
+            .map(|pair| remove_name(Node::from(pair), &mut all_wires))
             .collect::<Vec<Node>>();
 
         Definition {
