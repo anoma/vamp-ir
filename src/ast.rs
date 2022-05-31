@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use core::fmt;
+use std::{collections::HashMap};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Constant(pub i64);
@@ -25,6 +26,7 @@ pub enum Node {
 pub struct Definition {
     pub inputs: Vec<Wire>,
     pub outputs: Vec<Wire>,
+    pub wires: Vec<Wire>,
     pub nodes: Vec<Node>,
 }
 
@@ -58,46 +60,108 @@ impl Node {
                     .collect(),
                 wires: gate.wires.clone(),
             })),
-            _ => self.clone(),
+            _ => f(&self.clone()),
         }
     }
 
-    pub fn children(self) -> Vec<Node> {
+    // traverses a tree and applies `f` to each Node, children first
+    pub fn flat_traverse(&self, f: &impl Fn(&Self) -> Vec<Node>) -> Vec<Node> {
         match self {
-            Node::Gate(gate) => gate.inputs,
+            Node::Gate(gate) => vec![Node::Gate(Gate {
+                name: gate.name.clone(),
+                inputs: gate
+                    .inputs
+                    .clone()
+                    .into_iter()
+                    .flat_map(|n| n.flat_traverse(f))
+                    .collect(),
+                wires: gate.wires.clone(),
+            })],
+            _ => f(&self.clone()),
+        }
+    }
+
+    // gives a list of the children of a node that aren't leaves of the expression tree
+    pub fn child_roots(&self) -> Vec<Node> {
+        match self {
+            Node::Gate(gate) => gate
+                .inputs
+                .clone()
+                .into_iter()
+                .filter(|node| matches!(node, Node::Gate(_))).collect(),
             _ => vec![],
         }
     }
 
-    pub fn wires(self) -> Vec<Node> {
+    // lookup an index in the current list of wires and replace the index with the wire
+    fn rename_node(self, wires: &[Node]) -> Node {
         match self {
-            Node::Gate(gate) => gate.wires,
-            _ => vec![self],
+            Node::Index(i) => wires[i].clone(),
+            Node::Gate(gate) => Node::Gate(Gate {
+                name: gate.name,
+                inputs: gate
+                    .inputs
+                    .into_iter()
+                    .map(|node| node.rename_node(wires))
+                    .collect(),
+                wires: gate.wires,
+            }),
+            _ => self,
         }
     }
 
-    // pub fn assign_wires(node: &Node) -> Node {
-    //     match *node {
-    //         Node::Gate(Gate {
-    //             name,
-    //             inputs,
-    //             ..
-    //         }) => {
-    //             let wires: Vec<Node> = (0..definitions[&name].clone().outputs.len())
-    //                 .map(|i| Node::Wire(format!("w_{}", i+*n)))
-    //                 .collect();
-    //             *n += wires.len();
-    //             Node::Gate(Gate {
-    //                 name: name.clone(),
-    //                 inputs,
-    //                 wires,
-    //             })
-    //         }
-    //         _ => {
-    //             node.clone()
-    //         }
-    //     }
-    // }
+    pub fn expand(&self, definitions: &HashMap<String, Definition>) -> Vec<Self> {
+        match self {
+            Node::Gate(gate) => {
+                let children = self.child_roots();
+                let wires = [
+                    self.outputs(definitions),
+                    gate.inputs
+                        .iter()
+                        .flat_map(|node| node.outputs(definitions))
+                        .collect(),
+                ]
+                .concat();
+                let nodes: Vec<Node> = match definitions.get(&gate.name) {
+                    Some(definition) => definition
+                        .nodes
+                        .clone()
+                        .into_iter()
+                        .map(|node| node.rename_node(&wires))
+                        .collect(),
+                    None => vec![self.clone()],
+                };
+                [nodes, children].concat()
+            }
+            _ => vec![self.clone()],
+        }
+    }
+
+    // creates the canoncial outputs for a gate
+    pub fn outputs(&self, definitions: &HashMap<String, Definition>) -> Vec<Node> {
+        match self {
+            Node::Gate(Gate { name, inputs, .. }) => {
+                let number_of_child_wires: usize =
+                    inputs.iter().map(|node| node.count_child_wires()).sum();
+                (0..definitions[name].clone().wires.len())
+                    .map(|i| Node::Wire(format!("w_{}", i + number_of_child_wires)))
+                    .collect()
+            }
+            _ => {
+                vec![self.clone()]
+            }
+        }
+    }
+
+    // counts the total number of wires for all children of a node--useful for creating the names of newly allocated wires
+    pub fn count_child_wires(&self) -> usize {
+        match self {
+            Node::Gate(Gate { inputs, .. }) => {
+                inputs.iter().map(|node| node.count_child_wires()).sum()
+            }
+            _ => 1,
+        }
+    }
 
     // changes an "eq" node into a "sub" node
     pub fn eq_to_sub(node: &Node) -> Node {
@@ -176,5 +240,34 @@ impl IntoIterator for &Node {
         std::iter::Chain<std::vec::IntoIter<Self::Item>, std::vec::IntoIter<Self::Item>>;
     fn into_iter(self) -> Self::IntoIter {
         self.clone().into_iter()
+    }
+}
+
+impl fmt::Display for Vampir {
+    // This trait requires `fmt` with this exact signature.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Write strictly the first element into the supplied output
+        // stream: `f`. Returns `fmt::Result` which indicates whether the
+        // operation succeeded or failed. Note that `write!` uses syntax which
+        // is very similar to `println!`.
+        write!(
+            f,
+            "Vampir\n\tDefinitions:\n\t\t{}\n\tInputs:\n\t\t{}\n\tNodes:\n\t\t{}",
+            self.definitions
+                .iter()
+                .map(|def| format!("{:?}", def))
+                .collect::<Vec<String>>()
+                .join("\n\t\t"),
+            self.inputs
+                .iter()
+                .map(|inp| format!("{:?}", inp))
+                .collect::<Vec<String>>()
+                .join("\n\t\t"),
+            self.nodes
+                .iter()
+                .map(|node| format!("{:?}", node))
+                .collect::<Vec<String>>()
+                .join("\n\t\t"),
+        )
     }
 }
