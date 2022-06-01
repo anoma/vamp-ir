@@ -3,20 +3,26 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Constant(pub i64);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Wire(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct WireList{
+    pub wires: Vec<Wire>,
+    pub inputs: Vec<Wire>
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Gate {
-    name: String,
-    inputs: Vec<Node>,
-    outputs: Vec<Node>,
+    pub name: String,
+    pub inputs: Vec<Node>,
+    pub wire_list: WireList,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Node {
-    Gate(String, Vec<Node>, Vec<Node>),
-    Wire(String),
+    Gate(Gate),
+    Wire(Wire),
     Constant(i64),
     Index(usize),
 }
@@ -35,19 +41,47 @@ pub struct Vampir {
     pub nodes: Vec<Node>,
 }
 
+pub struct WireIter {
+    curr: Wire,
+    next: Wire,
+}
+
+impl WireList {
+    pub fn new() -> Self {
+        WireList{inputs: vec![], wires: vec![]}
+    }
+    pub fn iter(&self) -> std::iter::Chain<std::slice::Iter<Wire>, std::slice::Iter<Wire>> {
+        self.inputs.iter().chain(self.wires.iter())
+    }
+
+    pub fn push(&mut self, wire: Wire) {
+        self.wires.push(wire);
+    }
+
+    pub fn len(&self) -> usize {
+        self.inputs.len() + self.wires.len()
+    }
+}
+
+impl Iterator for WireList {
+    type Item = Wire;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter().next().cloned()
+    }
+}
+
 impl Node {
-    pub fn outputs(self) -> Vec<Node> {
+    pub fn outputs(self) -> Vec<Wire> {
         match self {
-            Node::Gate(_, _, outputs) => outputs,
-            Node::Wire(_) => vec![self],
-            Node::Constant(_) => vec![self],
-            Node::Index(_) => vec![self],
+            Node::Gate(Gate{wire_list, ..}) => wire_list.wires,
+            Node::Wire(wire) => vec![wire],
+            _ => todo!(),
         }
     }
 
     pub fn inputs(&self) -> Vec<Node> {
         match self {
-            Node::Gate(_, inputs, _) => inputs.iter().flat_map(|node| node.inputs()).collect(),
+            Node::Gate(Gate{inputs,..}) => inputs.iter().flat_map(|node| node.inputs()).collect(),
             Node::Wire(_) => vec![self.clone()],
             Node::Constant(_) => vec![self.clone()],
             Node::Index(_) => vec![self.clone()],
@@ -61,7 +95,7 @@ impl IntoIterator for Node {
         std::iter::Chain<std::vec::IntoIter<Self::Item>, std::vec::IntoIter<Self::Item>>;
     fn into_iter(self) -> Self::IntoIter {
         match &self {
-            Node::Gate(_, inputs, _) => vec![self.clone()].into_iter().chain(
+            Node::Gate(Gate{inputs, ..}) => vec![self.clone()].into_iter().chain(
                 inputs
                     .iter()
                     .flat_map(|node| node.clone().into_iter())

@@ -25,7 +25,7 @@ impl From<Pair<'_, Rule>> for Node {
     fn from(pair: Pair<Rule>) -> Node {
         match pair.as_rule() {
             Rule::expression => CLIMBER.climb(pair.into_inner(), primary, infix),
-            Rule::wire => Node::Wire(String::from(pair.as_str())),
+            Rule::wire => Node::Wire(Wire(String::from(pair.as_str()))),
             _ => unreachable!(),
         }
     }
@@ -85,9 +85,9 @@ impl From<Pairs<'_, Rule>> for Definition {
             _ => vec![],
         };
 
-        let mut wires = [&inputs[..], &outputs[..]].concat();
+        let mut wire_list = WireList{inputs: inputs.clone(), wires: outputs.clone()};
         let nodes = pairs
-            .map(|pair| remove_name(Node::from(pair), &mut wires))
+            .map(|pair| remove_name(Node::from(pair), &mut wire_list))
             .collect();
 
         Definition {
@@ -98,24 +98,24 @@ impl From<Pairs<'_, Rule>> for Definition {
     }
 }
 
-fn remove_name(node: Node, wires: &mut Vec<Wire>) -> Node {
+fn remove_name(node: Node, wire_list: &mut WireList) -> Node {
     match node {
-        Node::Wire(name) => match wires.iter().position(|Wire(n)| name == *n) {
+        Node::Wire(wire) => match wire_list.iter().position(|w| wire == *w) {
             Some(num) => Node::Index(num),
             None => {
-                wires.push(Wire(name.clone()));
-                Node::Index(wires.len() - 1)
+                wire_list.push(wire);
+                Node::Index(wire_list.len() - 1)
             }
         },
-        Node::Gate(name, inputs, outputs) => Node::Gate(name, remove_names(inputs, wires), outputs),
+        Node::Gate(Gate{name, inputs, mut wire_list}) => Node::Gate(Gate{name, inputs: remove_names(inputs, &mut wire_list), wire_list}),
         _ => node,
     }
 }
 
-fn remove_names(nodes: Vec<Node>, wires: &mut Vec<Wire>) -> Vec<Node> {
+fn remove_names(nodes: Vec<Node>, wire_list: &mut WireList) -> Vec<Node> {
     nodes
         .into_iter()
-        .map(|node| remove_name(node, wires))
+        .map(|node| remove_name(node, wire_list))
         .collect()
 }
 
@@ -143,11 +143,11 @@ pub fn from_pairs(mut pairs: Pairs<Rule>) -> Vec<Node> {
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     match op.as_rule() {
-        Rule::plus => Node::Gate(String::from("add"), vec![lhs, rhs], vec![]),
-        Rule::minus => Node::Gate(String::from("sub"), vec![lhs, rhs], vec![]),
-        Rule::times => Node::Gate(String::from("mul"), vec![lhs, rhs], vec![]),
-        Rule::power => Node::Gate(String::from("pow"), vec![lhs, rhs], vec![]),
-        Rule::equals => Node::Gate(String::from("eq"), vec![lhs, rhs], vec![]),
+        Rule::plus => Node::Gate(Gate{name: String::from("add"), inputs: vec![lhs, rhs], wire_list: WireList::new()}),
+        Rule::minus => Node::Gate(Gate{name: String::from("sub"), inputs: vec![lhs, rhs], wire_list: WireList::new()}),
+        Rule::times => Node::Gate(Gate{name: String::from("mul"), inputs: vec![lhs, rhs], wire_list: WireList::new()}),
+        Rule::power => Node::Gate(Gate{name: String::from("pow"), inputs: vec![lhs, rhs], wire_list: WireList::new()}),
+        Rule::equals => Node::Gate(Gate{name: String::from("eq"), inputs: vec![lhs, rhs], wire_list: WireList::new()}),
         _ => unreachable!(),
     }
 }
@@ -155,21 +155,21 @@ fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
 fn primary(pair: Pair<Rule>) -> Node {
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
-        Rule::wire => Node::Wire(String::from(inner.as_str())),
+        Rule::wire => Node::Wire(Wire(String::from(inner.as_str()))),
         Rule::constant => Node::Constant(inner.as_str().to_string().parse::<i64>().unwrap()),
         Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
         Rule::alias_invocation => {
             let mut inner = inner.into_inner();
-            Node::Gate(
-                inner.next().unwrap().as_str().into(),
-                inner
+            Node::Gate(Gate{
+                name: inner.next().unwrap().as_str().into(),
+                inputs: inner
                     .next()
                     .unwrap()
                     .into_inner()
                     .map(primary)
                     .collect(),
-                vec![],
-            )
+                wire_list: WireList::new(),
+            })
         }
         _ => unreachable!(),
     }

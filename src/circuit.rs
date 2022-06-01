@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Definition, Node, Vampir, Wire};
+use crate::ast::{Definition, Node, Vampir, Wire, Gate};
 
 /*
 #################################################
@@ -70,7 +70,7 @@ fn lookup_invocation<'a>(
     definitions: &'a HashMap<String, Definition>,
 ) -> Option<&'a Definition> {
     match node {
-        Node::Gate(name, _, _) => match definitions.get(name) {
+        Node::Gate(Gate{name,..}) => match definitions.get(name) {
             Some(definition) => Some(definition),
             None => None,
         },
@@ -80,7 +80,7 @@ fn lookup_invocation<'a>(
 
 fn wire_to_node(wire: Wire) -> Node {
     match wire {
-        Wire(string) => Node::Wire(string),
+        Wire(string) => Node::Wire(Wire(string)),
     }
 }
 
@@ -88,14 +88,14 @@ fn wire_to_node(wire: Wire) -> Node {
 fn rename_node(node: Node, wires: &[Node]) -> Node {
     match node {
         Node::Index(i) => wires[i].clone(),
-        Node::Gate(name, inputs, outputs) => Node::Gate(
+        Node::Gate(Gate{name, inputs, wire_list}) => Node::Gate(Gate{
             name,
-            inputs
+            inputs: inputs
                 .iter()
                 .map(|node| rename_node(node.clone(), wires))
                 .collect(),
-            outputs,
-        ),
+            wire_list,
+        }),
         _ => node.clone(),
     }
 }
