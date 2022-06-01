@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ast::{Definition, Node, Vampir, Wire, Gate};
+use crate::ast::{Definition, Gate, Node, Vampir, Wire, WireList};
 
 /*
 #################################################
@@ -70,7 +70,7 @@ fn lookup_invocation<'a>(
     definitions: &'a HashMap<String, Definition>,
 ) -> Option<&'a Definition> {
     match node {
-        Node::Gate(Gate{name,..}) => match definitions.get(name) {
+        Node::Gate(Gate { name, .. }) => match definitions.get(name) {
             Some(definition) => Some(definition),
             None => None,
         },
@@ -79,22 +79,26 @@ fn lookup_invocation<'a>(
 }
 
 fn wire_to_node(wire: Wire) -> Node {
-    match wire {
-        Wire(string) => Node::Wire(Wire(string)),
-    }
+    Node::Wire(wire)
 }
 
 // lookup an index in the current list of wires and replace the index with the wire
-fn rename_node(node: Node, wires: &[Node]) -> Node {
+fn rename_node(node: Node, wires: WireList) -> Node {
     match node {
-        Node::Index(i) => wires[i].clone(),
-        Node::Gate(Gate{name, inputs, wire_list}) => Node::Gate(Gate{
+        Node::Wire(Wire::Index(i)) => Node::Wire(wires[i].clone()),
+        Node::Gate(Gate {
+            name,
+            inputs,
+            outputs,
+            wires,
+        }) => Node::Gate(Gate {
             name,
             inputs: inputs
                 .iter()
-                .map(|node| rename_node(node.clone(), wires))
+                .map(|node| rename_node(node.clone(), wires.clone()))
                 .collect(),
-            wire_list,
+            outputs,
+            wires,
         }),
         _ => node.clone(),
     }
@@ -137,5 +141,6 @@ mod tests {
         println!("{:?}", vampir);
         vampir.flatten();
         println!("{:?}", vampir);
+
     }
 }
