@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use pest::{
     iterators::{Pair, Pairs},
     prec_climber::{Assoc, Operator, PrecClimber},
@@ -21,6 +19,14 @@ lazy_static! {
     ]);
 }
 
+static PREAMBLE: &str = "
+    def add x y -> z {}
+    def sub x y -> z {}
+    def mul x y -> z {}
+    def pow x y -> z {}
+    def eq x y -> z {}
+";
+
 impl From<Pair<'_, Rule>> for Node {
     fn from(pair: Pair<Rule>) -> Node {
         match pair.as_rule() {
@@ -34,7 +40,7 @@ impl From<Pair<'_, Rule>> for Node {
 impl From<&str> for Vampir {
     fn from(input: &str) -> Vampir {
         Vampir::from(
-            VampirParser::parse(Rule::vampir, input)
+            VampirParser::parse(Rule::vampir, &[PREAMBLE, input].concat())
                 .unwrap()
                 .next()
                 .unwrap(),
@@ -159,31 +165,31 @@ fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
         Rule::plus => Node::Gate(Gate {
             name: String::from("add"),
             inputs: vec![lhs, rhs],
-            outputs: vec![Wire::Index(2)],
+            outputs: vec![],
             wires: WireList::new(),
         }),
         Rule::minus => Node::Gate(Gate {
             name: String::from("sub"),
             inputs: vec![lhs, rhs],
-            outputs: vec![Wire::Index(2)],
+            outputs: vec![],
             wires: WireList::new(),
         }),
         Rule::times => Node::Gate(Gate {
             name: String::from("mul"),
             inputs: vec![lhs, rhs],
-            outputs: vec![Wire::Index(2)],
+            outputs: vec![],
             wires: WireList::new(),
         }),
         Rule::power => Node::Gate(Gate {
             name: String::from("pow"),
             inputs: vec![lhs, rhs],
-            outputs: vec![Wire::Index(2)],
+            outputs: vec![],
             wires: WireList::new(),
         }),
         Rule::equals => Node::Gate(Gate {
             name: String::from("eq"),
             inputs: vec![lhs, rhs],
-            outputs: vec![Wire::Index(2)],
+            outputs: vec![],
             wires: WireList::new(),
         }),
         _ => unreachable!(),
