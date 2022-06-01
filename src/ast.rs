@@ -22,28 +22,64 @@ pub struct Gate {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Op {
+    Add(Vec<Node>),
+    Sub(Vec<Node>),
+    Mul(Vec<Node>),
+    Pow(Vec<Node>),
+    Eq(Vec<Node>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Node {
-    Gate(Gate),
+    Op(Op),
     Wire(Wire),
+    Invocation(Invocation),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Definition {
-    pub inputs: Vec<Node>,
+pub struct Circuit {
+    pub inputs: Vec<Wire>,
     pub outputs: Vec<Wire>,
     pub wires: WireList,
     pub nodes: Vec<Node>,
 }
 
-#[derive(Debug, Clone)]
-pub struct Definitions(HashMap<String, Definition>);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Invocation {
+    pub name: String,
+    pub inputs: Vec<Node>,
+}
 
+#[derive(Debug, Clone)]
+pub struct Definitions(HashMap<String, Circuit>);
 
 #[derive(Debug, Clone)]
 pub struct Vampir {
     pub definitions: Definitions,
-    pub inputs: Vec<Node>,
-    pub nodes: Vec<Node>,
+    pub circuit: Circuit,
+}
+
+impl Op {
+    pub fn inputs(&self) -> Vec<Node> {
+        match self {
+            Op::Add(inp) => inp.to_vec(),
+            Op::Mul(inp) => inp.to_vec(),
+            Op::Sub(inp) => inp.to_vec(),
+            Op::Pow(inp) => inp.to_vec(),
+            Op::Eq(inp) => inp.to_vec(),
+        }
+    }
+
+    pub fn same(&self, nodes: Vec<Node>) -> Op {
+        match self {
+            Op::Add(_) => Op::Add(nodes),
+            Op::Mul(_) => Op::Mul(nodes),
+            Op::Sub(_) => Op::Sub(nodes),
+            Op::Pow(_) => Op::Pow(nodes),
+            Op::Eq(_) => Op::Eq(nodes),
+        }
+    }
 }
 
 impl WireList {
@@ -64,6 +100,12 @@ impl WireList {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+}
+
+impl From<Vec<Node>> for WireList {
+    fn from(nodes: Vec<Node>) -> Self {
+        Self(nodes.iter().flat_map(|node| node.inputs()).collect())
     }
 }
 
@@ -89,11 +131,15 @@ impl Iterator for WireList {
 
 impl Definitions {
     pub fn new() -> Self {
-        Self(HashMap::<String, Definition>::new())
+        Self(HashMap::<String, Circuit>::new())
     }
 
-    pub fn insert(&mut self, name: String, def: Definition) -> Option<Definition> {
-        self.0.insert(name, def)
+    pub fn insert(&mut self, name: String, circuit: Circuit) -> Option<Circuit> {
+        self.0.insert(name, circuit)
+    }
+
+    pub fn get(&self, name: &str) -> Option<&Circuit> {
+        self.0.get(name)
     }
 }
 
@@ -104,12 +150,11 @@ impl Default for Definitions {
 }
 
 impl Node {
-    pub fn inputs(&self) -> Vec<Node> {
+    pub fn inputs(&self) -> Vec<Wire> {
         match self {
-            Node::Gate(Gate { inputs, .. }) => {
-                inputs.iter().flat_map(|node| node.inputs()).collect()
-            }
-            Node::Wire(_) => vec![self.clone()],
+            Node::Op(op) => op.inputs().iter().flat_map(|node| node.inputs()).collect(),
+            Node::Invocation(inv) => inv.inputs.iter().flat_map(|node| node.inputs()).collect(),
+            Node::Wire(wire) => vec![wire.clone()],
         }
     }
 }
@@ -120,14 +165,14 @@ impl IntoIterator for Node {
         std::iter::Chain<std::vec::IntoIter<Self::Item>, std::vec::IntoIter<Self::Item>>;
     fn into_iter(self) -> Self::IntoIter {
         match &self {
-            Node::Gate(Gate { inputs, .. }) => vec![self.clone()].into_iter().chain(
-                inputs
+            Node::Op(op) => vec![self.clone()].into_iter().chain(
+                op.inputs()
                     .iter()
                     .flat_map(|node| node.clone().into_iter())
                     .collect::<Vec<Node>>()
                     .into_iter(),
             ),
-            Node::Wire(_) => vec![self].into_iter().chain(vec![]),
+            _ => vec![self].into_iter().chain(vec![]),
         }
     }
 }

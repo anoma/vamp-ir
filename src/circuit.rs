@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use crate::ast::{Definition, Gate, Node, Vampir, Wire, WireList};
+use crate::ast::{Circuit, Definitions, Invocation, Node, Wire, WireList};
 
 /*
 #################################################
@@ -66,15 +64,12 @@ to do:
 
 // looks up the supplied invocation from the definitions and returns a list of nodes that replace it
 fn lookup_invocation<'a>(
-    node: &Node,
-    definitions: &'a HashMap<String, Definition>,
-) -> Option<&'a Definition> {
-    match node {
-        Node::Gate(Gate { name, .. }) => match definitions.get(name) {
-            Some(definition) => Some(definition),
-            None => None,
-        },
-        _ => None,
+    invocation: &Invocation,
+    definitions: &'a Definitions,
+) -> Option<&'a Circuit> {
+    match definitions.get(&invocation.name) {
+        Some(definition) => Some(definition),
+        None => None,
     }
 }
 
@@ -86,34 +81,15 @@ fn wire_to_node(wire: Wire) -> Node {
 fn rename_node(node: Node, wires: WireList) -> Node {
     match node {
         Node::Wire(Wire::Index(i)) => Node::Wire(wires[i].clone()),
-        Node::Gate(Gate {
-            name,
-            inputs,
-            outputs,
-            wires,
-        }) => Node::Gate(Gate {
-            name,
-            inputs: inputs
-                .iter()
-                .map(|node| rename_node(node.clone(), wires.clone()))
-                .collect(),
-            outputs,
-            wires,
-        }),
-        _ => node.clone(),
-    }
-}
-
-impl Vampir {
-    // mutates the nodes in a vampir circuit to be partially flattened. each alias
-    // invocation becomes the root of its own tree
-    fn flatten(&mut self) {
-        self.nodes = self
-            .nodes
-            .clone()
-            .into_iter()
-            .flat_map(|node| node.into_iter().collect::<Vec<Node>>())
-            .collect();
+        Node::Op(op) => Node::Op(
+            op.same(
+                op.inputs()
+                    .iter()
+                    .map(|node| rename_node(node.clone(), wires.clone()))
+                    .collect(),
+            ),
+        ),
+        _ => node,
     }
 }
 
@@ -139,8 +115,5 @@ mod tests {
         ";
         let mut vampir = Vampir::from(test_expressions);
         println!("{:?}", vampir);
-        vampir.flatten();
-        println!("{:?}", vampir);
-
     }
 }

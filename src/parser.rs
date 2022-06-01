@@ -19,14 +19,6 @@ lazy_static! {
     ]);
 }
 
-static PREAMBLE: &str = "
-    def add x y -> z {}
-    def sub x y -> z {}
-    def mul x y -> z {}
-    def pow x y -> z {}
-    def eq x y -> z {}
-";
-
 impl From<Pair<'_, Rule>> for Node {
     fn from(pair: Pair<Rule>) -> Node {
         match pair.as_rule() {
@@ -40,7 +32,7 @@ impl From<Pair<'_, Rule>> for Node {
 impl From<&str> for Vampir {
     fn from(input: &str) -> Vampir {
         Vampir::from(
-            VampirParser::parse(Rule::vampir, &[PREAMBLE, input].concat())
+            VampirParser::parse(Rule::vampir, input)
                 .unwrap()
                 .next()
                 .unwrap(),
@@ -51,30 +43,41 @@ impl From<&str> for Vampir {
 impl From<Pair<'_, Rule>> for Vampir {
     fn from(pair: Pair<Rule>) -> Vampir {
         let inner = pair.into_inner();
-        let mut definitions =  Definitions::new();
-        let mut nodes: Vec<Node> = vec![];
+        let mut definitions = Definitions::new();
+        let mut parsed_nodes: Vec<Node> = vec![];
         inner.for_each(|pair| match pair.as_rule() {
             Rule::alias_definition => {
                 let mut inner = pair.into_inner();
                 let name = inner.next().unwrap().as_str().into();
-                definitions.insert(name, Definition::from(inner));
+                definitions.insert(name, Circuit::from(inner));
             }
-            Rule::expression => nodes.push(Node::from(pair)),
+            Rule::expression => parsed_nodes.push(Node::from(pair)),
             Rule::EOI => (),
             _ => unreachable!(),
         });
 
-        let inputs = nodes.iter().flat_map(|node| node.inputs()).collect();
-        Vampir {
-            definitions,
+        let mut wires = WireList::from(parsed_nodes.clone());
+        let nodes: Vec<Node> = parsed_nodes
+            .into_iter()
+            .map(|node| remove_name(node, &mut wires))
+            .collect();
+        let inputs: Vec<Wire> = nodes.iter().flat_map(|node| node.inputs()).collect();
+        let circuit = Circuit {
             inputs,
             nodes,
+            outputs: vec![],
+            wires,
+        };
+
+        Vampir {
+            definitions,
+            circuit,
         }
     }
 }
 
-impl From<Pairs<'_, Rule>> for Definition {
-    fn from(mut pairs: Pairs<Rule>) -> Definition {
+impl From<Pairs<'_, Rule>> for Circuit {
+    fn from(mut pairs: Pairs<Rule>) -> Circuit {
         let inputs = pairs
             .next()
             .unwrap()
@@ -95,10 +98,8 @@ impl From<Pairs<'_, Rule>> for Definition {
             .map(|pair| remove_name(Node::from(pair), &mut wires))
             .collect();
 
-        Definition {
-            inputs: (0..inputs.len())
-                .map(|i| Node::Wire(Wire::Index(i)))
-                .collect(),
+        Circuit {
+            inputs: (0..inputs.len()).map(Wire::Index).collect(),
             outputs: (inputs.len()..(inputs.len() + outputs.len()))
                 .map(Wire::Index)
                 .collect(),
@@ -117,20 +118,13 @@ fn remove_name(node: Node, wires: &mut WireList) -> Node {
                 Node::Wire(Wire::Index(wires.len() - 1))
             }
         },
-        Node::Gate(Gate {
-            name,
-            inputs,
-            outputs,
-            mut wires,
-        }) => Node::Gate(Gate {
-            name,
-            inputs: remove_names(inputs, &mut wires),
-            outputs,
-            wires,
+        Node::Op(op) => Node::Op(op.same(remove_names(op.inputs(), wires))),
+        Node::Invocation(inv) => Node::Invocation(Invocation {
+            name: inv.name,
+            inputs: remove_names(inv.inputs, wires),
         }),
     }
 }
-
 fn remove_names(nodes: Vec<Node>, wires: &mut WireList) -> Vec<Node> {
     nodes
         .into_iter()
@@ -162,36 +156,11 @@ pub fn from_pairs(mut pairs: Pairs<Rule>) -> Vec<Node> {
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     match op.as_rule() {
-        Rule::plus => Node::Gate(Gate {
-            name: String::from("add"),
-            inputs: vec![lhs, rhs],
-            outputs: vec![],
-            wires: WireList::new(),
-        }),
-        Rule::minus => Node::Gate(Gate {
-            name: String::from("sub"),
-            inputs: vec![lhs, rhs],
-            outputs: vec![],
-            wires: WireList::new(),
-        }),
-        Rule::times => Node::Gate(Gate {
-            name: String::from("mul"),
-            inputs: vec![lhs, rhs],
-            outputs: vec![],
-            wires: WireList::new(),
-        }),
-        Rule::power => Node::Gate(Gate {
-            name: String::from("pow"),
-            inputs: vec![lhs, rhs],
-            outputs: vec![],
-            wires: WireList::new(),
-        }),
-        Rule::equals => Node::Gate(Gate {
-            name: String::from("eq"),
-            inputs: vec![lhs, rhs],
-            outputs: vec![],
-            wires: WireList::new(),
-        }),
+        Rule::plus => Node::Op(Op::Add(vec![lhs, rhs])),
+        Rule::minus => Node::Op(Op::Sub(vec![lhs, rhs])),
+        Rule::times => Node::Op(Op::Mul(vec![lhs, rhs])),
+        Rule::power => Node::Op(Op::Pow(vec![lhs, rhs])),
+        Rule::equals => Node::Op(Op::Eq(vec![lhs, rhs])),
         _ => unreachable!(),
     }
 }
@@ -206,11 +175,9 @@ fn primary(pair: Pair<Rule>) -> Node {
         Rule::expression => CLIMBER.climb(inner.into_inner(), primary, infix),
         Rule::alias_invocation => {
             let mut inner = inner.into_inner();
-            Node::Gate(Gate {
+            Node::Invocation(Invocation {
                 name: inner.next().unwrap().as_str().into(),
                 inputs: inner.next().unwrap().into_inner().map(primary).collect(),
-                outputs: vec![],
-                wires: WireList::new(),
             })
         }
         _ => unreachable!(),
