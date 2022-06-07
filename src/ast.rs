@@ -5,7 +5,7 @@ pub struct Constant(pub i64);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Wire {
-    Wire(String),
+    Named(String),
     Constant(i64),
     Index(usize),
 }
@@ -156,6 +156,12 @@ impl Node {
             Node::Invocation(inv) => inv.inputs.iter().flat_map(|node| node.inputs()).collect(),
             Node::Wire(wire) => vec![wire.clone()],
         }
+    }
+}
+
+impl From<Wire> for Node {
+    fn from(wire: Wire) -> Node {
+        Node::Wire(wire)
     }
 }
 
