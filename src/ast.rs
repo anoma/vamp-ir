@@ -72,6 +72,7 @@ impl Op {
     }
 
     pub fn same(&self, nodes: Vec<Node>) -> Op {
+
         match self {
             Op::Add(_) => Op::Add(nodes),
             Op::Mul(_) => Op::Mul(nodes),
@@ -90,10 +91,13 @@ impl WireList {
         self.0.iter()
     }
 
-    pub fn push(&mut self, wire: Wire) {
+    pub fn push (&mut self, wire: Wire) {
         self.0.push(wire);
     }
 
+    pub fn concat (&mut self, another: &Self)  {
+	    self.0.extend(another.0);
+    }
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -159,11 +163,6 @@ impl Node {
     }
 }
 
-impl From<Wire> for Node {
-    fn from(wire: Wire) -> Node {
-        Node::Wire(wire)
-    }
-}
 
 impl IntoIterator for Node {
     type Item = Node;
