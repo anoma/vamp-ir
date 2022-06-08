@@ -162,6 +162,12 @@ impl Node {
     }
 }
 
+impl From<Wire> for Node {
+    fn from(wire: Wire) -> Node {
+        Node::Wire(wire)
+    }
+}
+
 impl IntoIterator for Node {
     type Item = Node;
     type IntoIter =
