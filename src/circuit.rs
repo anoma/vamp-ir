@@ -73,10 +73,6 @@ fn lookup_invocation<'a>(
     }
 }
 
-fn wire_to_node(wire: Wire) -> Node {
-    Node::Wire(wire)
-}
-
 // lookup an index in the current list of wires and replace the index with the wire
 fn rename_node(node: Node, wires: WireList) -> Node {
     match node {
