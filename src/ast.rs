@@ -14,14 +14,6 @@ pub enum Wire {
 pub struct WireList(pub Vec<Wire>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Gate {
-    pub name: String,
-    pub inputs: Vec<Node>,
-    pub outputs: Vec<Wire>,
-    pub wires: WireList,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Op {
     Add(Vec<Node>),
     Sub(Vec<Node>),
@@ -95,7 +87,7 @@ impl WireList {
     }
 
     pub fn concat(&mut self, another: &Self) {
-        self.0.extend(another.0);
+        self.0.extend(another.0.iter().cloned());
     }
     pub fn len(&self) -> usize {
         self.0.len()

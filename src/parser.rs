@@ -23,7 +23,7 @@ impl From<Pair<'_, Rule>> for Node {
     fn from(pair: Pair<Rule>) -> Node {
         match pair.as_rule() {
             Rule::expression => CLIMBER.climb(pair.into_inner(), primary, infix),
-            Rule::wire => Node::Wire(Wire::Wire(String::from(pair.as_str()))),
+            Rule::wire => Node::Wire(Wire::Named(String::from(pair.as_str()))),
             _ => unreachable!(),
         }
     }
@@ -47,6 +47,7 @@ impl From<Pair<'_, Rule>> for Vampir {
         let mut parsed_nodes: Vec<Node> = vec![];
         inner.for_each(|pair| match pair.as_rule() {
             Rule::alias_definition => {
+                // call the From on the Pair 
                 let mut inner = pair.into_inner();
                 let name = inner.next().unwrap().as_str().into();
                 definitions.insert(name, Circuit::from(inner));
@@ -82,14 +83,14 @@ impl From<Pairs<'_, Rule>> for Circuit {
             .next()
             .unwrap()
             .into_inner()
-            .map(|pair| Wire::Wire(String::from(pair.as_str())))
+            .map(|pair| Wire::Named(String::from(pair.as_str())))
             .collect::<Vec<_>>();
         let outputs = match pairs.peek().unwrap().as_rule() {
             Rule::definition_outputs => pairs
                 .next()
                 .unwrap()
                 .into_inner()
-                .map(|pair| Wire::Wire(String::from(pair.as_str())))
+                .map(|pair| Wire::Named(String::from(pair.as_str())))
                 .collect::<Vec<_>>(),
             _ => vec![],
         };
@@ -168,7 +169,7 @@ fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
 fn primary(pair: Pair<Rule>) -> Node {
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
-        Rule::wire => Node::Wire(Wire::Wire(String::from(inner.as_str()))),
+        Rule::wire => Node::Wire(Wire::Named(String::from(inner.as_str()))),
         Rule::constant => Node::Wire(Wire::Constant(
             inner.as_str().to_string().parse::<i64>().unwrap(),
         )),
