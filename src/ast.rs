@@ -14,14 +14,6 @@ pub enum Wire {
 pub struct WireList(pub Vec<Wire>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Gate {
-    pub name: String,
-    pub inputs: Vec<Node>,
-    pub outputs: Vec<Wire>,
-    pub wires: WireList,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Op {
     Add(Vec<Node>),
     Sub(Vec<Node>),
@@ -39,8 +31,7 @@ pub enum Node {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Circuit {
-    pub inputs: Vec<Wire>,
-    pub outputs: Vec<Wire>,
+    pub definition: Definition,
     pub wires: WireList,
     pub nodes: Vec<Node>,
 }
@@ -52,7 +43,14 @@ pub struct Invocation {
 }
 
 #[derive(Debug, Clone)]
-pub struct Definitions(HashMap<String, Circuit>);
+pub struct Definitions(HashMap<String, Definition>);
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Definition {
+    pub inputs: Vec<Wire>,
+    pub outputs: Vec<Wire>,
+}
+
 
 #[derive(Debug, Clone)]
 pub struct Vampir {
@@ -95,7 +93,7 @@ impl WireList {
     }
 
     pub fn concat(&mut self, another: &Self) {
-        self.0.extend(another.0);
+        self.0.extend(another.0.iter().cloned());
     }
     pub fn len(&self) -> usize {
         self.0.len()
@@ -134,14 +132,14 @@ impl Iterator for WireList {
 
 impl Definitions {
     pub fn new() -> Self {
-        Self(HashMap::<String, Circuit>::new())
+        Self(HashMap::<String, Definition>::new())
     }
 
-    pub fn insert(&mut self, name: String, circuit: Circuit) -> Option<Circuit> {
-        self.0.insert(name, circuit)
+    pub fn insert(&mut self, name: String, definition: Definition) -> Option<Definition> {
+        self.0.insert(name, definition)
     }
 
-    pub fn get(&self, name: &str) -> Option<&Circuit> {
+    pub fn get(&self, name: &str) -> Option<&Definition> {
         self.0.get(name)
     }
 }
