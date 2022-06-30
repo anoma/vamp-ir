@@ -1,4 +1,4 @@
-use crate::ast::{Circuit, Definitions, Invocation, Node, Wire, WireList};
+use crate::ast::{Circuit, Definitions, Invocation, Node, Wire, WireList, Definition};
 
 /*
 #################################################
@@ -66,7 +66,7 @@ to do:
 fn lookup_invocation<'a>(
     invocation: &Invocation,
     definitions: &'a Definitions,
-) -> Option<&'a Circuit> {
+) -> Option<&'a Definition> {
     match definitions.get(&invocation.name) {
         Some(definition) => Some(definition),
         None => None,
