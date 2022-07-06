@@ -91,6 +91,12 @@ impl WireList {
         self.0.push(wire);
     }
 
+    pub fn insert(&mut self, wire: &Wire) {
+        if !self.0.contains(wire) {
+            self.push(wire.clone());
+        }
+    }
+
     pub fn concat(&mut self, another: &Self) {
         self.0.extend(another.0.iter().cloned());
     }
@@ -105,7 +111,12 @@ impl WireList {
 
 impl From<Vec<Node>> for WireList {
     fn from(nodes: Vec<Node>) -> Self {
-        Self(nodes.iter().flat_map(|node| node.inputs()).collect())
+        let mut res = Self::new();
+
+        nodes
+            .iter()
+            .for_each(|node| node.inputs().iter().for_each(|wire| res.insert(wire)));
+        res
     }
 }
 
