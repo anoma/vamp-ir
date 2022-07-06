@@ -52,8 +52,8 @@ impl From<Pair<'_, Rule>> for Circuit {
         Circuit {
             nodes,
             wires,
-            // make this Definition::new()
-            definition: Definition {
+            // make this Signature::new()
+            signature: Signature {
                 inputs: vec![],
                 outputs: vec![],
             },
@@ -71,9 +71,9 @@ impl From<Pair<'_, Rule>> for Vampir {
                 // call the From on the Pair
                 let mut inner = pair.into_inner();
                 let name = inner.next().unwrap().as_str().into();
-                let signature = Definition::from(inner.next().unwrap());
+                let signature = Signature::from(inner.next().unwrap());
                 let mut circuit = Circuit::from(inner.next().unwrap());
-                circuit.definition = signature;
+                circuit.signature = signature;
                 definitions.insert(name, circuit);
             }
             Rule::expression => parsed_nodes.push(Node::from(pair)),
@@ -90,7 +90,7 @@ impl From<Pair<'_, Rule>> for Vampir {
         let circuit = Circuit {
             nodes,
             wires,
-            definition: Definition {
+            signature: Signature {
                 inputs,
                 outputs: vec![],
             },
@@ -103,8 +103,8 @@ impl From<Pair<'_, Rule>> for Vampir {
     }
 }
 
-impl From<Pair<'_, Rule>> for Definition {
-    fn from(pair: Pair<Rule>) -> Definition {
+impl From<Pair<'_, Rule>> for Signature {
+    fn from(pair: Pair<Rule>) -> Signature {
         let mut inner = pair.into_inner();
         let inputs = inner
             .next()
@@ -120,7 +120,7 @@ impl From<Pair<'_, Rule>> for Definition {
             None => vec![],
         };
 
-        Definition {
+        Signature {
             inputs: (0..inputs.len()).map(Wire::Index).collect(),
             outputs: (inputs.len()..(inputs.len() + outputs.len()))
                 .map(Wire::Index)

@@ -31,7 +31,7 @@ pub enum Node {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Circuit {
-    pub definition: Definition,
+    pub signature: Signature,
     pub wires: WireList,
     pub nodes: Vec<Node>,
 }
@@ -46,7 +46,7 @@ pub struct Invocation {
 pub struct Definitions(HashMap<String, Circuit>);
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Definition {
+pub struct Signature {
     pub inputs: Vec<Wire>,
     pub outputs: Vec<Wire>,
 }

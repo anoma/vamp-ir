@@ -1,4 +1,4 @@
-use crate::ast::{Circuit, Definition, Definitions, Invocation, Node, Wire, WireList};
+use crate::ast::{Circuit, Definitions, Invocation, Node, Wire, WireList};
 
 /*
 #################################################
