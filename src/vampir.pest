@@ -9,8 +9,10 @@ wire = @{ identifier }
 invocation_inputs = { primary+ }
 definition_inputs = { wire+ }
 definition_outputs = { "->" ~ wire+ }
+signature = { definition_inputs ~ definition_outputs? }
+expression_list = { expression* }
 
-alias_definition = { "def" ~ identifier ~ definition_inputs ~ definition_outputs? ~ "{" ~ expression* ~ "}" }
+alias_definition = { "def" ~ identifier ~ signature ~ "{" ~ expression_list ~ "}" }
 
 // alias invocations need to be surrounded by brackets to distinguish them
 // from wire identifiers

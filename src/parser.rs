@@ -40,6 +40,27 @@ impl From<&str> for Vampir {
     }
 }
 
+impl From<Pair<'_, Rule>> for Circuit {
+    fn from(pair: Pair<Rule>) -> Circuit {
+        let inner = pair.into_inner();
+        let parsed_nodes: Vec<Node> = inner.map(Node::from).collect();
+        let mut wires = WireList::from(parsed_nodes.clone());
+        let nodes: Vec<Node> = parsed_nodes
+            .into_iter()
+            .map(|node| remove_name(node, &mut wires))
+            .collect();
+        Circuit {
+            nodes,
+            wires,
+            // make this Definition::new()
+            definition: Definition {
+                inputs: vec![],
+                outputs: vec![],
+            },
+        }
+    }
+}
+
 impl From<Pair<'_, Rule>> for Vampir {
     fn from(pair: Pair<Rule>) -> Vampir {
         let inner = pair.into_inner();
@@ -47,10 +68,13 @@ impl From<Pair<'_, Rule>> for Vampir {
         let mut parsed_nodes: Vec<Node> = vec![];
         inner.for_each(|pair| match pair.as_rule() {
             Rule::alias_definition => {
-                // call the From on the Pair 
+                // call the From on the Pair
                 let mut inner = pair.into_inner();
                 let name = inner.next().unwrap().as_str().into();
-                definitions.insert(name, Definition::from(inner));
+                let signature = Definition::from(inner.next().unwrap());
+                let mut circuit = Circuit::from(inner.next().unwrap());
+                circuit.definition = signature;
+                definitions.insert(name, circuit);
             }
             Rule::expression => parsed_nodes.push(Node::from(pair)),
             Rule::EOI => (),
@@ -64,11 +88,12 @@ impl From<Pair<'_, Rule>> for Vampir {
             .collect();
         let inputs: Vec<Wire> = nodes.iter().flat_map(|node| node.inputs()).collect();
         let circuit = Circuit {
-            //inputs,
             nodes,
-            //outputs: vec![],
             wires,
-            definition: Definition{inputs, outputs: vec![]}
+            definition: Definition {
+                inputs,
+                outputs: vec![],
+            },
         };
 
         Vampir {
@@ -78,23 +103,23 @@ impl From<Pair<'_, Rule>> for Vampir {
     }
 }
 
-impl From<Pairs<'_, Rule>> for Definition {
-    fn from (mut pairs: Pairs<Rule>) -> Definition {
-          let inputs = pairs
+impl From<Pair<'_, Rule>> for Definition {
+    fn from(pair: Pair<Rule>) -> Definition {
+        let mut inner = pair.into_inner();
+        let inputs = inner
             .next()
             .unwrap()
             .into_inner()
             .map(|pair| Wire::Named(String::from(pair.as_str())))
             .collect::<Vec<_>>();
-        let outputs = match pairs.peek().unwrap().as_rule() {
-            Rule::definition_outputs => pairs
-                .next()
-                .unwrap()
+        let outputs = match inner.peek() {
+            Some(pair) => pair
                 .into_inner()
                 .map(|pair| Wire::Named(String::from(pair.as_str())))
                 .collect::<Vec<_>>(),
-            _ => vec![],
+            None => vec![],
         };
+
         Definition {
             inputs: (0..inputs.len()).map(Wire::Index).collect(),
             outputs: (inputs.len()..(inputs.len() + outputs.len()))
@@ -103,7 +128,6 @@ impl From<Pairs<'_, Rule>> for Definition {
         }
     }
 }
-
 
 fn remove_name(node: Node, wires: &mut WireList) -> Node {
     match node {

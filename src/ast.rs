@@ -43,14 +43,13 @@ pub struct Invocation {
 }
 
 #[derive(Debug, Clone)]
-pub struct Definitions(HashMap<String, Definition>);
+pub struct Definitions(HashMap<String, Circuit>);
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Definition {
     pub inputs: Vec<Wire>,
     pub outputs: Vec<Wire>,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct Vampir {
@@ -132,14 +131,14 @@ impl Iterator for WireList {
 
 impl Definitions {
     pub fn new() -> Self {
-        Self(HashMap::<String, Definition>::new())
+        Self(HashMap::<String, Circuit>::new())
     }
 
-    pub fn insert(&mut self, name: String, definition: Definition) -> Option<Definition> {
-        self.0.insert(name, definition)
+    pub fn insert(&mut self, name: String, circuit: Circuit) -> Option<Circuit> {
+        self.0.insert(name, circuit)
     }
 
-    pub fn get(&self, name: &str) -> Option<&Definition> {
+    pub fn get(&self, name: &str) -> Option<&Circuit> {
         self.0.get(name)
     }
 }
