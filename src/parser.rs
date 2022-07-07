@@ -176,11 +176,11 @@ pub fn from_pairs(mut pairs: Pairs<Rule>) -> Vec<Node> {
 // folds two primaries according to operator precedence
 fn infix(lhs: Node, op: Pair<Rule>, rhs: Node) -> Node {
     match op.as_rule() {
-        Rule::plus => Node::Op(Op::Add(vec![lhs, rhs])),
-        Rule::minus => Node::Op(Op::Sub(vec![lhs, rhs])),
-        Rule::times => Node::Op(Op::Mul(vec![lhs, rhs])),
-        Rule::power => Node::Op(Op::Pow(vec![lhs, rhs])),
-        Rule::equals => Node::Op(Op::Eq(vec![lhs, rhs])),
+        Rule::plus => Node::Op(Op::Add(Box::new(lhs), Box::new(rhs))),
+        Rule::minus => Node::Op(Op::Sub(Box::new(lhs), Box::new(rhs))),
+        Rule::times => Node::Op(Op::Mul(Box::new(lhs), Box::new(rhs))),
+        Rule::power => Node::Op(Op::Pow(Box::new(lhs), Box::new(rhs))),
+        Rule::equals => Node::Op(Op::Eq(Box::new(lhs), Box::new(rhs))),
         _ => unreachable!(),
     }
 }

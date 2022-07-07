@@ -15,11 +15,11 @@ pub struct WireList(pub Vec<Wire>);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Op {
-    Add(Vec<Node>),
-    Sub(Vec<Node>),
-    Mul(Vec<Node>),
-    Pow(Vec<Node>),
-    Eq(Vec<Node>),
+    Add(Box<Node>, Box<Node>),
+    Sub(Box<Node>, Box<Node>),
+    Mul(Box<Node>, Box<Node>),
+    Pow(Box<Node>, Box<Node>),
+    Eq(Box<Node>, Box<Node>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -60,21 +60,21 @@ pub struct Vampir {
 impl Op {
     pub fn inputs(&self) -> Vec<Node> {
         match self {
-            Op::Add(inp) => inp.to_vec(),
-            Op::Mul(inp) => inp.to_vec(),
-            Op::Sub(inp) => inp.to_vec(),
-            Op::Pow(inp) => inp.to_vec(),
-            Op::Eq(inp) => inp.to_vec(),
+            Op::Add(left, right) => vec![*left.clone(), *right.clone()],
+            Op::Mul(left, right) => vec![*left.clone(), *right.clone()],
+            Op::Sub(left, right) => vec![*left.clone(), *right.clone()],
+            Op::Pow(left, right) => vec![*left.clone(), *right.clone()],
+            Op::Eq(left, right) => vec![*left.clone(), *right.clone()],
         }
     }
 
     pub fn same(&self, nodes: Vec<Node>) -> Op {
         match self {
-            Op::Add(_) => Op::Add(nodes),
-            Op::Mul(_) => Op::Mul(nodes),
-            Op::Sub(_) => Op::Sub(nodes),
-            Op::Pow(_) => Op::Pow(nodes),
-            Op::Eq(_) => Op::Eq(nodes),
+            Op::Add(left, right) => Op::Add(left.clone(), right.clone()),
+            Op::Mul(left, right) => Op::Mul(left.clone(), right.clone()),
+            Op::Sub(left, right) => Op::Sub(left.clone(), right.clone()),
+            Op::Pow(left, right) => Op::Pow(left.clone(), right.clone()),
+            Op::Eq(left, right) => Op::Eq(left.clone(), right.clone()),
         }
     }
 }
