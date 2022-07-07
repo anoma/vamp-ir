@@ -82,10 +82,7 @@ impl From<Pair<'_, Rule>> for Vampir {
         });
 
         let mut wires = WireList::from(parsed_nodes.clone());
-        let nodes: Vec<Node> = parsed_nodes
-            .into_iter()
-            .map(|node| remove_name(node, &mut wires))
-            .collect();
+        let nodes: Vec<Node> = remove_names(parsed_nodes, &mut wires);
         let inputs: Vec<Wire> = nodes.iter().flat_map(|node| node.inputs()).collect();
         let circuit = Circuit {
             nodes,
