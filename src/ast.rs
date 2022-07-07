@@ -70,11 +70,11 @@ impl Op {
 
     pub fn same(&self, nodes: Vec<Node>) -> Op {
         match self {
-            Op::Add(left, right) => Op::Add(left.clone(), right.clone()),
-            Op::Mul(left, right) => Op::Mul(left.clone(), right.clone()),
-            Op::Sub(left, right) => Op::Sub(left.clone(), right.clone()),
-            Op::Pow(left, right) => Op::Pow(left.clone(), right.clone()),
-            Op::Eq(left, right) => Op::Eq(left.clone(), right.clone()),
+            Op::Add(_, _) => Op::Add(Box::new(nodes[0].clone()), Box::new(nodes[1].clone())),
+            Op::Mul(_, _) => Op::Mul(Box::new(nodes[0].clone()), Box::new(nodes[1].clone())),
+            Op::Sub(_, _) => Op::Sub(Box::new(nodes[0].clone()), Box::new(nodes[1].clone())),
+            Op::Pow(_, _) => Op::Pow(Box::new(nodes[0].clone()), Box::new(nodes[1].clone())),
+            Op::Eq(_, _) => Op::Eq(Box::new(nodes[0].clone()), Box::new(nodes[1].clone())),
         }
     }
 }
