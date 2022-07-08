@@ -34,6 +34,7 @@ pub struct Circuit {
     pub signature: Signature,
     pub wires: WireList,
     pub nodes: Vec<Node>,
+    pub equalities: Vec<(Wire, Wire)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -115,7 +116,7 @@ impl From<Vec<Node>> for WireList {
 
         nodes
             .iter()
-            .for_each(|node| node.inputs().iter().for_each(|wire| res.insert(wire)));
+            .for_each(|node| node.inputs().iter().for_each(|wire| res.push(wire.clone())));
         res
     }
 }
