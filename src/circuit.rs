@@ -1,4 +1,4 @@
-use crate::ast::{Circuit, Definitions, Invocation, Node, Wire, WireList};
+use crate::ast::{Circuit, Definitions, Invocation, Node, Wire, WireList, Signature};
 
 /*
 #################################################
@@ -87,6 +87,35 @@ fn rename_node(node: Node, wires: WireList) -> Node {
         ),
         _ => node,
     }
+}
+
+fn reindex_wire(wire: &Wire, offset: usize) -> Wire {
+    match wire {
+        Wire::Index(num) => Wire::Index(num+offset),
+        _ => wire.clone(),
+    }
+}
+
+fn reindex_node(node: &Node, offset: usize) -> Node {
+    match node {
+        Node::Op(op) => Node::Op(op.same(op.inputs().iter().map(|node| reindex_node(node, offset)).collect())),
+        Node::Wire(wire) => Node::Wire(reindex_wire(&wire, offset)),
+        Node::Invocation(Invocation{name, inputs}) => Node::Invocation(Invocation { name: name.to_string(), inputs: inputs.into_iter().map(|node| reindex_node(node, offset)).collect()}),
+    }
+}
+
+fn reindex_signature(sig: &Signature, offset: usize) -> Signature {
+    Signature{
+        inputs: sig.inputs.iter().map(|wire| reindex_wire(wire, offset)).collect(),
+        outputs: sig.outputs.iter().map(|wire| reindex_wire(wire, offset)).collect()
+    }
+}
+
+fn reindex_circuit(circuit: &Circuit, offset: usize) -> Circuit {
+    let signature = reindex_signature(&circuit.signature, offset);
+    let nodes = circuit.nodes.iter().map(|node| reindex_node(node, offset)).collect();
+    let equalities = circuit.equalities.iter().map(|(left, right)| (reindex_wire(left, offset), reindex_wire(right, offset))).collect();
+    Circuit { signature, wires: circuit.wires.clone(), nodes, equalities }
 }
 
 #[cfg(test)]
