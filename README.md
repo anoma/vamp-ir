@@ -23,6 +23,182 @@ cd vamp-ir
 cargo test
 ```
 
+## Terminology
+
+### Wires
+A **Wire** is a leaf of an expression tree. A wire may have a name, but often carry no data in the circuit at all. In the latter case they are given an index only. 
+
+### Nodes, Expressions, Constraints, Equations
+An expression is a tree of **Nodes**, which can be binary operations, alias invocations, or wires. Expressions are implicitly constrained to equal zero unless otherwise specified. Equations are rewritten so the right-hand-side is 0. This means that *expressions*, *constraints*, and *equations* are represented the same way in Vamp-IR. The following are equivalent:
+```
+String Input        Tree Representation
+
+"x*x - x"           Sub(Mul(Wire("x"), Wire("x")), Wire("x"))
+"x*x = x"           Eq(Mul(Wire("x"), Wire("x")), Wire("x"))
+"x*x - x = 0"       Eq(Sub(Mul(Wire("x"), Wire("x")), Wire("x")), Constant(0))
+```
+A simplification pass from the compiler would rewrite each representation in the same way: `Sub(Mul(Wire("x"), Wire("x")), Wire("x"))`
+
+### Circuits
+In Vamp-IR, a **Circuit** is a list of polynomial constraints which can optionally be augmented with a Signature, which allows it to be used as a function. The constraints in a circuit can take multiple forms, including an expression tree or flattened list of gates.
+
+To aid in compilation, Circuits are augmented with extra information. Circuits have a list of wires so that wires may be referred to by index. There is also a list of **Equalities** which record when two wires are constrained to the same value (called Copy Constraints in the Plonk paper, for instance). Recording Equalities makes it easy to join Circuits---simply concatenate their internal data and append some new equalities.
+
+### Signatures
+An arithmetic circuit is not a "function" in the usual sense. However it is convenient to imagine arithmetic circuits as functions when writing programs. To get an arithmetic circuit to become a function we augment it with a **Signature**, which designates that certain wires are to be treated as "inputs" or "outputs". Circuits which have Signatures can be composed into new circuits (as long as the inputs and outputs match accordingly.)
+
+### Definitions
+A **Definition** is a Circuit that is given a name. Definitions are stored in a hash map whose keys are Strings and values are Circuits.
+
+## Example
+
+### Input
+
+```javascript
+// definitions
+
+def bool x {
+    x*x - x
+}
+
+def range_4 x {
+    bool b0
+    bool b1
+    bool b2
+    bool b3
+    x = 8*b3 + 4*b2 + 2*b1 + b0
+}
+
+def pythagorean x y -> z {
+    z^2 = x^2 + y^2
+}
+
+// circuit
+
+range_4 a
+range_4 b
+range_4 (pythagorean a b)
+```
+
+### Representation in Vamp-IR
+
+```java
+Definitions {
+    "bool": Circuit(
+        signature: Signature(inputs: [Index(0)], outputs: []),
+        wires: [Named("x"), Named("x"), Named("x")],
+        nodes: [
+            Sub(
+                Mul(
+                    Index(0),
+                    Index(1),
+                ),
+            Index(2),
+            ),
+        ],
+        equalities: [
+            (Index(0), Index(0)),
+            (Index(1), Index(0)),
+            (Index(2), Index(0)),
+        ],
+    ),
+    "range_4": Circuit(
+        signature: Signature(inputs: [Index(0)], outputs: []),
+        wires: [
+            Named("b0"),
+            Named("b1"),
+            Named("b2"),
+            Named("b3"),
+            Named("x"),
+            Named("b3"),
+            Named("b2"),
+            Named("b1"),
+            Named("b0"),
+        ],            
+        nodes: [
+            Invocation(name: "bool", inputs: [Index(0)]),
+            Invocation(name: "bool", inputs: [Index(1)]),
+            Invocation(name: "bool", inputs: [Index(2)]),
+            Invocation(name: "bool", inputs: [Index(3)]),
+            Eq(
+                Index(4),
+                Add(
+                    Scale(Constant(8), Index(5)),
+                    Add(
+                        Scale(Constant(4), Index(6)),
+                        Add(
+                            Scale(Constant(2), Index(7)),
+                            Index(8),
+                        ),
+                    ),
+                ),
+            ),
+        ],
+        equalities: [
+            (Index(0), Index(0)),
+            (Index(1), Index(1)),
+            (Index(2), Index(2)),
+            (Index(3), Index(3)),
+            (Index(4), Index(4)),
+            (Index(5), Index(3)),
+            (Index(6), Index(2)),
+            (Index(7), Index(1)),
+            (Index(8), Index(0)),
+        ],
+    )
+    "pythagorean": Circuit (
+        signature: Signature(inputs: [Index(0), Index(1)], outputs: [Index(2)]),
+        wires: [
+            Named("z"),
+            Named("z"),
+            Named("x"),
+            Named("x"),
+            Named("y"),
+            Named("y"),
+        ],
+        nodes: [
+            Eq(
+                Mul(
+                    Index(0),
+                    Index(1),
+                ),
+                Add(
+                    Mul(
+                        Index(2),
+                        Index(3),
+                    ),
+                    Mul(
+                        Index(4),
+                        Index(5),
+                    ),
+                ),
+            ),
+        ],
+        equalities: [
+            (Index(0), Index(0)),
+            (Index(1), Index(0)),
+            (Index(2), Index(1)),
+            (Index(3), Index(1)),
+            (Index(4), Index(2)),
+            (Index(5), Index(2)),
+        ],
+    )
+}
+
+Circuit(
+    signature: Signature(inputs: [], outputs: []),
+    wires: [Named("a"), Named("b"), Named("c")],
+    nodes: [
+        Invocation(name: "range_4", inputs: [Index(0)]),
+        Invocation(name: "range_4", inputs: [Index(1)]),
+        Eq(
+            Index(2),
+            Invocation(name: "pythagorean", inputs: [Index(0), Index(1)])
+        ),
+    ],
+)
+```
+
 ## How it (should) work
 
 ### Global variables to keep track
