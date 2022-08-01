@@ -5,7 +5,9 @@ identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0
 constant = @{ "-"? ~ (ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) }
 
 // Atomic and immutable data unit for the IR, a wire
-wire = @{ identifier }
+pub_wire = @{ "pub" ~ identifier }
+priv_wire = @{ identifier }
+wire = { pub_wire | priv_wire }
 invocation_inputs = { primary+ }
 definition_inputs = { wire+ }
 definition_outputs = { "->" ~ wire+ }

@@ -1,11 +1,13 @@
-use crate::ast::{Circuit, Definitions, Invocation, Node, Wire, WireList, Signature};
+use crate::ast::{
+    Circuit, Constant, Definitions, Gate, GateList, Invocation, Priv, Pub, Signature, Wire,
+};
 
 /*
 #################################################
 to do:
 - gates should change from (gate_type: String, offset: usize) to (gate_type: String, offset: usize, length: usize)
     to accomodate gates with multiple outputs
-- modify `flatten_node_tree` to accomodate gates with multiple outputs
+- modify `flatten_gate_tree` to accomodate gates with multiple outputs
 - then alias invocations can be expanded
 - alias invocations may need integer parameters (?) for instance x^n gate (or not...think about this)
 - I think constants are not handled at all right now
@@ -33,7 +35,7 @@ to do:
         - ???
 - change Circuit struct to incorporate new data structures
     - it might have:
-        - original node tree (ast)
+        - original gate tree (ast)
         - wire list struct
         - gate list struct
         - list of alias definitions to reference
@@ -47,7 +49,7 @@ to do:
             - counting wires, gates, etc
 - rewrite flattening functions to use new APIs
 - simplification to the ast
-    - for instance i have nodes and gates which are basically the same. consider whether a new gate structure is needed
+    - for instance i have gates and gates which are basically the same. consider whether a new gate structure is needed
         or if we should parse directly to gates. it is possible that a Gate struct ought to include extra information not
         captured in parsing. think about this
     - consider merging circuit.rs and ast.rs (?)
@@ -62,65 +64,61 @@ to do:
 #################################################
 */
 
-// looks up the supplied invocation from the definitions and returns a list of nodes that replace it
-fn lookup_invocation<'a>(
-    invocation: &Invocation,
-    definitions: &'a Definitions,
-) -> Option<&'a Circuit> {
-    match definitions.get(&invocation.name) {
-        Some(circuit) => Some(circuit),
-        None => None,
-    }
-}
+// // lookup an index in the current list of wires and replace the index with the wire
+// fn rename_gate(gate: Gate, wires: WireList) -> Gate {
+//     match gate {
+//         Gate::Input(Wire::Index(i)) => Gate::Input(wires[i].clone()),
+//         Gate::Op(op) => Gate::Op(
+//             op.same(
+//                 op.inputs()
+//                     .iter()
+//                     .map(|gate| rename_gate(gate.clone(), wires.clone()))
+//                     .collect(),
+//             ),
+//         ),
+//         _ => gate,
+//     }
+// }
 
-// lookup an index in the current list of wires and replace the index with the wire
-fn rename_node(node: Node, wires: WireList) -> Node {
-    match node {
-        Node::Wire(Wire::Index(i)) => Node::Wire(wires[i].clone()),
-        Node::Op(op) => Node::Op(
-            op.same(
-                op.inputs()
-                    .iter()
-                    .map(|node| rename_node(node.clone(), wires.clone()))
-                    .collect(),
-            ),
-        ),
-        _ => node,
+impl Circuit {
+    pub fn reindex(&self, offset: usize) -> Circuit {
+        let signature = self.signature.reindex(offset);
+        let gates = self.gates.iter().map(|gate| gate.reindex(offset)).collect();
+        let equalities = self
+            .equalities
+            .iter()
+            .map(|(left, right)| (left.reindex(offset), right.reindex(offset)))
+            .collect();
+        Circuit {
+            signature,
+            gates,
+            equalities,
+        }
     }
-}
 
-fn reindex_wire(wire: &Wire, offset: usize) -> Wire {
-    match wire {
-        Wire::Index(num) => Wire::Index(num+offset),
-        _ => wire.clone(),
+    pub fn expand(&self, definitions: &Definitions) -> Circuit {
+        let signature = self.signature.clone();
+        let mut equalities = self.equalities.clone();
+
+        let gates = self.gates.clone()
+            .into_iter()
+            .map(|gate| gate.expand(definitions))
+            .fold(GateList::new(), |state, gate_list| {
+                GateList::concat(state, gate_list)
+            });
+
+        Circuit {
+            signature,
+            gates,
+            equalities,
+        }
     }
-}
-
-fn reindex_node(node: &Node, offset: usize) -> Node {
-    match node {
-        Node::Op(op) => Node::Op(op.same(op.inputs().iter().map(|node| reindex_node(node, offset)).collect())),
-        Node::Wire(wire) => Node::Wire(reindex_wire(&wire, offset)),
-        Node::Invocation(Invocation{name, inputs}) => Node::Invocation(Invocation { name: name.to_string(), inputs: inputs.into_iter().map(|node| reindex_node(node, offset)).collect()}),
-    }
-}
-
-fn reindex_signature(sig: &Signature, offset: usize) -> Signature {
-    Signature{
-        inputs: sig.inputs.iter().map(|wire| reindex_wire(wire, offset)).collect(),
-        outputs: sig.outputs.iter().map(|wire| reindex_wire(wire, offset)).collect()
-    }
-}
-
-fn reindex_circuit(circuit: &Circuit, offset: usize) -> Circuit {
-    let signature = reindex_signature(&circuit.signature, offset);
-    let nodes = circuit.nodes.iter().map(|node| reindex_node(node, offset)).collect();
-    let equalities = circuit.equalities.iter().map(|(left, right)| (reindex_wire(left, offset), reindex_wire(right, offset))).collect();
-    Circuit { signature, wires: circuit.wires.clone(), nodes, equalities }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::ast::Vampir;
+    use crate::ast::{Gate, GateList};
 
     #[test]
     pub(crate) fn test_circuit_construction() {
@@ -136,9 +134,21 @@ mod tests {
             def div_mod x y -> q r {
                 q * y + r - x
             }
+            a*(b+c*a)
             (range_2 (volume a (div_mod b c)))
         ";
         let mut vampir = Vampir::from(test_expressions);
-        println!("{:?}", vampir);
+        println!("{:?}\n", vampir);
+        vampir
+            .circuit
+            .clone()
+            .gates
+            .into_iter()
+            .flat_map(|gate| GateList::from(gate))
+            .collect::<GateList>()
+            //.remove_names()
+            .pprint();
+        println!("\nexpanded:");
+        vampir.circuit.expand(&vampir.definitions).gates.pprint();
     }
 }
