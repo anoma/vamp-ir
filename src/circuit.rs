@@ -1,7 +1,3 @@
-use crate::ast::{
-    Circuit, Constant, Definitions, Gate, GateList, Invocation, Priv, Pub, Signature, Wire,
-};
-
 /*
 #################################################
 to do:
@@ -64,64 +60,12 @@ to do:
 #################################################
 */
 
-// // lookup an index in the current list of wires and replace the index with the wire
-// fn rename_gate(gate: Gate, wires: WireList) -> Gate {
-//     match gate {
-//         Gate::Input(Wire::Index(i)) => Gate::Input(wires[i].clone()),
-//         Gate::Op(op) => Gate::Op(
-//             op.same(
-//                 op.inputs()
-//                     .iter()
-//                     .map(|gate| rename_gate(gate.clone(), wires.clone()))
-//                     .collect(),
-//             ),
-//         ),
-//         _ => gate,
-//     }
-// }
-
-impl Circuit {
-    pub fn reindex(&self, offset: usize) -> Circuit {
-        let signature = self.signature.reindex(offset);
-        let gates = self.gates.iter().map(|gate| gate.reindex(offset)).collect();
-        let equalities = self
-            .equalities
-            .iter()
-            .map(|(left, right)| (left.reindex(offset), right.reindex(offset)))
-            .collect();
-        Circuit {
-            signature,
-            gates,
-            equalities,
-        }
-    }
-
-    pub fn expand(&self, definitions: &Definitions) -> Circuit {
-        let signature = self.signature.clone();
-        let mut equalities = self.equalities.clone();
-
-        let gates = self.gates.clone()
-            .into_iter()
-            .map(|gate| gate.expand(definitions))
-            .fold(GateList::new(), |state, gate_list| {
-                GateList::concat(state, gate_list)
-            });
-
-        Circuit {
-            signature,
-            gates,
-            equalities,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::ast::Vampir;
-    use crate::ast::{Gate, GateList};
 
     #[test]
-    pub(crate) fn test_circuit_construction() {
+    pub(crate) fn test_vampir_construction() {
         let test_expressions = "
             def volume x y z -> v {
                 x*y*z-v
@@ -137,18 +81,69 @@ mod tests {
             a*(b+c*a)
             (range_2 (volume a (div_mod b c)))
         ";
-        let mut vampir = Vampir::from(test_expressions);
-        println!("{:?}\n", vampir);
-        vampir
-            .circuit
-            .clone()
-            .gates
-            .into_iter()
-            .flat_map(|gate| GateList::from(gate))
-            .collect::<GateList>()
-            //.remove_names()
-            .pprint();
-        println!("\nexpanded:");
-        vampir.circuit.expand(&vampir.definitions).gates.pprint();
+        let vampir = Vampir::from(test_expressions);
+    }
+
+    #[test]
+    pub(crate) fn test_to_anf() {
+        let test_expressions = "
+            def volume x y z -> v {
+                x*y*z-v
+            }
+            def range_2 x {
+                b0 * b0 - b0
+                b1 * b1 - b1
+                2*b1 + b0 - x
+            }
+            def div_mod x y -> q r {
+                q * y + r - x
+            }
+            a*(b+c*a)
+            (range_2 (volume a (div_mod b c)))
+        ";
+        let vampir_anf = Vampir::from(test_expressions).to_anf();
+        println!("{}", vampir_anf);
+    }
+
+    #[test]
+    pub(crate) fn test_expansion() {
+        let test_expressions = "
+            def volume x y z -> v {
+                x*y*z-v
+            }
+            def range_2 x {
+                b0 * b0 - b0
+                b1 * b1 - b1
+                2*b1 + b0 - x
+            }
+            def div_mod x y -> q r {
+                q * y + r - x
+            }
+            a*(b+c*a)
+            (range_2 (volume a (div_mod b c)))
+        ";
+        let vampir_expanded = Vampir::from(test_expressions).expand();
+        println!("{}", vampir_expanded);
+    }
+
+    #[test]
+    pub(crate) fn test_expanded_anf() {
+        let test_expressions = "
+            def volume x y z -> v {
+                x*y*z-v
+            }
+            def range_2 x {
+                b0 * b0 - b0
+                b1 * b1 - b1
+                2*b1 + b0 - x
+            }
+            def div_mod x y -> q r {
+                q * y + r - x
+            }
+            a*(b+c*a)
+            (range_2 (volume a (div_mod b c)))
+        ";
+        let vampir_expanded_anf = Vampir::from(test_expressions).expand().to_anf();
+        println!("{}", vampir_expanded_anf);
     }
 }
