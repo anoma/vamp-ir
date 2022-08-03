@@ -80,16 +80,16 @@ impl From<Pair<'_, Rule>> for Circuit {
 // creates a signature-less circuit from a list of gates
 impl From<GateList> for Circuit {
     fn from(named_gates: GateList) -> Circuit {
-        let gates = named_gates; //remove_names(named_gates, &mut wires);
+        let gates = named_gates;
         let inputs: Vec<Input> = gates.iter().flat_map(|gate| gate.inputs()).collect();
         let signature = Signature {
             inputs,
             outputs: vec![],
         };
-        let equalities = vec![]; //record_equalities(&wires);
+        let equalities = vec![];
         Circuit {
             gates,
-            signature,
+            signature: signature.dedupe(),
             equalities,
         }
     }
@@ -103,7 +103,7 @@ impl From<Vec<Pair<'_, Rule>>> for Definitions {
             let name = inner.next().unwrap().as_str().into();
             let signature = Signature::from(inner.next().unwrap());
             let mut circuit = Circuit::from(inner.next().unwrap());
-            circuit.signature = signature; //.remove_names(&mut circuit.wires);
+            circuit.signature = signature.dedupe();
             definitions.insert(name, circuit);
         });
 
@@ -146,7 +146,8 @@ impl From<Pair<'_, Rule>> for Signature {
             None => vec![],
         };
 
-        Signature { inputs, outputs }
+        let sig = Signature { inputs, outputs };
+        sig.dedupe()
     }
 }
 
