@@ -151,60 +151,6 @@ impl From<Pair<'_, Rule>> for Signature {
     }
 }
 
-// impl Signature {
-//     fn remove_names(self, wires: &mut WireList) -> Signature {
-//         Self {
-//             inputs: self
-//                 .inputs
-//                 .iter()
-//                 .map(|wire| Wire::Index(wires.iter().position(|w| w == wire).unwrap()))
-//                 .collect(),
-//             outputs: self
-//                 .inputs
-//                 .iter()
-//                 .map(|wire| Wire::Index(wires.iter().position(|w| w == wire).unwrap()))
-//                 .collect(),
-//         }
-//     }
-// }
-
-// fn remove_name(gate: Gate, wires: &mut WireList) -> Gate {
-//     match gate {
-//         Gate::Input(wire) => {
-//             let index = wires.iter().position(|w| w == &wire).unwrap_or({
-//                 wires.push(wire);
-//                 wires.len() - 1
-//             });
-//             Gate::Input(Wire::Index(index))
-//         }
-//         Gate::Op(op) => Gate::Op(op.same(remove_names(op.inputs(), wires))),
-//         Gate::Invocation(inv) => Gate::Invocation(Invocation {
-//             name: inv.name,
-//             inputs: remove_names(inv.inputs, wires),
-//         }),
-//     }
-// }
-
-// fn remove_names(gates: Vec<Gate>, wires: &mut WireList) -> Vec<Gate> {
-//     gates
-//         .into_iter()
-//         .map(|gate| remove_name(gate, wires))
-//         .collect()
-// }
-
-// fn record_equalities(wires: &WireList) -> Vec<(Wire, Wire)> {
-//     wires
-//         .iter()
-//         .enumerate()
-//         .map(
-//             |(idx, query)| match wires.iter().position(|wire| query == wire) {
-//                 Some(num) => (Wire::Index(idx), Wire::Index(num)),
-//                 None => (Wire::Index(idx), Wire::Index(idx)),
-//             },
-//         )
-//         .collect()
-// }
-
 // paritions vampir input into Alias Definition pairs and Expression pairs
 fn partition_pairs(pair: Pair<'_, Rule>) -> (Vec<Pair<Rule>>, Vec<Pair<Rule>>) {
     let pairs = pair.into_inner();
@@ -281,13 +227,13 @@ mod tests {
             x*z*w - 3 = y - w + x
             x^3--10*x +7-y^2
         ";
-        let expressions = Vampir::from(test_expressions);
+        let _expressions = Vampir::from(test_expressions);
     }
 
     #[test]
     pub(crate) fn test_bracketing() {
         let test_expressions = "x - (w*(y - z - w)-x)*(w+z)";
-        let expressions = Vampir::from(test_expressions);
+        let _expressions = Vampir::from(test_expressions);
     }
 
     #[test]

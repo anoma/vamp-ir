@@ -81,7 +81,7 @@ mod tests {
             a*(b+c*a)
             (range_2 (volume a (div_mod b c)))
         ";
-        let vampir = Vampir::from(test_expressions);
+        let _vampir = Vampir::from(test_expressions);
     }
 
     #[test]
@@ -101,8 +101,7 @@ mod tests {
             a*(b+c*a)
             (range_2 (volume a (div_mod b c)))
         ";
-        let vampir_anf = Vampir::from(test_expressions).to_anf();
-        println!("{}", vampir_anf);
+        let _vampir_anf = Vampir::from(test_expressions).to_anf();
     }
 
     #[test]
@@ -122,8 +121,7 @@ mod tests {
             a*(b+c*a)
             (range_2 (volume a (div_mod b c)))
         ";
-        let vampir_expanded = Vampir::from(test_expressions).expand();
-        println!("{}", vampir_expanded);
+        let _vampir_expanded = Vampir::from(test_expressions).expand();
     }
 
     #[test]
@@ -143,8 +141,7 @@ mod tests {
             a*(b+c*a)
             (range_2 (volume a (div_mod b c)))
         ";
-        let vampir_expanded_anf = Vampir::from(test_expressions).expand().to_anf();
-        println!("{}", vampir_expanded_anf);
+        let _vampir_expanded_anf = Vampir::from(test_expressions).expand().to_anf();
     }
 
     #[test]
