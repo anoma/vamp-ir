@@ -221,6 +221,14 @@ impl Input {
             Input::Index(_) => Input::Index(idx),
         }
     }
+
+    pub fn expand(&self) -> GateList {
+        GateList::from(self.clone())
+    }
+
+    pub fn flatten(&self) -> GateList {
+        GateList::from(self.clone())
+    }
 }
 
 impl Op {
@@ -245,7 +253,7 @@ impl Op {
     }
 
     pub fn expand(&self) -> GateList {
-        GateList::from(self)
+        self.flatten()
     }
 
     pub fn index(&self, idx: usize) -> Op {
@@ -255,6 +263,12 @@ impl Op {
                 .map(|gate| gate.index(idx))
                 .collect(),
         )
+    }
+
+    pub fn flatten(&self) -> GateList {
+        let mut gate_list: GateList = self.inputs().into_iter().flat_map(|gate| gate.flatten()).collect();
+        gate_list.push(Gate::Op(self.clone()));
+        gate_list
     }
 }
 
@@ -274,6 +288,16 @@ impl Invocation {
 
     pub fn gates(&self, definitions: &Definitions) -> GateList {
         definitions.get(self).unwrap().gates.clone()
+    }
+    pub fn flatten(&self) -> GateList {
+        let mut gate_list: GateList = self
+            .clone()
+            .inputs
+            .into_iter()
+            .flat_map(|gate| gate.flatten())
+            .collect();
+        gate_list.push(Gate::Invocation(self.clone()));
+        gate_list
     }
 
     pub fn expand(&self, definitions: &Definitions) -> GateList {
@@ -425,9 +449,17 @@ impl Gate {
 
     pub fn expand(&self, definitions: &Definitions) -> GateList {
         match self {
-            Gate::Input(_) => GateList::from(self),
+            Gate::Input(inp) => inp.expand(),
             Gate::Op(op) => op.expand(),
             Gate::Invocation(inv) => inv.expand(definitions),
+        }
+    }
+
+    pub fn flatten(&self) -> GateList {
+        match self {
+            Gate::Op(op) => op.flatten(),
+            Gate::Input(inp) => inp.flatten(),
+            Gate::Invocation(invocation) => invocation.flatten(),
         }
     }
 
@@ -502,52 +534,6 @@ impl From<Wire> for GateList {
 impl From<Input> for GateList {
     fn from(inp: Input) -> GateList {
         GateList(vec![Gate::Input(inp)])
-    }
-}
-
-impl From<Op> for GateList {
-    fn from(op: Op) -> GateList {
-        let mut gate_list: GateList = op.inputs().into_iter().flat_map(GateList::from).collect();
-        gate_list.push(Gate::Op(op));
-        gate_list
-    }
-}
-
-impl From<&Op> for GateList {
-    fn from(op: &Op) -> GateList {
-        GateList::from(op.clone())
-    }
-}
-
-impl From<Invocation> for GateList {
-    fn from(invocation: Invocation) -> GateList {
-        let mut gate_list: GateList = invocation
-            .clone()
-            .inputs
-            .into_iter()
-            .flat_map(GateList::from)
-            .collect();
-        gate_list.push(Gate::Invocation(invocation));
-        gate_list
-    }
-}
-
-// flattens a gate tree into a GateList
-// turn this into a `flatten` function for each of Op, Input, Invocation
-//   as `from` should just wrap a single gate into a GateList of one element
-impl From<Gate> for GateList {
-    fn from(gate: Gate) -> GateList {
-        match gate {
-            Gate::Op(op) => GateList::from(op),
-            Gate::Input(inp) => GateList::from(inp),
-            Gate::Invocation(invocation) => GateList::from(invocation),
-        }
-    }
-}
-
-impl From<&Gate> for GateList {
-    fn from(gate: &Gate) -> GateList {
-        GateList::from(gate.clone())
     }
 }
 
@@ -627,7 +613,7 @@ impl GateList {
     }
 
     pub fn flatten(&self) -> GateList {
-        self.iter().flat_map(GateList::from).collect()
+        self.iter().flat_map(|gate| gate.flatten()).collect()
     }
 
     pub fn remove_names(&self) -> Self {
