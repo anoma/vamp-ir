@@ -146,4 +146,30 @@ mod tests {
         let vampir_expanded_anf = Vampir::from(test_expressions).expand().to_anf();
         println!("{}", vampir_expanded_anf);
     }
+
+    #[test]
+    pub(crate) fn test_unflattening() {
+        let test_expressions = "
+            def volume x y z -> v {
+                x*y*z-v
+            }
+            def range_2 x {
+                b0 * b0 - b0
+                b1 * b1 - b1
+                2*b1 + b0 - x
+            }
+            def div_mod x y -> q r {
+                q * y + r - x
+            }
+            a*(b+c*a)
+            (range_2 (volume a (div_mod b c)))
+        ";
+        let vampir_expanded_anf = Vampir::from(test_expressions).expand().to_anf();
+        println!("{}", vampir_expanded_anf);
+        let vampir_unflattened = vampir_expanded_anf.unflatten();
+        println!("{}", vampir_unflattened);
+        let vampir_reflattened = vampir_unflattened.to_anf();
+        println!("{}", vampir_reflattened);
+        assert_eq!(vampir_expanded_anf, vampir_reflattened);
+    }
 }
