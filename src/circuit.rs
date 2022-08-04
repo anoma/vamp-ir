@@ -165,11 +165,8 @@ mod tests {
             (range_2 (volume a (div_mod b c)))
         ";
         let vampir_expanded_anf = Vampir::from(test_expressions).expand().to_anf();
-        println!("{}", vampir_expanded_anf);
         let vampir_unflattened = vampir_expanded_anf.unflatten();
-        println!("{}", vampir_unflattened);
         let vampir_reflattened = vampir_unflattened.to_anf();
-        println!("{}", vampir_reflattened);
         assert_eq!(vampir_expanded_anf, vampir_reflattened);
     }
 }
