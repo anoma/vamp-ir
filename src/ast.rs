@@ -1,64 +1,238 @@
-use std::{collections::HashMap, ops::Index};
+use std::{collections::HashMap, fmt, ops::Index};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Constant(pub i64);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Pub {
+    pub name: Option<String>,
+    pub index: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Priv {
+    pub name: Option<String>,
+    pub index: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Wire {
-    Named(String),
-    Constant(i64),
+    Constant(Constant),
+    Pub(Pub),
+    Priv(Priv),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Op {
+    Add(Box<Gate>, Box<Gate>),
+    Sub(Box<Gate>, Box<Gate>),
+    Mul(Box<Gate>, Box<Gate>),
+    Pow(Box<Gate>, Box<Gate>),
+    Eq(Box<Gate>, Box<Gate>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Input {
+    Wire(Wire),
     Index(usize),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct WireList(pub Vec<Wire>);
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Op {
-    Add(Box<Node>, Box<Node>),
-    Sub(Box<Node>, Box<Node>),
-    Mul(Box<Node>, Box<Node>),
-    Pow(Box<Node>, Box<Node>),
-    Eq(Box<Node>, Box<Node>),
+pub enum Gate {
+    Input(Input),
+    Op(Op),
+    Invocation(Invocation),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct GateList(pub Vec<Gate>);
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Node {
-    Op(Op),
-    Wire(Wire),
-    Invocation(Invocation),
+pub struct Invocation {
+    pub name: String,
+    pub inputs: Vec<Gate>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Signature {
+    pub inputs: Vec<Input>,
+    pub outputs: Vec<Input>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Circuit {
     pub signature: Signature,
-    pub wires: WireList,
-    pub nodes: Vec<Node>,
+    pub gates: GateList,
+    pub equalities: Vec<(Wire, Wire)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Invocation {
-    pub name: String,
-    pub inputs: Vec<Node>,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Definitions(HashMap<String, Circuit>);
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Signature {
-    pub inputs: Vec<Wire>,
-    pub outputs: Vec<Wire>,
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Vampir {
     pub definitions: Definitions,
     pub circuit: Circuit,
 }
 
+fn indent(string_vec: Vec<String>, n: usize) -> Vec<String> {
+    let tab_string = (0..n).fold(String::new(), |s, _| format!("  {}", s));
+    string_vec
+        .iter()
+        .map(|s| format!("\n{}{}", tab_string, s))
+        .collect()
+}
+
+impl fmt::Display for Invocation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "({} {})",
+            self.name,
+            self.inputs
+                .iter()
+                .map(|gate| format!("{}", gate))
+                .collect::<Vec<String>>()
+                .join(" ")
+        )
+    }
+}
+
+impl fmt::Display for Signature {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let inputs_string = self
+            .inputs
+            .iter()
+            .map(|gate| format!("{}", gate))
+            .collect::<Vec<String>>()
+            .join(" ");
+        let outputs_string = match self.outputs.is_empty() {
+            false => format!(
+                " -> {}",
+                self.outputs
+                    .iter()
+                    .map(|gate| format!("{}", gate))
+                    .collect::<Vec<String>>()
+                    .join(" ")
+            ),
+            true => String::new(),
+        };
+        write!(f, "{}{}", inputs_string, outputs_string)
+    }
+}
+
+impl fmt::Display for Wire {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Wire::Priv(prv) => write!(f, "{}", prv.name.as_ref().unwrap()),
+            Wire::Pub(pb) => write!(f, "pub {}", pb.name.as_ref().unwrap()),
+            Wire::Constant(con) => write!(f, "{}", con.0),
+        }
+    }
+}
+
+impl fmt::Display for Op {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Op::Add(left, right) => write!(f, "({} + {})", left, right),
+            Op::Sub(left, right) => write!(f, "({} - {})", left, right),
+            Op::Mul(left, right) => write!(f, "{}*{}", left, right),
+            Op::Pow(left, right) => write!(f, "{}^{}", left, right),
+            Op::Eq(left, right) => write!(f, "{} = {}", left, right),
+        }
+    }
+}
+
+impl From<usize> for Input {
+    fn from(n: usize) -> Input {
+        Input::Index(n)
+    }
+}
+
+impl From<Gate> for Input {
+    fn from(gate: Gate) -> Input {
+        match gate {
+            Gate::Input(inp) => inp,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl fmt::Display for Input {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Input::Wire(wire) => write!(f, "{}", wire),
+            Input::Index(idx) => write!(f, "w{}", idx),
+        }
+    }
+}
+
+impl Wire {
+    pub fn reindex(&self, offset: usize) -> Wire {
+        match self {
+            Wire::Pub(inner) => Wire::Pub(Pub {
+                name: inner.name.clone(),
+                index: inner.index.map(|i| i + offset),
+            }),
+            Wire::Priv(inner) => Wire::Priv(Priv {
+                name: inner.name.clone(),
+                index: inner.index.map(|i| i + offset),
+            }),
+            Wire::Constant(_) => self.clone(),
+        }
+    }
+
+    pub fn expand(&self) -> Wire {
+        self.clone()
+    }
+
+    pub fn index(&self, idx: usize) -> Wire {
+        match self {
+            Wire::Pub(inner) => Wire::Pub(Pub {
+                name: inner.name.clone(),
+                index: Some(idx),
+            }),
+            Wire::Priv(inner) => Wire::Priv(Priv {
+                name: inner.name.clone(),
+                index: Some(idx),
+            }),
+            Wire::Constant(_) => self.clone(),
+        }
+    }
+}
+
+impl From<Wire> for Input {
+    fn from(wire: Wire) -> Input {
+        Input::Wire(wire)
+    }
+}
+
+impl Input {
+    pub fn reindex(&self, offset: usize) -> Input {
+        match self {
+            Input::Wire(wire) => Input::Wire(wire.reindex(offset)),
+            Input::Index(n) => Input::Index(n + offset),
+        }
+    }
+
+    pub fn index(&self, idx: usize) -> Input {
+        match self {
+            Input::Wire(wire) => Input::Wire(wire.index(idx)),
+            Input::Index(_) => Input::Index(idx),
+        }
+    }
+
+    pub fn expand(&self) -> GateList {
+        GateList::from(self.clone())
+    }
+
+    pub fn flatten(&self) -> GateList {
+        GateList::from(self.clone())
+    }
+}
+
 impl Op {
-    pub fn inputs(&self) -> Vec<Node> {
+    pub fn inputs(&self) -> Vec<Gate> {
         match self {
             Op::Add(left, right) => vec![*left.clone(), *right.clone()],
             Op::Mul(left, right) => vec![*left.clone(), *right.clone()],
@@ -68,38 +242,352 @@ impl Op {
         }
     }
 
-    pub fn same(&self, nodes: Vec<Node>) -> Op {
+    pub fn same(&self, gates: Vec<Gate>) -> Op {
         match self {
-            Op::Add(left, right) => Op::Add(left.clone(), right.clone()),
-            Op::Mul(left, right) => Op::Mul(left.clone(), right.clone()),
-            Op::Sub(left, right) => Op::Sub(left.clone(), right.clone()),
-            Op::Pow(left, right) => Op::Pow(left.clone(), right.clone()),
-            Op::Eq(left, right) => Op::Eq(left.clone(), right.clone()),
+            Op::Add(_, _) => Op::Add(Box::new(gates[0].clone()), Box::new(gates[1].clone())),
+            Op::Mul(_, _) => Op::Mul(Box::new(gates[0].clone()), Box::new(gates[1].clone())),
+            Op::Sub(_, _) => Op::Sub(Box::new(gates[0].clone()), Box::new(gates[1].clone())),
+            Op::Pow(_, _) => Op::Pow(Box::new(gates[0].clone()), Box::new(gates[1].clone())),
+            Op::Eq(_, _) => Op::Eq(Box::new(gates[0].clone()), Box::new(gates[1].clone())),
+        }
+    }
+
+    pub fn expand(&self) -> GateList {
+        self.flatten()
+    }
+
+    pub fn index(&self, idx: usize) -> Op {
+        self.same(
+            self.inputs()
+                .into_iter()
+                .map(|gate| gate.index(idx))
+                .collect(),
+        )
+    }
+
+    pub fn flatten(&self) -> GateList {
+        let mut gate_list: GateList = self.inputs().into_iter().flat_map(|gate| gate.flatten()).collect();
+        gate_list.push(Gate::Op(self.clone()));
+        gate_list
+    }
+}
+
+impl Invocation {
+    pub fn outputs(&self, definitions: &Definitions) -> GateList {
+        GateList(
+            definitions
+                .get(self)
+                .unwrap()
+                .signature
+                .outputs
+                .iter()
+                .map(Gate::from)
+                .collect(),
+        )
+    }
+
+    pub fn gates(&self, definitions: &Definitions) -> GateList {
+        definitions.get(self).unwrap().gates.clone()
+    }
+    pub fn flatten(&self) -> GateList {
+        let mut gate_list: GateList = self
+            .clone()
+            .inputs
+            .into_iter()
+            .flat_map(|gate| gate.flatten())
+            .collect();
+        gate_list.push(Gate::Invocation(self.clone()));
+        gate_list
+    }
+
+    pub fn expand(&self, definitions: &Definitions) -> GateList {
+        let invocation_input_gates = self
+            .inputs
+            .iter()
+            .flat_map(|gate| gate.outputs(definitions))
+            .collect::<GateList>();
+        let definition_input_gates = definitions
+            .get(self)
+            .unwrap()
+            .signature
+            .inputs
+            .iter()
+            .map(Gate::from)
+            .collect::<GateList>();
+        let mapping: HashMap<Gate, Gate> = definition_input_gates
+            .into_iter()
+            .zip(invocation_input_gates)
+            .collect();
+        let input_gates: GateList = self
+            .clone()
+            .inputs
+            .into_iter()
+            .flat_map(|gate| gate.expand(definitions))
+            .collect();
+        let internal_gates: GateList = self
+            .clone()
+            .gates(definitions)
+            .into_iter()
+            .flat_map(|gate| gate.expand(definitions))
+            .collect();
+        let renamed = internal_gates
+            .iter()
+            .map(|gate| gate.rename(&mapping))
+            .collect();
+        GateList::concat(input_gates, renamed)
+    }
+}
+
+impl From<Input> for Gate {
+    fn from(inp: Input) -> Gate {
+        Gate::Input(inp)
+    }
+}
+
+impl From<&Input> for Gate {
+    fn from(inp: &Input) -> Gate {
+        Gate::Input(inp.clone())
+    }
+}
+
+impl IntoIterator for Gate {
+    type Item = Gate;
+    type IntoIter =
+        std::iter::Chain<std::vec::IntoIter<Self::Item>, std::vec::IntoIter<Self::Item>>;
+    fn into_iter(self) -> Self::IntoIter {
+        match &self {
+            Gate::Op(op) => vec![self.clone()].into_iter().chain(
+                op.inputs()
+                    .iter()
+                    .flat_map(|gate| gate.clone().into_iter())
+                    .collect::<Vec<Gate>>()
+                    .into_iter(),
+            ),
+            _ => vec![self].into_iter().chain(vec![]),
         }
     }
 }
 
-impl WireList {
-    pub fn new() -> Self {
-        WireList(vec![])
+impl fmt::Display for Gate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Gate::Input(inp) => write!(f, "{}", inp),
+            Gate::Op(op) => write!(f, "{}", op),
+            Gate::Invocation(inv) => write!(f, "{}", inv),
+        }
     }
-    pub fn iter(&self) -> std::slice::Iter<Wire> {
-        self.0.iter()
-    }
+}
 
-    pub fn push(&mut self, wire: Wire) {
-        self.0.push(wire);
-    }
-
-    pub fn insert(&mut self, wire: &Wire) {
-        if !self.0.contains(wire) {
-            self.push(wire.clone());
+impl Gate {
+    pub fn inputs(&self) -> Vec<Input> {
+        match self {
+            Gate::Op(op) => op.inputs().iter().flat_map(|gate| gate.inputs()).collect(),
+            Gate::Invocation(inv) => inv.inputs.iter().flat_map(|gate| gate.inputs()).collect(),
+            Gate::Input(inp) => vec![inp.clone()],
         }
     }
 
-    pub fn concat(&mut self, another: &Self) {
-        self.0.extend(another.0.iter().cloned());
+    pub fn outputs(&self, definitions: &Definitions) -> GateList {
+        match self {
+            Gate::Op(_) => GateList(vec![self.clone()]),
+            Gate::Input(_) => GateList(vec![self.clone()]),
+            Gate::Invocation(inv) => inv.outputs(definitions),
+        }
     }
+
+    pub fn index(&self, idx: usize) -> Gate {
+        match self {
+            Gate::Input(inp) => Gate::Input(inp.index(idx)),
+            Gate::Op(op) => {
+                Gate::Op(op.same(op.inputs().iter().map(|gate| gate.index(idx)).collect()))
+            }
+            Gate::Invocation(inv) => Gate::Invocation(Invocation {
+                name: inv.name.clone(),
+                inputs: inv.inputs.iter().map(|gate| gate.index(idx)).collect(),
+            }),
+        }
+    }
+
+    pub fn reindex(&self, offset: usize) -> Gate {
+        match self {
+            Gate::Input(inp) => Gate::Input(inp.reindex(offset)),
+            Gate::Op(op) => Gate::Op(
+                op.same(
+                    op.inputs()
+                        .iter()
+                        .map(|gate| gate.reindex(offset))
+                        .collect(),
+                ),
+            ),
+            Gate::Invocation(inv) => Gate::Invocation(Invocation {
+                name: inv.name.clone(),
+                inputs: inv.inputs.iter().map(|gate| gate.reindex(offset)).collect(),
+            }),
+        }
+    }
+
+    pub fn rename(&self, mapping: &HashMap<Gate, Gate>) -> Gate {
+        match self {
+            Gate::Input(_) => match mapping.get(self) {
+                Some(gate) => gate.clone(),
+                None => self.clone(),
+            },
+            Gate::Op(op) => Gate::Op(
+                op.same(
+                    op.inputs()
+                        .iter()
+                        .map(|gate| gate.rename(mapping))
+                        .collect(),
+                ),
+            ),
+            Gate::Invocation(inv) => Gate::Invocation(Invocation {
+                name: inv.name.clone(),
+                inputs: inv.inputs.iter().map(|gate| gate.rename(mapping)).collect(),
+            }),
+        }
+    }
+
+    pub fn expand(&self, definitions: &Definitions) -> GateList {
+        match self {
+            Gate::Input(inp) => inp.expand(),
+            Gate::Op(op) => op.expand(),
+            Gate::Invocation(inv) => inv.expand(definitions),
+        }
+    }
+
+    pub fn flatten(&self) -> GateList {
+        match self {
+            Gate::Op(op) => op.flatten(),
+            Gate::Input(inp) => inp.flatten(),
+            Gate::Invocation(invocation) => invocation.flatten(),
+        }
+    }
+
+    pub fn unflatten(&self, reference: &GateList, used: &mut Vec<bool>) -> Gate {
+        match self {
+            Gate::Input(Input::Index(k)) => {
+                used[*k] = true;
+                reference[*k].unflatten(reference, used)
+            }
+            Gate::Input(Input::Wire(_)) => {
+                let n = reference.iter().position(|gate| gate == self).unwrap();
+                used[n] = true;
+                self.clone()
+            }
+            Gate::Op(op) => {
+                let n = reference.iter().position(|gate| gate == self).unwrap();
+                used[n] = true;
+                Gate::Op(
+                    op.same(
+                        op.inputs()
+                            .iter()
+                            .map(|gate| gate.unflatten(reference, used))
+                            .collect(),
+                    ),
+                )
+            }
+            Gate::Invocation(inv) => {
+                let n = reference.iter().position(|gate| gate == self).unwrap();
+                used[n] = true;
+                Gate::Invocation(Invocation {
+                    name: inv.name.clone(),
+                    inputs: inv
+                        .inputs
+                        .iter()
+                        .map(|gate| gate.unflatten(reference, used))
+                        .collect(),
+                })
+            }
+        }
+    }
+}
+
+impl Signature {
+    pub fn reindex(&self, offset: usize) -> Signature {
+        Signature {
+            inputs: self
+                .inputs
+                .iter()
+                .map(|wire| wire.reindex(offset))
+                .collect(),
+            outputs: self
+                .outputs
+                .iter()
+                .map(|wire| wire.reindex(offset))
+                .collect(),
+        }
+    }
+}
+
+impl Default for GateList {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl From<Wire> for GateList {
+    fn from(wire: Wire) -> GateList {
+        GateList(vec![Gate::Input(Input::Wire(wire))])
+    }
+}
+
+impl From<Input> for GateList {
+    fn from(inp: Input) -> GateList {
+        GateList(vec![Gate::Input(inp)])
+    }
+}
+
+impl FromIterator<Gate> for GateList {
+    fn from_iter<I: IntoIterator<Item = Gate>>(iter: I) -> Self {
+        let mut v: Vec<Gate> = vec![];
+        for i in iter {
+            v.push(i);
+        }
+        GateList(v)
+    }
+}
+
+impl IntoIterator for GateList {
+    type Item = Gate;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl Index<usize> for GateList {
+    type Output = Gate;
+
+    fn index(&self, n: usize) -> &Self::Output {
+        &self.0[n]
+    }
+}
+
+impl fmt::Display for GateList {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "gates:{}",
+            indent(
+                self.iter()
+                    .enumerate()
+                    .map(|(i, gate)| {
+                        let lookedup_gate = match gate {
+                            Gate::Input(Input::Index(k)) => &self[*k],
+                            _ => gate,
+                        };
+                        format!("{}: {}", i, lookedup_gate)
+                    })
+                    .collect::<Vec<String>>(),
+                1,
+            )
+            .join("")
+        )
+    }
+}
+
+impl GateList {
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -107,36 +595,249 @@ impl WireList {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
-}
 
-impl From<Vec<Node>> for WireList {
-    fn from(nodes: Vec<Node>) -> Self {
-        let mut res = Self::new();
+    pub fn new() -> Self {
+        GateList(vec![])
+    }
 
-        nodes
-            .iter()
-            .for_each(|node| node.inputs().iter().for_each(|wire| res.insert(wire)));
+    pub fn extend(&mut self, other: GateList) {
+        self.0.extend(other.0);
+    }
+
+    pub fn push(&mut self, gate: Gate) {
+        self.0.push(gate)
+    }
+
+    pub fn pprint(&self) {
+        self.0.iter().for_each(|gate| println!("{:?}", gate));
+    }
+
+    pub fn flatten(&self) -> GateList {
+        self.iter().flat_map(|gate| gate.flatten()).collect()
+    }
+
+    pub fn remove_names(&self) -> Self {
+        self.iter()
+            .map(|gate| match gate {
+                Gate::Input(_) => gate.index(self.iter().position(|g| gate == g).unwrap()),
+                Gate::Op(op) => Gate::Op(
+                    op.same(
+                        op.inputs()
+                            .iter()
+                            .map(|gate| {
+                                Gate::Input(Input::from(
+                                    self.iter().position(|g| gate == g).unwrap(),
+                                ))
+                            })
+                            .collect(),
+                    ),
+                ),
+                Gate::Invocation(inv) => Gate::Invocation(Invocation {
+                    name: inv.name.clone(),
+                    inputs: inv
+                        .inputs
+                        .iter()
+                        .map(|gate| {
+                            Gate::Input(Input::from(self.iter().position(|g| gate == g).unwrap()))
+                        })
+                        .collect(),
+                }),
+            })
+            .collect()
+    }
+
+    pub fn index(&self) -> GateList {
+        self.clone()
+            .into_iter()
+            .enumerate()
+            .map(|(i, gate)| gate.index(i))
+            .collect()
+    }
+
+    pub fn dedupe(&self) -> GateList {
+        let mut res = GateList::new();
+        self.iter()
+            .for_each(|gate| match res.iter().find(|g| g == &gate) {
+                Some(_) => (),
+                None => res.push(gate.clone()),
+            });
         res
+    }
+
+    pub fn reindex(&self, offset: usize) -> GateList {
+        GateList(
+            self.0
+                .clone()
+                .into_iter()
+                .map(|gate| gate.reindex(offset))
+                .collect(),
+        )
+    }
+
+    pub fn concat(self, other: GateList) -> GateList {
+        GateList([self.0.clone(), other.reindex(self.len()).0].concat())
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Gate> {
+        self.0.iter()
+    }
+
+    pub fn unflatten(&self) -> GateList {
+        let mut used: Vec<bool> = vec![false; self.len()];
+        let mut res = GateList::new();
+        for i in (0..self.len()).rev() {
+            if !used[i] {
+                res.push(self[i].unflatten(
+                    self, &mut used));
+            }
+        }
+        res.into_iter().rev().collect()
     }
 }
 
-impl Default for WireList {
+impl Signature {
+    pub fn dedupe(&self) -> Self {
+        let mut inputs = vec![];
+        self.inputs
+            .iter()
+            .for_each(|inp| match inputs.iter().find(|i| i == &inp) {
+                Some(_) => (),
+                None => inputs.push(inp.clone()),
+            });
+        Signature {
+            inputs,
+            outputs: self.outputs.clone(),
+        }
+    }
+}
+
+impl fmt::Display for Circuit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "  signature:\n    {}\n\n  gates: {{{}\n  }}\n\n  equalities:{}",
+            self.signature,
+            indent(
+                self.gates
+                    .iter()
+                    .enumerate()
+                    .map(|(i, gate)| format!("w{}: {}", i, gate))
+                    .collect(),
+                2
+            )
+            .join(""),
+            indent(
+                self.equalities
+                    .iter()
+                    .map(|(l, r)| format!("{} = {}", l, r))
+                    .collect::<Vec<String>>(),
+                2
+            )
+            .join(""),
+        )
+    }
+}
+
+impl Circuit {
+    pub fn reindex(&self, offset: usize) -> Circuit {
+        let signature = self.signature.reindex(offset);
+        let gates = self.gates.iter().map(|gate| gate.reindex(offset)).collect();
+        let equalities = self
+            .equalities
+            .iter()
+            .map(|(left, right)| (left.reindex(offset), right.reindex(offset)))
+            .collect();
+        Circuit {
+            signature,
+            gates,
+            equalities,
+        }
+    }
+
+    pub fn expand(&self, definitions: &Definitions) -> Circuit {
+        let signature = self.signature.clone();
+        let equalities = self.equalities.clone();
+
+        let gates = self
+            .gates
+            .clone()
+            .into_iter()
+            .map(|gate| gate.expand(definitions))
+            .fold(GateList::new(), |state, gate_list| {
+                GateList::concat(state, gate_list)
+            });
+
+        Circuit {
+            signature,
+            gates,
+            equalities,
+        }
+    }
+
+    pub fn dedupe(&self) -> Circuit {
+        let signature = self.signature.dedupe();
+        let equalities = self.equalities.clone();
+        let gates = self.gates.dedupe();
+
+        Circuit {
+            signature,
+            gates,
+            equalities,
+        }
+    }
+
+    pub fn remove_names(&self) -> Circuit {
+        let signature = self.signature.clone();
+        let equalities = self.equalities.clone();
+        let gates = self.gates.remove_names();
+
+        Circuit {
+            signature,
+            gates,
+            equalities,
+        }
+    }
+
+    pub fn to_anf(&self) -> Circuit {
+        let gates = self.gates.flatten().dedupe().remove_names();
+        Circuit {
+            signature: self.signature.clone(),
+            gates,
+            equalities: self.equalities.clone(),
+        }
+    }
+
+    pub fn unflatten(&self) -> Circuit {
+        Circuit {
+            signature: self.signature.clone(),
+            gates: self.gates.unflatten(),
+            equalities: self.equalities.clone(),
+        }
+    }
+}
+
+impl Default for Definitions {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Index<usize> for WireList {
-    type Output = Wire;
-    fn index(&self, idx: usize) -> &Self::Output {
-        &self.0[idx]
-    }
-}
-
-impl Iterator for WireList {
-    type Item = Wire;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0.get(0).cloned()
+impl fmt::Display for Definitions {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.0
+                .iter()
+                .map(|(k, v)| format!(
+                    "  def {} {} {{{}\n  }}\n",
+                    k,
+                    v.signature,
+                    indent(v.gates.iter().map(|gate| format!("{}", gate)).collect(), 2).join("")
+                ))
+                .collect::<Vec<String>>()
+                .join("\n")
+        )
     }
 }
 
@@ -149,47 +850,36 @@ impl Definitions {
         self.0.insert(name, circuit)
     }
 
-    pub fn get(&self, name: &str) -> Option<&Circuit> {
-        self.0.get(name)
+    pub fn get(&self, inv: &Invocation) -> Option<&Circuit> {
+        self.0.get(&inv.name)
     }
 }
 
-impl Default for Definitions {
-    fn default() -> Self {
-        Self::new()
+impl fmt::Display for Vampir {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}\n{}", self.definitions, self.circuit)
     }
 }
 
-impl Node {
-    pub fn inputs(&self) -> Vec<Wire> {
-        match self {
-            Node::Op(op) => op.inputs().iter().flat_map(|node| node.inputs()).collect(),
-            Node::Invocation(inv) => inv.inputs.iter().flat_map(|node| node.inputs()).collect(),
-            Node::Wire(wire) => vec![wire.clone()],
+impl Vampir {
+    pub fn expand(&self) -> Vampir {
+        Vampir {
+            definitions: self.definitions.clone(),
+            circuit: self.circuit.expand(&self.definitions),
         }
     }
-}
 
-impl From<Wire> for Node {
-    fn from(wire: Wire) -> Node {
-        Node::Wire(wire)
+    pub fn to_anf(&self) -> Vampir {
+        Vampir {
+            definitions: self.definitions.clone(),
+            circuit: self.circuit.to_anf(),
+        }
     }
-}
 
-impl IntoIterator for Node {
-    type Item = Node;
-    type IntoIter =
-        std::iter::Chain<std::vec::IntoIter<Self::Item>, std::vec::IntoIter<Self::Item>>;
-    fn into_iter(self) -> Self::IntoIter {
-        match &self {
-            Node::Op(op) => vec![self.clone()].into_iter().chain(
-                op.inputs()
-                    .iter()
-                    .flat_map(|node| node.clone().into_iter())
-                    .collect::<Vec<Node>>()
-                    .into_iter(),
-            ),
-            _ => vec![self].into_iter().chain(vec![]),
+    pub fn unflatten(&self) -> Vampir {
+        Vampir {
+            definitions: self.definitions.clone(),
+            circuit: self.circuit.unflatten(),
         }
     }
 }

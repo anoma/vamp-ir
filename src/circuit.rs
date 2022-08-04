@@ -1,11 +1,9 @@
-use crate::ast::{Circuit, Definitions, Invocation, Node, Wire, WireList};
-
 /*
 #################################################
 to do:
 - gates should change from (gate_type: String, offset: usize) to (gate_type: String, offset: usize, length: usize)
     to accomodate gates with multiple outputs
-- modify `flatten_node_tree` to accomodate gates with multiple outputs
+- modify `flatten_gate_tree` to accomodate gates with multiple outputs
 - then alias invocations can be expanded
 - alias invocations may need integer parameters (?) for instance x^n gate (or not...think about this)
 - I think constants are not handled at all right now
@@ -33,7 +31,7 @@ to do:
         - ???
 - change Circuit struct to incorporate new data structures
     - it might have:
-        - original node tree (ast)
+        - original gate tree (ast)
         - wire list struct
         - gate list struct
         - list of alias definitions to reference
@@ -47,7 +45,7 @@ to do:
             - counting wires, gates, etc
 - rewrite flattening functions to use new APIs
 - simplification to the ast
-    - for instance i have nodes and gates which are basically the same. consider whether a new gate structure is needed
+    - for instance i have gates and gates which are basically the same. consider whether a new gate structure is needed
         or if we should parse directly to gates. it is possible that a Gate struct ought to include extra information not
         captured in parsing. think about this
     - consider merging circuit.rs and ast.rs (?)
@@ -62,39 +60,12 @@ to do:
 #################################################
 */
 
-// looks up the supplied invocation from the definitions and returns a list of nodes that replace it
-fn lookup_invocation<'a>(
-    invocation: &Invocation,
-    definitions: &'a Definitions,
-) -> Option<&'a Circuit> {
-    match definitions.get(&invocation.name) {
-        Some(circuit) => Some(circuit),
-        None => None,
-    }
-}
-
-// lookup an index in the current list of wires and replace the index with the wire
-fn rename_node(node: Node, wires: WireList) -> Node {
-    match node {
-        Node::Wire(Wire::Index(i)) => Node::Wire(wires[i].clone()),
-        Node::Op(op) => Node::Op(
-            op.same(
-                op.inputs()
-                    .iter()
-                    .map(|node| rename_node(node.clone(), wires.clone()))
-                    .collect(),
-            ),
-        ),
-        _ => node,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::ast::Vampir;
 
     #[test]
-    pub(crate) fn test_circuit_construction() {
+    pub(crate) fn test_vampir_construction() {
         let test_expressions = "
             def volume x y z -> v {
                 x*y*z-v
@@ -107,9 +78,92 @@ mod tests {
             def div_mod x y -> q r {
                 q * y + r - x
             }
+            a*(b+c*a)
             (range_2 (volume a (div_mod b c)))
         ";
-        let mut vampir = Vampir::from(test_expressions);
-        println!("{:?}", vampir);
+        let _vampir = Vampir::from(test_expressions);
+    }
+
+    #[test]
+    pub(crate) fn test_to_anf() {
+        let test_expressions = "
+            def volume x y z -> v {
+                x*y*z-v
+            }
+            def range_2 x {
+                b0 * b0 - b0
+                b1 * b1 - b1
+                2*b1 + b0 - x
+            }
+            def div_mod x y -> q r {
+                q * y + r - x
+            }
+            a*(b+c*a)
+            (range_2 (volume a (div_mod b c)))
+        ";
+        let _vampir_anf = Vampir::from(test_expressions).to_anf();
+    }
+
+    #[test]
+    pub(crate) fn test_expansion() {
+        let test_expressions = "
+            def volume x y z -> v {
+                x*y*z-v
+            }
+            def range_2 x {
+                b0 * b0 - b0
+                b1 * b1 - b1
+                2*b1 + b0 - x
+            }
+            def div_mod x y -> q r {
+                q * y + r - x
+            }
+            a*(b+c*a)
+            (range_2 (volume a (div_mod b c)))
+        ";
+        let _vampir_expanded = Vampir::from(test_expressions).expand();
+    }
+
+    #[test]
+    pub(crate) fn test_expanded_anf() {
+        let test_expressions = "
+            def volume x y z -> v {
+                x*y*z-v
+            }
+            def range_2 x {
+                b0 * b0 - b0
+                b1 * b1 - b1
+                2*b1 + b0 - x
+            }
+            def div_mod x y -> q r {
+                q * y + r - x
+            }
+            a*(b+c*a)
+            (range_2 (volume a (div_mod b c)))
+        ";
+        let _vampir_expanded_anf = Vampir::from(test_expressions).expand().to_anf();
+    }
+
+    #[test]
+    pub(crate) fn test_unflattening() {
+        let test_expressions = "
+            def volume x y z -> v {
+                x*y*z-v
+            }
+            def range_2 x {
+                b0 * b0 - b0
+                b1 * b1 - b1
+                2*b1 + b0 - x
+            }
+            def div_mod x y -> q r {
+                q * y + r - x
+            }
+            a*(b+c*a)
+            (range_2 (volume a (div_mod b c)))
+        ";
+        let vampir_expanded_anf = Vampir::from(test_expressions).expand().to_anf();
+        let vampir_unflattened = vampir_expanded_anf.unflatten();
+        let vampir_reflattened = vampir_unflattened.to_anf();
+        assert_eq!(vampir_expanded_anf, vampir_reflattened);
     }
 }
