@@ -1,885 +1,582 @@
-use std::{collections::HashMap, fmt, ops::Index};
+use pest::iterators::Pair;
+use std::fmt;
+use std::fmt::Write;
+use crate::typecheck::Type;
+use crate::pest::Parser;
+#[derive(Parser)]
+#[grammar = "vampir.pest"]
+pub struct VampirParser;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Constant(pub i64);
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Pub {
-    pub name: Option<String>,
-    pub index: Option<usize>,
+#[derive(Debug, Clone)]
+pub struct Module {
+    pub defs: Vec<Definition>,
+    pub exprs: Vec<TExpr>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Priv {
-    pub name: Option<String>,
-    pub index: Option<usize>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Wire {
-    Constant(Constant),
-    Pub(Pub),
-    Priv(Priv),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Op {
-    Add(Box<Gate>, Box<Gate>),
-    Sub(Box<Gate>, Box<Gate>),
-    Mul(Box<Gate>, Box<Gate>),
-    Pow(Box<Gate>, Box<Gate>),
-    Eq(Box<Gate>, Box<Gate>),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Input {
-    Wire(Wire),
-    Index(usize),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Gate {
-    Input(Input),
-    Op(Op),
-    Invocation(Invocation),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct GateList(pub Vec<Gate>);
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Invocation {
-    pub name: String,
-    pub inputs: Vec<Gate>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Signature {
-    pub inputs: Vec<Input>,
-    pub outputs: Vec<Input>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Circuit {
-    pub signature: Signature,
-    pub gates: GateList,
-    pub equalities: Vec<(Wire, Wire)>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Definitions(HashMap<String, Circuit>);
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Vampir {
-    pub definitions: Definitions,
-    pub circuit: Circuit,
-}
-
-fn indent(string_vec: Vec<String>, n: usize) -> Vec<String> {
-    let tab_string = (0..n).fold(String::new(), |s, _| format!("  {}", s));
-    string_vec
-        .iter()
-        .map(|s| format!("\n{}{}", tab_string, s))
-        .collect()
-}
-
-impl fmt::Display for Invocation {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "({} {})",
-            self.name,
-            self.inputs
-                .iter()
-                .map(|gate| format!("{}", gate))
-                .collect::<Vec<String>>()
-                .join(" ")
-        )
-    }
-}
-
-impl fmt::Display for Signature {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let inputs_string = self
-            .inputs
-            .iter()
-            .map(|gate| format!("{}", gate))
-            .collect::<Vec<String>>()
-            .join(" ");
-        let outputs_string = match self.outputs.is_empty() {
-            false => format!(
-                " -> {}",
-                self.outputs
-                    .iter()
-                    .map(|gate| format!("{}", gate))
-                    .collect::<Vec<String>>()
-                    .join(" ")
-            ),
-            true => String::new(),
-        };
-        write!(f, "{}{}", inputs_string, outputs_string)
-    }
-}
-
-impl fmt::Display for Wire {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Wire::Priv(prv) => write!(f, "{}", prv.name.as_ref().unwrap()),
-            Wire::Pub(pb) => write!(f, "pub {}", pb.name.as_ref().unwrap()),
-            Wire::Constant(con) => write!(f, "{}", con.0),
-        }
-    }
-}
-
-impl fmt::Display for Op {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Op::Add(left, right) => write!(f, "({} + {})", left, right),
-            Op::Sub(left, right) => write!(f, "({} - {})", left, right),
-            Op::Mul(left, right) => write!(f, "{}*{}", left, right),
-            Op::Pow(left, right) => write!(f, "{}^{}", left, right),
-            Op::Eq(left, right) => write!(f, "{} = {}", left, right),
-        }
-    }
-}
-
-impl From<usize> for Input {
-    fn from(n: usize) -> Input {
-        Input::Index(n)
-    }
-}
-
-impl From<Gate> for Input {
-    fn from(gate: Gate) -> Input {
-        match gate {
-            Gate::Input(inp) => inp,
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl fmt::Display for Input {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Input::Wire(wire) => write!(f, "{}", wire),
-            Input::Index(idx) => write!(f, "w{}", idx),
-        }
-    }
-}
-
-impl Wire {
-    pub fn reindex(&self, offset: usize) -> Wire {
-        match self {
-            Wire::Pub(inner) => Wire::Pub(Pub {
-                name: inner.name.clone(),
-                index: inner.index.map(|i| i + offset),
-            }),
-            Wire::Priv(inner) => Wire::Priv(Priv {
-                name: inner.name.clone(),
-                index: inner.index.map(|i| i + offset),
-            }),
-            Wire::Constant(_) => self.clone(),
-        }
-    }
-
-    pub fn expand(&self) -> Wire {
-        self.clone()
-    }
-
-    pub fn index(&self, idx: usize) -> Wire {
-        match self {
-            Wire::Pub(inner) => Wire::Pub(Pub {
-                name: inner.name.clone(),
-                index: Some(idx),
-            }),
-            Wire::Priv(inner) => Wire::Priv(Priv {
-                name: inner.name.clone(),
-                index: Some(idx),
-            }),
-            Wire::Constant(_) => self.clone(),
-        }
-    }
-}
-
-impl From<Wire> for Input {
-    fn from(wire: Wire) -> Input {
-        Input::Wire(wire)
-    }
-}
-
-impl Input {
-    pub fn reindex(&self, offset: usize) -> Input {
-        match self {
-            Input::Wire(wire) => Input::Wire(wire.reindex(offset)),
-            Input::Index(n) => Input::Index(n + offset),
-        }
-    }
-
-    pub fn index(&self, idx: usize) -> Input {
-        match self {
-            Input::Wire(wire) => Input::Wire(wire.index(idx)),
-            Input::Index(_) => Input::Index(idx),
-        }
-    }
-
-    pub fn expand(&self) -> GateList {
-        GateList::from(self.clone())
-    }
-
-    pub fn flatten(&self) -> GateList {
-        GateList::from(self.clone())
-    }
-}
-
-impl Op {
-    pub fn inputs(&self) -> Vec<Gate> {
-        match self {
-            Op::Add(left, right) => vec![*left.clone(), *right.clone()],
-            Op::Mul(left, right) => vec![*left.clone(), *right.clone()],
-            Op::Sub(left, right) => vec![*left.clone(), *right.clone()],
-            Op::Pow(left, right) => vec![*left.clone(), *right.clone()],
-            Op::Eq(left, right) => vec![*left.clone(), *right.clone()],
-        }
-    }
-
-    pub fn same(&self, gates: Vec<Gate>) -> Op {
-        match self {
-            Op::Add(_, _) => Op::Add(Box::new(gates[0].clone()), Box::new(gates[1].clone())),
-            Op::Mul(_, _) => Op::Mul(Box::new(gates[0].clone()), Box::new(gates[1].clone())),
-            Op::Sub(_, _) => Op::Sub(Box::new(gates[0].clone()), Box::new(gates[1].clone())),
-            Op::Pow(_, _) => Op::Pow(Box::new(gates[0].clone()), Box::new(gates[1].clone())),
-            Op::Eq(_, _) => Op::Eq(Box::new(gates[0].clone()), Box::new(gates[1].clone())),
-        }
-    }
-
-    pub fn expand(&self) -> GateList {
-        self.flatten()
-    }
-
-    pub fn index(&self, idx: usize) -> Op {
-        self.same(
-            self.inputs()
-                .into_iter()
-                .map(|gate| gate.index(idx))
-                .collect(),
-        )
-    }
-
-    pub fn flatten(&self) -> GateList {
-        let mut gate_list: GateList = self.inputs().into_iter().flat_map(|gate| gate.flatten()).collect();
-        gate_list.push(Gate::Op(self.clone()));
-        gate_list
-    }
-}
-
-impl Invocation {
-    pub fn outputs(&self, definitions: &Definitions) -> GateList {
-        GateList(
-            definitions
-                .get(self)
-                .unwrap()
-                .signature
-                .outputs
-                .iter()
-                .map(Gate::from)
-                .collect(),
-        )
-    }
-
-    pub fn gates(&self, definitions: &Definitions) -> GateList {
-        definitions.get(self).unwrap().gates.clone()
-    }
-    pub fn flatten(&self) -> GateList {
-        let mut gate_list: GateList = self
-            .clone()
-            .inputs
-            .into_iter()
-            .flat_map(|gate| gate.flatten())
-            .collect();
-        gate_list.push(Gate::Invocation(self.clone()));
-        gate_list
-    }
-
-    pub fn expand(&self, definitions: &Definitions) -> GateList {
-        let invocation_input_gates = self
-            .inputs
-            .iter()
-            .flat_map(|gate| gate.outputs(definitions))
-            .collect::<GateList>();
-        let definition_input_gates = definitions
-            .get(self)
-            .unwrap()
-            .signature
-            .inputs
-            .iter()
-            .map(Gate::from)
-            .collect::<GateList>();
-        let mapping: HashMap<Gate, Gate> = definition_input_gates
-            .into_iter()
-            .zip(invocation_input_gates)
-            .collect();
-        let input_gates: GateList = self
-            .clone()
-            .inputs
-            .into_iter()
-            .flat_map(|gate| gate.expand(definitions))
-            .collect();
-        let internal_gates: GateList = self
-            .clone()
-            .gates(definitions)
-            .into_iter()
-            .flat_map(|gate| gate.expand(definitions))
-            .collect();
-        let renamed = internal_gates
-            .iter()
-            .map(|gate| gate.rename(&mapping))
-            .collect();
-        GateList::concat(input_gates, renamed)
-    }
-}
-
-impl From<Input> for Gate {
-    fn from(inp: Input) -> Gate {
-        Gate::Input(inp)
-    }
-}
-
-impl From<&Input> for Gate {
-    fn from(inp: &Input) -> Gate {
-        Gate::Input(inp.clone())
-    }
-}
-
-impl IntoIterator for Gate {
-    type Item = Gate;
-    type IntoIter =
-        std::iter::Chain<std::vec::IntoIter<Self::Item>, std::vec::IntoIter<Self::Item>>;
-    fn into_iter(self) -> Self::IntoIter {
-        match &self {
-            Gate::Op(op) => vec![self.clone()].into_iter().chain(
-                op.inputs()
-                    .iter()
-                    .flat_map(|gate| gate.clone().into_iter())
-                    .collect::<Vec<Gate>>()
-                    .into_iter(),
-            ),
-            _ => vec![self].into_iter().chain(vec![]),
-        }
-    }
-}
-
-impl fmt::Display for Gate {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Gate::Input(inp) => write!(f, "{}", inp),
-            Gate::Op(op) => write!(f, "{}", op),
-            Gate::Invocation(inv) => write!(f, "{}", inv),
-        }
-    }
-}
-
-impl Gate {
-    pub fn inputs(&self) -> Vec<Input> {
-        match self {
-            Gate::Op(op) => op.inputs().iter().flat_map(|gate| gate.inputs()).collect(),
-            Gate::Invocation(inv) => inv.inputs.iter().flat_map(|gate| gate.inputs()).collect(),
-            Gate::Input(inp) => vec![inp.clone()],
-        }
-    }
-
-    pub fn outputs(&self, definitions: &Definitions) -> GateList {
-        match self {
-            Gate::Op(_) => GateList(vec![self.clone()]),
-            Gate::Input(_) => GateList(vec![self.clone()]),
-            Gate::Invocation(inv) => inv.outputs(definitions),
-        }
-    }
-
-    pub fn index(&self, idx: usize) -> Gate {
-        match self {
-            Gate::Input(inp) => Gate::Input(inp.index(idx)),
-            Gate::Op(op) => {
-                Gate::Op(op.same(op.inputs().iter().map(|gate| gate.index(idx)).collect()))
-            }
-            Gate::Invocation(inv) => Gate::Invocation(Invocation {
-                name: inv.name.clone(),
-                inputs: inv.inputs.iter().map(|gate| gate.index(idx)).collect(),
-            }),
-        }
-    }
-
-    pub fn reindex(&self, offset: usize) -> Gate {
-        match self {
-            Gate::Input(inp) => Gate::Input(inp.reindex(offset)),
-            Gate::Op(op) => Gate::Op(
-                op.same(
-                    op.inputs()
-                        .iter()
-                        .map(|gate| gate.reindex(offset))
-                        .collect(),
-                ),
-            ),
-            Gate::Invocation(inv) => Gate::Invocation(Invocation {
-                name: inv.name.clone(),
-                inputs: inv.inputs.iter().map(|gate| gate.reindex(offset)).collect(),
-            }),
-        }
-    }
-
-    pub fn rename(&self, mapping: &HashMap<Gate, Gate>) -> Gate {
-        match self {
-            Gate::Input(_) => match mapping.get(self) {
-                Some(gate) => gate.clone(),
-                None => self.clone(),
-            },
-            Gate::Op(op) => Gate::Op(
-                op.same(
-                    op.inputs()
-                        .iter()
-                        .map(|gate| gate.rename(mapping))
-                        .collect(),
-                ),
-            ),
-            Gate::Invocation(inv) => Gate::Invocation(Invocation {
-                name: inv.name.clone(),
-                inputs: inv.inputs.iter().map(|gate| gate.rename(mapping)).collect(),
-            }),
-        }
-    }
-
-    pub fn expand(&self, definitions: &Definitions) -> GateList {
-        match self {
-            Gate::Input(inp) => inp.expand(),
-            Gate::Op(op) => op.expand(),
-            Gate::Invocation(inv) => inv.expand(definitions),
-        }
-    }
-
-    pub fn flatten(&self) -> GateList {
-        match self {
-            Gate::Op(op) => op.flatten(),
-            Gate::Input(inp) => inp.flatten(),
-            Gate::Invocation(invocation) => invocation.flatten(),
-        }
-    }
-
-    pub fn unflatten(&self, reference: &GateList, used: &mut Vec<bool>) -> Gate {
-        match self {
-            Gate::Input(Input::Index(k)) => {
-                used[*k] = true;
-                reference[*k].unflatten(reference, used)
-            }
-            Gate::Input(Input::Wire(_)) => {
-                let n = reference.iter().position(|gate| gate == self).unwrap();
-                used[n] = true;
-                self.clone()
-            }
-            Gate::Op(op) => {
-                let n = reference.iter().position(|gate| gate == self).unwrap();
-                used[n] = true;
-                Gate::Op(
-                    op.same(
-                        op.inputs()
-                            .iter()
-                            .map(|gate| gate.unflatten(reference, used))
-                            .collect(),
-                    ),
-                )
-            }
-            Gate::Invocation(inv) => {
-                let n = reference.iter().position(|gate| gate == self).unwrap();
-                used[n] = true;
-                Gate::Invocation(Invocation {
-                    name: inv.name.clone(),
-                    inputs: inv
-                        .inputs
-                        .iter()
-                        .map(|gate| gate.unflatten(reference, used))
-                        .collect(),
-                })
-            }
-        }
-    }
-}
-
-impl Signature {
-    pub fn reindex(&self, offset: usize) -> Signature {
-        Signature {
-            inputs: self
-                .inputs
-                .iter()
-                .map(|wire| wire.reindex(offset))
-                .collect(),
-            outputs: self
-                .outputs
-                .iter()
-                .map(|wire| wire.reindex(offset))
-                .collect(),
-        }
-    }
-}
-
-impl Default for GateList {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl From<Wire> for GateList {
-    fn from(wire: Wire) -> GateList {
-        GateList(vec![Gate::Input(Input::Wire(wire))])
-    }
-}
-
-impl From<Input> for GateList {
-    fn from(inp: Input) -> GateList {
-        GateList(vec![Gate::Input(inp)])
-    }
-}
-
-impl FromIterator<Gate> for GateList {
-    fn from_iter<I: IntoIterator<Item = Gate>>(iter: I) -> Self {
-        let mut v: Vec<Gate> = vec![];
-        for i in iter {
-            v.push(i);
-        }
-        GateList(v)
-    }
-}
-
-impl IntoIterator for GateList {
-    type Item = Gate;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl Index<usize> for GateList {
-    type Output = Gate;
-
-    fn index(&self, n: usize) -> &Self::Output {
-        &self.0[n]
-    }
-}
-
-impl fmt::Display for GateList {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "gates:{}",
-            indent(
-                self.iter()
-                    .enumerate()
-                    .map(|(i, gate)| {
-                        let lookedup_gate = match gate {
-                            Gate::Input(Input::Index(k)) => &self[*k],
-                            _ => gate,
-                        };
-                        format!("{}: {}", i, lookedup_gate)
-                    })
-                    .collect::<Vec<String>>(),
-                1,
-            )
-            .join("")
-        )
-    }
-}
-
-impl GateList {
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn new() -> Self {
-        GateList(vec![])
-    }
-
-    pub fn extend(&mut self, other: GateList) {
-        self.0.extend(other.0);
-    }
-
-    pub fn push(&mut self, gate: Gate) {
-        self.0.push(gate)
-    }
-
-    pub fn pprint(&self) {
-        self.0.iter().for_each(|gate| println!("{:?}", gate));
-    }
-
-    pub fn flatten(&self) -> GateList {
-        self.iter().flat_map(|gate| gate.flatten()).collect()
-    }
-
-    pub fn remove_names(&self) -> Self {
-        self.iter()
-            .map(|gate| match gate {
-                Gate::Input(_) => gate.index(self.iter().position(|g| gate == g).unwrap()),
-                Gate::Op(op) => Gate::Op(
-                    op.same(
-                        op.inputs()
-                            .iter()
-                            .map(|gate| {
-                                Gate::Input(Input::from(
-                                    self.iter().position(|g| gate == g).unwrap(),
-                                ))
-                            })
-                            .collect(),
-                    ),
-                ),
-                Gate::Invocation(inv) => Gate::Invocation(Invocation {
-                    name: inv.name.clone(),
-                    inputs: inv
-                        .inputs
-                        .iter()
-                        .map(|gate| {
-                            Gate::Input(Input::from(self.iter().position(|g| gate == g).unwrap()))
-                        })
-                        .collect(),
+impl Module {
+    pub fn parse(unparsed_file: &str) -> Result<Self, pest::error::Error<Rule>> {
+        let mut pairs = VampirParser::parse(Rule::moduleItems, &unparsed_file)?;
+        let mut defs = vec![];
+        let mut exprs = vec![];
+        while let Some(pair) = pairs.next() {
+            match pair.as_rule() {
+                Rule::expr => {
+                    let expr = TExpr::parse(pair).expect("expected expression");
+                    exprs.push(expr);
+                },
+                Rule::definition => {
+                    let definition = Definition::parse(pair).expect("expected definition");
+                    defs.push(definition);
+                },
+                Rule::EOI => return Ok(Self {
+                    defs,
+                    exprs,
                 }),
-            })
-            .collect()
-    }
-
-    pub fn index(&self) -> GateList {
-        self.clone()
-            .into_iter()
-            .enumerate()
-            .map(|(i, gate)| gate.index(i))
-            .collect()
-    }
-
-    pub fn dedupe(&self) -> GateList {
-        let mut res = GateList::new();
-        self.iter()
-            .for_each(|gate| match res.iter().find(|g| g == &gate) {
-                Some(_) => (),
-                None => res.push(gate.clone()),
-            });
-        res
-    }
-
-    pub fn reindex(&self, offset: usize) -> GateList {
-        GateList(
-            self.0
-                .clone()
-                .into_iter()
-                .map(|gate| gate.reindex(offset))
-                .collect(),
-        )
-    }
-
-    pub fn concat(self, other: GateList) -> GateList {
-        GateList([self.0.clone(), other.reindex(self.len()).0].concat())
-    }
-
-    pub fn iter(&self) -> std::slice::Iter<'_, Gate> {
-        self.0.iter()
-    }
-
-    pub fn unflatten(&self) -> GateList {
-        let mut used: Vec<bool> = vec![false; self.len()];
-        let mut res = GateList::new();
-        for i in (0..self.len()).rev() {
-            if !used[i] {
-                res.push(self[i].unflatten(
-                    self, &mut used));
+                _ => unreachable!("module item should either be expression, definition, or EOI")
             }
         }
-        res.into_iter().rev().collect()
+        unreachable!("EOI should have been encountered")
     }
 }
 
-impl Signature {
-    pub fn dedupe(&self) -> Self {
-        let mut inputs = vec![];
-        self.inputs
-            .iter()
-            .for_each(|inp| match inputs.iter().find(|i| i == &inp) {
-                Some(_) => (),
-                None => inputs.push(inp.clone()),
-            });
-        Signature {
-            inputs,
-            outputs: self.outputs.clone(),
-        }
-    }
-}
-
-impl fmt::Display for Circuit {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "  signature:\n    {}\n\n  gates: {{{}\n  }}\n\n  equalities:{}",
-            self.signature,
-            indent(
-                self.gates
-                    .iter()
-                    .enumerate()
-                    .map(|(i, gate)| format!("w{}: {}", i, gate))
-                    .collect(),
-                2
-            )
-            .join(""),
-            indent(
-                self.equalities
-                    .iter()
-                    .map(|(l, r)| format!("{} = {}", l, r))
-                    .collect::<Vec<String>>(),
-                2
-            )
-            .join(""),
-        )
-    }
-}
-
-impl Circuit {
-    pub fn reindex(&self, offset: usize) -> Circuit {
-        let signature = self.signature.reindex(offset);
-        let gates = self.gates.iter().map(|gate| gate.reindex(offset)).collect();
-        let equalities = self
-            .equalities
-            .iter()
-            .map(|(left, right)| (left.reindex(offset), right.reindex(offset)))
-            .collect();
-        Circuit {
-            signature,
-            gates,
-            equalities,
-        }
-    }
-
-    pub fn expand(&self, definitions: &Definitions) -> Circuit {
-        let signature = self.signature.clone();
-        let equalities = self.equalities.clone();
-
-        let gates = self
-            .gates
-            .clone()
-            .into_iter()
-            .map(|gate| gate.expand(definitions))
-            .fold(GateList::new(), |state, gate_list| {
-                GateList::concat(state, gate_list)
-            });
-
-        Circuit {
-            signature,
-            gates,
-            equalities,
-        }
-    }
-
-    pub fn dedupe(&self) -> Circuit {
-        let signature = self.signature.dedupe();
-        let equalities = self.equalities.clone();
-        let gates = self.gates.dedupe();
-
-        Circuit {
-            signature,
-            gates,
-            equalities,
-        }
-    }
-
-    pub fn remove_names(&self) -> Circuit {
-        let signature = self.signature.clone();
-        let equalities = self.equalities.clone();
-        let gates = self.gates.remove_names();
-
-        Circuit {
-            signature,
-            gates,
-            equalities,
-        }
-    }
-
-    pub fn to_anf(&self) -> Circuit {
-        let gates = self.gates.flatten().dedupe().remove_names();
-        Circuit {
-            signature: self.signature.clone(),
-            gates,
-            equalities: self.equalities.clone(),
-        }
-    }
-
-    pub fn unflatten(&self) -> Circuit {
-        Circuit {
-            signature: self.signature.clone(),
-            gates: self.gates.unflatten(),
-            equalities: self.equalities.clone(),
-        }
-    }
-}
-
-impl Default for Definitions {
+impl Default for Module {
     fn default() -> Self {
-        Self::new()
+        Self { defs: vec![], exprs: vec![] }
     }
 }
 
-impl fmt::Display for Definitions {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.0
-                .iter()
-                .map(|(k, v)| format!(
-                    "  def {} {} {{{}\n  }}\n",
-                    k,
-                    v.signature,
-                    indent(v.gates.iter().map(|gate| format!("{}", gate)).collect(), 2).join("")
-                ))
-                .collect::<Vec<String>>()
-                .join("\n")
-        )
+impl fmt::Display for Module {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for def in &self.defs {
+            writeln!(f, "{};;", def)?;
+        }
+        for expr in &self.exprs {
+            writeln!(f, "{};;", expr)?;
+        }
+        Ok(())
     }
 }
 
-impl Definitions {
-    pub fn new() -> Self {
-        Self(HashMap::<String, Circuit>::new())
-    }
+#[derive(Debug, Clone)]
+pub struct Definition(pub LetBinding);
 
-    pub fn insert(&mut self, name: String, circuit: Circuit) -> Option<Circuit> {
-        self.0.insert(name, circuit)
-    }
-
-    pub fn get(&self, inv: &Invocation) -> Option<&Circuit> {
-        self.0.get(&inv.name)
-    }
-}
-
-impl fmt::Display for Vampir {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}\n{}", self.definitions, self.circuit)
+impl Definition {
+    pub fn parse(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::definition { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next().expect("definition should have a single let binding");
+        let binding = LetBinding::parse(pair).expect("definition should contain single binding");
+        Some(Self(binding))
     }
 }
 
-impl Vampir {
-    pub fn expand(&self) -> Vampir {
-        Vampir {
-            definitions: self.definitions.clone(),
-            circuit: self.circuit.expand(&self.definitions),
+impl fmt::Display for Definition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Expr::Function(Function(params, body)) = &self.0.1.v {
+            write!(f, "let {}", self.0.0)?;
+            for param in params {
+                write!(f, " {}", param)?;
+            }
+            let mut body_str = String::new();
+            write!(body_str, "{}", body)?;
+            if body_str.contains("\n") {
+                body_str = body_str.replace("\n", "\n    ");
+                write!(f, " =\n    {}", body_str)?
+            } else {
+                write!(f, " = {}", body_str)?
+            }
+        } else {
+            let mut val_str = String::new();
+            write!(val_str, "{}", self.0.1)?;
+            if val_str.contains("\n") {
+                val_str = val_str.replace("\n", "\n    ");
+                write!(f, "let {} =\n    {}", self.0.0, val_str)?
+            } else {
+                write!(f, "let {} = {}", self.0.0, val_str)?
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct LetBinding(pub Pattern, pub Box<TExpr>);
+
+impl LetBinding {
+    pub fn parse(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::letBinding { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next_back().expect("let binding should not be empty");
+        let expr = TExpr::parse(pair).expect("expression should end with expression");
+        let pair = pairs.next().expect("let binding should have at least two parts");
+        match pair.as_rule() {
+            Rule::valueName => {
+                let name = Variable::parse(pair).expect("expression should be value name");
+                let mut pats = vec![];
+                while let Some(pair) = pairs.next() {
+                    let rhs = Pattern::parse(pair)
+                        .expect("expected RHS to be a product");
+                    pats.push(rhs);
+                }
+                let expr = Box::new(Expr::Function(Function(pats, Box::new(expr))).into());
+                Some(Self(Pattern::Variable(name), expr))
+            },
+            Rule::pattern => {
+                let pat = Pattern::parse(pair).expect("pattern should start with pattern");
+                Some(Self(pat, Box::new(expr)))
+            },
+            _ => unreachable!("let binding is of unknown form")
+        }
+    }
+}
+
+impl fmt::Display for LetBinding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.1.v {
+            Expr::Function(fun) => {
+                write!(f, "{}", self.0)?;
+                for pat in &fun.0 {
+                    write!(f, " {}", pat)?;
+                }
+                write!(f, " = {}", fun.1)?;
+            },
+            _ => write!(f, "{} = {}", self.0, self.1)?,
+        };
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum Pattern {
+    As(Box<Pattern>, Variable),
+    Product(Vec<Pattern>),
+    Variable(Variable),
+    Constant(i32),
+}
+
+impl Pattern {
+    pub fn parse(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::pattern { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next().expect("pattern should not be empty");
+        let mut pat =
+            Self::parse_pat1(pair).expect("pattern should start with pattern");
+        while let Some(pair) = pairs.next() {
+            let name = Variable::parse(pair).expect("expected pattern name");
+            pat = Self::As(Box::new(pat), name);
+        }
+        Some(pat)
+    }
+
+    pub fn parse_pat1(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::pattern1 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next().expect("pattern should not be empty");
+        let mut pats =
+            vec![Self::parse_pat2(pair).expect("expression should start with product")];
+        while let Some(pair) = pairs.next() {
+            let rhs = Self::parse_pat2(pair)
+                .expect("expected RHS to be a product");
+            pats.push(rhs);
+        }
+        Some(if pats.len() == 1 { pats[0].clone() } else { Self::Product(pats) })
+    }
+
+    pub fn parse_pat2(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::pattern2 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next_back().expect("expression should not be empty");
+        match pair.as_rule() {
+            Rule::constant if pair.as_str().starts_with("(") => {
+                Some(Self::Product(vec![]))
+            },
+            Rule::constant => {
+                let value = pair.as_str().parse().ok().expect("constant should be an integer");
+                Some(Self::Constant(value))
+            },
+            Rule::valueName => {
+                let name = Variable::parse(pair).expect("pattern should be value name");
+                Some(Self::Variable(name))
+            },
+            Rule::pattern => Self::parse(pair),
+            _ => unreachable!("pattern is of unknown form")
         }
     }
 
-    pub fn to_anf(&self) -> Vampir {
-        Vampir {
-            definitions: self.definitions.clone(),
-            circuit: self.circuit.to_anf(),
+    pub fn to_expr(&self) -> TExpr {
+        match self {
+            Self::Constant(val) => Expr::Constant(*val).into(),
+            Self::Variable(var) => Expr::Variable(var.clone()).into(),
+            Self::As(pat, _name) => pat.to_expr(),
+            Self::Product(pats) => {
+                let mut exprs = vec![];
+                for pat in pats {
+                    exprs.push(pat.to_expr());
+                }
+                Expr::Product(exprs).into()
+            }
         }
     }
 
-    pub fn unflatten(&self) -> Vampir {
-        Vampir {
-            definitions: self.definitions.clone(),
-            circuit: self.circuit.unflatten(),
+    pub fn to_typed_expr(&self, typ: Type) -> TExpr {
+        match (self, typ) {
+            (Self::Constant(val), typ) =>
+                TExpr { v: Expr::Constant(*val), t: Some(typ) },
+            (Self::Variable(var), typ) =>
+                TExpr { v:Expr::Variable(var.clone()), t: Some(typ) },
+            (Self::As(pat, _name), typ) => pat.to_typed_expr(typ),
+            (Self::Product(pats), Type::Product(types))
+                if pats.len() == types.len() =>
+            {
+                let mut exprs = vec![];
+                for (pat, typ) in pats.iter().zip(types.iter()) {
+                    exprs.push(pat.to_typed_expr(typ.clone()));
+                }
+                TExpr{v:Expr::Product(exprs), t: Some(Type::Product(types)) }
+            },
+            (_, typ) => panic!("expression {} cannot have the type {}", self, typ),
         }
+    }
+}
+
+impl fmt::Display for Pattern {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::As(pat, name) => write!(f, "{} as {}", pat, name)?,
+            Self::Product(pats) => {
+                let mut iter = pats.iter();
+                write!(f, "(")?;
+                if let Some(pat) = iter.next() {
+                    write!(f, "{}", pat)?;
+                    while let Some(pat) = iter.next() {
+                        write!(f, ", {}", pat)?;
+                    }
+                }
+                write!(f, ")")?;
+            },
+            Self::Variable(var) => write!(f, "{}", var)?,
+            Self::Constant(val) => write!(f, "{}", val)?,
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TExpr {
+    pub v: Expr,
+    pub t: Option<Type>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Expr {
+    Sequence(Vec<TExpr>),
+    Product(Vec<TExpr>),
+    Infix(InfixOp, Box<TExpr>, Box<TExpr>),
+    Negate(Box<TExpr>),
+    Application(Box<TExpr>, Box<TExpr>),
+    Constant(i32),
+    Variable(Variable),
+    Function(Function),
+    LetBinding(LetBinding, Box<TExpr>),
+}
+
+impl TExpr {
+    pub fn parse(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr { return None }
+        let string = pair.as_str();
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next_back().expect("expression should not be empty");
+        if string.starts_with("fun") {
+            Function::parse(pair).map(|x| Expr::Function(x).into())
+        } else if string.starts_with("let") {
+            let body = Self::parse(pair).expect("expression should end with expression");
+            let pair = pairs.next().expect("body expression should be prefixed by binding");
+            let binding = LetBinding::parse(pair).expect("expression should start with binding");
+            Some(Expr::LetBinding(binding, Box::new(body)).into())
+        } else {
+            Self::parse_expr1(pair)
+        }
+    }
+    
+    pub fn parse_expr1(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr1 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next().expect("expression should not be empty");
+        let mut exprs =
+            vec![Self::parse_expr2(pair).expect("expression should start with product")];
+        while let Some(pair) = pairs.next() {
+            let rhs = Self::parse_expr2(pair)
+                .expect("expected RHS to be a product");
+            exprs.push(rhs);
+            
+        }
+        Some(if exprs.len() == 1 { exprs[0].clone() } else { Expr::Sequence(exprs).into() })
+    }
+
+    pub fn parse_expr2(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr2 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next().expect("expression should not be empty");
+        let mut exprs =
+            vec![Self::parse_expr3(pair).expect("expression should start with product")];
+        while let Some(pair) = pairs.next() {
+            let rhs = Self::parse_expr3(pair)
+                .expect("expected RHS to be a product");
+            exprs.push(rhs);
+        }
+        Some(if exprs.len() == 1 { exprs[0].clone() } else { Expr::Product(exprs).into() })
+    }
+
+    pub fn parse_expr3(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr3 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next().expect("expression should not be empty");
+        let mut expr =
+            Self::parse_expr4(pair).expect("expression should start with product");
+        while let Some(pair) = pairs.next() {
+            let op = InfixOp::parse(pair).expect("expected arithmetic operator");
+            let rhs_pair = pairs.next().expect("expected RHS product");
+            let rhs = Self::parse_expr4(rhs_pair)
+                .expect("expected RHS to be a product");
+            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).into();
+        }
+        Some(expr)
+    }
+
+    pub fn parse_expr4(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr4 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next().expect("expression should not be empty");
+        let mut expr =
+            Self::parse_expr5(pair).expect("expression should start with product");
+        while let Some(pair) = pairs.next() {
+            let op = InfixOp::parse(pair).expect("expected arithmetic operator");
+            let rhs_pair = pairs.next().expect("expected RHS product");
+            let rhs = Self::parse_expr5(rhs_pair)
+                .expect("expected RHS to be a product");
+            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).into();
+        }
+        Some(expr)
+    }
+
+    pub fn parse_expr5(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr5 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next().expect("expression should not be empty");
+        let mut expr =
+            Self::parse_expr6(pair).expect("expression should start with product");
+        while let Some(pair) = pairs.next() {
+            let op = InfixOp::parse(pair).expect("expected arithmetic operator");
+            let rhs_pair = pairs.next().expect("expected RHS product");
+            let rhs = Self::parse_expr6(rhs_pair)
+                .expect("expected RHS to be a product");
+            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).into();
+        }
+        Some(expr)
+    }
+
+    pub fn parse_expr6(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr6 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next_back().expect("expression should not be empty");
+        let mut expr =
+            Self::parse_expr7(pair).expect("expression should start with product");
+        while let Some(pair) = pairs.next_back() {
+            if pair.as_rule() == Rule::negate {
+                expr = Expr::Negate(Box::new(expr)).into();
+            } else {
+                unreachable!("only negative signs should occur here");
+            }
+        }
+        Some(expr)
+    }
+
+    pub fn parse_expr7(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr7 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next().expect("expression should not be empty");
+        let mut expr =
+            Self::parse_expr8(pair).expect("expression should start with product");
+        while let Some(pair) = pairs.next() {
+            let rhs = Self::parse_expr8(pair)
+                .expect("expected RHS to be a product");
+            expr = Expr::Application(Box::new(expr), Box::new(rhs)).into();
+        }
+        Some(expr)
+    }
+
+    pub fn parse_expr8(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr8 { return None }
+        let string = pair.as_str();
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next_back().expect("expression should not be empty");
+        if pair.as_rule() == Rule::constant && string.starts_with("(") {
+            Some(Expr::Product(vec![]).into())
+        } else if pair.as_rule() == Rule::constant {
+            let value = pair.as_str().parse().ok().expect("constant should be an integer");
+            Some(Expr::Constant(value).into())
+        } else if pair.as_rule() == Rule::valueName {
+            let name = Variable::parse(pair).expect("expression should be value name");
+            Some(Expr::Variable(name).into())
+        } else if string.starts_with("(") || string.starts_with("fun") |
+        string.starts_with("let") {
+            Self::parse(pair)
+        } else {
+            unreachable!("expression is of unknown form")
+        }
+    }
+}
+
+impl fmt::Display for TExpr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.v {
+            Expr::Sequence(exprs) => {
+                let mut iter = exprs.iter();
+                if let Some(expr) = iter.next() {
+                    write!(f, "{}", expr)?;
+                    while let Some(expr) = iter.next() {
+                        write!(f, ";\n{}", expr)?;
+                    }
+                } else {
+                    write!(f, "()")?;
+                }
+            },
+            Expr::Product(exprs) => {
+                let mut iter = exprs.iter();
+                write!(f, "(")?;
+                if let Some(expr) = iter.next() {
+                    write!(f, "{}", expr)?;
+                    while let Some(expr) = iter.next() {
+                        write!(f, ", {}", expr)?;
+                    }
+                }
+                write!(f, ")")?;
+            },
+            Expr::Infix(op, expr1, expr2) => write!(f, "({}{}{})", expr1, op, expr2)?,
+            Expr::Negate(expr) => write!(f, "-{}", expr)?,
+            Expr::Application(expr1, expr2) => write!(f, "{} {}", expr1, expr2)?,
+            Expr::Constant(val) => write!(f, "{}", val)?,
+            Expr::Variable(var) => write!(f, "{}", var)?,
+            Expr::Function(fun) => write!(f, "{}", fun)?,
+            Expr::LetBinding(binding, expr) => {
+                let mut body = String::new();
+                write!(body, "{}", expr)?;
+                if body.contains("\n") {
+                    body = body.replace("\n", "\n    ");
+                    write!(f, "let {} in\n    {}", binding, body)?
+                } else {
+                    write!(f, "let {} in {}", binding, expr)?
+                }
+            },
+        }
+        Ok(())
+    }
+}
+
+impl From<Expr> for TExpr {
+    fn from(v: Expr) -> TExpr {
+        TExpr { v, t: None }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum InfixOp {
+    Divide,
+    Multiply,
+    Add,
+    Subtract,
+    Equal,
+}
+
+impl InfixOp {
+    pub fn parse(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::infixOp { return None }
+        match pair.as_span().as_str() {
+            "=" => Some(Self::Equal),
+            "/" => Some(Self::Divide),
+            "*" => Some(Self::Multiply),
+            "+" => Some(Self::Add),
+            "-" => Some(Self::Subtract),
+            _ => unreachable!("Encountered unknown infix operator")
+        }
+    }
+}
+
+impl fmt::Display for InfixOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Divide => write!(f, "/"),
+            Self::Multiply => write!(f, "*"),
+            Self::Add => write!(f, "+"),
+            Self::Subtract => write!(f, "-"),
+            Self::Equal => write!(f, "="),
+        }
+    }
+}
+
+pub type VariableId = u32;
+
+#[derive(Clone, Debug)]
+pub struct Variable {
+    pub name: Option<String>,
+    pub id: VariableId,
+}
+
+impl Variable {
+    pub fn new(id: VariableId) -> Self {
+        Self { id, name: None }
+    }
+    
+    pub fn parse(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::valueName { return None }
+        Some(Self{name: Some(pair.as_str().to_string()), id: 0 })
+    }
+}
+
+impl fmt::Display for Variable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(name) = &self.name {
+            write!(f, "{}", name)?;
+        }
+        write!(f, "[{}]", self.id)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Function(pub Vec<Pattern>, pub Box<TExpr>);
+
+impl Function {
+    pub fn parse(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::function { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next_back().expect("function should not be empty");
+        let body = TExpr::parse(pair).expect("function should end with expression");
+        let mut params = vec![];
+        while let Some(pair) = pairs.next() {
+            let param =
+                Pattern::parse(pair).expect("all prefixes to function should be patterns");
+            params.push(param);
+        }
+        Some(Self(params, Box::new(body)))
+    }
+}
+
+impl fmt::Display for Function {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "fun {}", self.0[0])?;
+        for pat in &self.0[1..] {
+            write!(f, " {}", pat)?;
+        }
+
+        let mut body = String::new();
+        write!(body, "{}", self.1)?;
+        if body.contains("\n") {
+            body = body.replace("\n", "\n    ");
+            write!(f, " ->\n    {}", body)?
+        } else {
+            write!(f, " -> {}", body)?
+        }
+        Ok(())
     }
 }

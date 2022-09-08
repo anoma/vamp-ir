@@ -1,36 +1,50 @@
 WHITESPACE = _{ " " | "\t" | NEWLINE }
+
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
-identifier = @{ ( 'a'..'z' | 'A'..'Z' | "_" ) ~ ( 'a'..'z' | 'A'..'Z' | "_" | '0'..'9' )* }
-constant = @{ "-"? ~ (ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) }
+lowercaseIdent = @{ (ASCII_ALPHA_LOWER | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
-// Atomic and immutable data unit for the IR, a wire
-pub_wire = @{ "pub" ~ identifier }
-priv_wire = @{ identifier }
-wire = { pub_wire | priv_wire }
-invocation_inputs = { primary+ }
-definition_inputs = { wire+ }
-definition_outputs = { "->" ~ wire+ }
-signature = { definition_inputs ~ definition_outputs? }
-expression_list = { expression* }
+keyword = { "in" | "let" | "fun" | "def" }
 
-alias_definition = { "def" ~ identifier ~ signature ~ "{" ~ expression_list ~ "}" }
+valueName = { !keyword ~ lowercaseIdent }
 
-// alias invocations need to be surrounded by brackets to distinguish them
-// from wire identifiers
-alias_invocation = { "(" ~ identifier ~ invocation_inputs ~ ")" }
+infixOp = { "/" | "*" | "+" | "-" | "=" }
 
-// binary operations
-plus = { "+" }
-minus = { "-" }
-times = { "*" }
-power = { "^" }
-equals = { "=" }
+integerLiteral = @{ "0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
 
-op = _{ plus | minus | times | power | equals }
+constant = { integerLiteral | "(" ~ ")" }
 
-primary = { constant | wire | alias_invocation | "(" ~ expression ~ ")" }
+pattern = { pattern1 ~ ( "as" ~ valueName )* }
 
-expression = { primary ~ ( op ~ primary )* }
+pattern1 = { pattern2 ~ ( "," ~ pattern2 )* }
 
-vampir = { SOI ~ ( alias_definition | expression )* ~ EOI }
+pattern2 = { valueName | constant | "(" ~ pattern ~ ")" }
+
+letBinding = { pattern ~ "=" ~ expr | valueName ~ pattern* ~ "{" ~ expr ~ "}" }
+
+expr = { function | "let" ~ letBinding ~ "in" ~ expr | expr1 }
+
+expr1 = { expr2 ~ ( ";" ~ expr2 )* }
+
+expr2 = { expr3 ~ ( "," ~ expr3 )* }
+
+expr3 = { expr4 ~ ( &"=" ~ infixOp ~ expr4 )* }
+
+expr4 = { expr5 ~ ( &("+" | "-") ~ infixOp ~ expr5 )* }
+
+expr5 = { expr6 ~ ( &("*" | "/") ~ infixOp ~ expr6 )* }
+
+expr6 = { "(" ~ negate+ ~ expr7 ~ ")" | expr7 }
+
+expr7 = { expr8+ }
+
+expr8 = { "(" ~ expr ~ ")" | valueName | constant | &"fun" ~ expr | &"let" ~ expr }
+
+function = { "fun" ~ pattern+ ~ "{" ~ expr ~ "}" }
+
+negate = { "-" }
+
+definition = { "def" ~ letBinding }
+
+moduleItems = _{ SOI ~ ( definition | expr ~ ";" )* ~ EOI }
+
