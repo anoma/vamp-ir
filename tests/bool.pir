@@ -1,26 +1,39 @@
-def aa = fun x y {
-    let a () { 30 } in
-        x*y = a ();
-        x*y = 30
-}
-
-aa 5 6;
-
-// constrains values to be 0 or a
-def bool a x { x*(x-a) = 0 }
-
-def map (f,m) (a,b,c,d) {
+// defining a constant
+def myval = 0;
+// constraint expression
+myval = 0;
+// defining a function
+def bool x { x*(x-1) = 0 };
+// calling a function
+bool 1;
+// solicit a user input
+bool a;
+// defining a two parameter function
+def myeq a b { a = b };
+// solicit equal user inputs
+myeq b c;
+// currying example
+(myeq d) e;
+// currying with definition
+def mycurry = myeq f;
+// use defined curry
+mycurry g;
+// tuples
+(h, j) = (k, l);
+// tuple user input
+def (m, n) = p;
+// define higher order function
+def map f (a,b,c,d) {
     f a;
     f b;
     f c;
     f d
-}
-
-map (bool 1,0) c;
-map (bool 1,0) c;
-
-fun f { f a };
-
-//let h = 1/g;;
-
-h*j = 20;
+};
+// user higher order function
+map bool q;
+// computation + BIDMAS
+def pyt a b { a*a + b*b };
+// constrain computation
+pyt x y = 25;
+// let bindings
+let a = 5 in a*5 = 25;

@@ -20,11 +20,11 @@ pattern1 = { pattern2 ~ ( "," ~ pattern2 )* }
 
 pattern2 = { valueName | constant | "(" ~ pattern ~ ")" }
 
-letBinding = { pattern ~ "=" ~ expr | valueName ~ pattern* ~ "{" ~ expr ~ "}" }
+letBinding = { pattern ~ "=" ~ expr | valueName ~ pattern* ~ &"{" ~ expr }
 
 expr = { function | "let" ~ letBinding ~ "in" ~ expr | expr1 }
 
-expr1 = { expr2 ~ ( ";" ~ expr2 )* }
+expr1 = { expr2 | "{" ~ expr2 ~ ( ";" ~ expr2 )* ~ "}" }
 
 expr2 = { expr3 ~ ( "," ~ expr3 )* }
 
@@ -40,11 +40,11 @@ expr7 = { expr8+ }
 
 expr8 = { "(" ~ expr ~ ")" | valueName | constant | &"fun" ~ expr | &"let" ~ expr }
 
-function = { "fun" ~ pattern+ ~ "{" ~ expr ~ "}" }
+function = { "fun" ~ pattern+ ~ &"{" ~ expr }
 
 negate = { "-" }
 
 definition = { "def" ~ letBinding }
 
-moduleItems = _{ SOI ~ ( definition | expr ~ ";" )* ~ EOI }
+moduleItems = _{ SOI ~ ( definition ~ ";" | expr ~ ";" )* ~ EOI }
 
