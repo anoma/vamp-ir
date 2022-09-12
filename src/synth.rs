@@ -7,6 +7,32 @@ use plonk_core::constraint_system::StandardComposer;
 use plonk_core::error::Error;
 use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
+use num_bigint::BigUint;
+
+struct PrimeFieldBincode<T>(T) where T: PrimeField;
+
+impl<T> bincode::Encode for PrimeFieldBincode<T> where T: PrimeField {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        let biguint: BigUint = self.0.into();
+        biguint.to_u32_digits().encode(encoder)
+    }
+}
+
+impl<T> bincode::Decode for PrimeFieldBincode<T> where T: PrimeField {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        let digits = Vec::<u32>::decode(decoder)?;
+        T::try_from(BigUint::new(digits))
+            .map(Self)
+            .map_err(|_| bincode::error::DecodeError::OtherString(
+                "cannot convert from BigUint to PrimeField type".to_string()
+            ))
+    }
+}
 
 // Make field elements from signed values
 fn make_constant<F: PrimeField>(c: i32) -> F {
@@ -57,9 +83,43 @@ pub struct PlonkModule<F, P>
 where
     F: PrimeField,
     P: TEModelParameters<BaseField = F>, {
-    module: Module,
+    pub module: Module,
     variable_map: HashMap<VariableId, F>,
     phantom: PhantomData<P>,
+}
+
+impl<F, P> bincode::Encode for PlonkModule<F, P>
+where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F> {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        let mut encoded_variable_map = HashMap::new();
+        for (k, v) in self.variable_map.clone() {
+            encoded_variable_map.insert(k, PrimeFieldBincode(v));
+        }
+        encoded_variable_map.encode(encoder)?;
+        self.module.encode(encoder)?;
+        Ok(())
+    }
+}
+
+impl<F, P> bincode::Decode for PlonkModule<F, P> where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F>, {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        let encoded_variable_map = HashMap::<VariableId, PrimeFieldBincode<F>>::decode(decoder)?;
+        let mut variable_map = HashMap::new();
+        for (k, v) in encoded_variable_map {
+            variable_map.insert(k, v.0);
+        }
+        let module = Module::decode(decoder)?;
+        Ok(PlonkModule { module, variable_map, phantom: PhantomData })
+    }
 }
 
 impl<F, P> PlonkModule<F, P>

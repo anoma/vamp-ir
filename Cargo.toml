@@ -16,6 +16,9 @@ ark-bls12-381 = "0.3"
 ark-ed-on-bls12-381 = "0.3"
 ark-poly = "0.3"
 ark-poly-commit = "0.3"
+ark-serialize = "0.3.0"
+num-bigint = "^0.4.0"
+bincode = "2.0.0-rc.1"
 rand_core = "0.6.3"
 plonk = { path = "../plonk" }
 plonk-core = { path = "../plonk/plonk-core", features = [ "std", "trace", "trace-print" ] }

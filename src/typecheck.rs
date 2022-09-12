@@ -2,6 +2,7 @@ use std::fmt::{self, Display};
 use crate::ast::{Module, VariableId, Pattern, Variable, TExpr, InfixOp, Function, Definition, Expr, LetBinding};
 use crate::transform::{VarGen, collect_pattern_variables};
 use std::collections::HashMap;
+use bincode::{Decode, Encode};
 
 /* Collect the free variables occuring in the given type. */
 fn collect_free_type_vars(
@@ -96,7 +97,7 @@ pub fn allocate_module_types(
 }
 
 /* A representation of expression types. */
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum Type {
     Int,
     Variable(Variable),

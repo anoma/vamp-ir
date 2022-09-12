@@ -3,11 +3,12 @@ use std::fmt;
 use std::fmt::Write;
 use crate::typecheck::Type;
 use crate::pest::Parser;
+use bincode::{Encode, Decode};
 #[derive(Parser)]
 #[grammar = "vampir.pest"]
 pub struct VampirParser;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct Module {
     pub defs: Vec<Definition>,
     pub exprs: Vec<TExpr>,
@@ -57,7 +58,7 @@ impl fmt::Display for Module {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct Definition(pub LetBinding);
 
 impl Definition {
@@ -99,7 +100,7 @@ impl fmt::Display for Definition {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct LetBinding(pub Pattern, pub Box<TExpr>);
 
 impl LetBinding {
@@ -146,7 +147,7 @@ impl fmt::Display for LetBinding {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum Pattern {
     As(Box<Pattern>, Variable),
     Product(Vec<Pattern>),
@@ -261,13 +262,13 @@ impl fmt::Display for Pattern {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct TExpr {
     pub v: Expr,
     pub t: Option<Type>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub enum Expr {
     Sequence(Vec<TExpr>),
     Product(Vec<TExpr>),
@@ -495,7 +496,7 @@ impl From<Expr> for TExpr {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Encode, Decode)]
 pub enum InfixOp {
     Divide,
     Multiply,
@@ -535,7 +536,7 @@ impl fmt::Display for InfixOp {
 
 pub type VariableId = u32;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub struct Variable {
     pub name: Option<String>,
     pub id: VariableId,
@@ -562,7 +563,7 @@ impl fmt::Display for Variable {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Encode, Decode)]
 pub struct Function(pub Vec<Pattern>, pub Box<TExpr>);
 
 impl Function {
