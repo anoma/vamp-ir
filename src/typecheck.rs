@@ -1,67 +1,35 @@
 use std::fmt::{self, Display};
-use crate::ast::{Module, VariableId, Pattern, Variable, TExpr, InfixOp, Function, Definition, Expr};
+use crate::ast::{Module, VariableId, Pattern, Variable, TExpr, InfixOp, Function, Definition, Expr, LetBinding};
 use crate::transform::{VarGen, collect_pattern_variables};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-/* Collect all polymorphic variables occuring in the given expression. */
-fn collect_expr_poly_vars(
-    expr: &TExpr,
+/* Collect the free variables occuring in the given type. */
+fn collect_free_type_vars(
+    typ: &Type,
     map: &mut HashMap<VariableId, Variable>,
 ) {
-    match &expr.v {
-        Expr::Variable(_) => {},
-        Expr::Sequence(seq) => {
-            for expr in seq {
-                collect_expr_poly_vars(expr, map);
+    match typ {
+        Type::Int => {},
+        Type::Variable(var) => {
+            map.insert(var.id, var.clone());
+        },
+        Type::Function(typ1, typ2) => {
+            collect_free_type_vars(typ1, map);
+            collect_free_type_vars(typ2, map);
+        },
+        Type::Product(prod) => {
+            for elt in prod {
+                collect_free_type_vars(elt, map);
             }
         },
-        Expr::Product(prod) => {
-            for expr in prod {
-                collect_expr_poly_vars(expr, map);
+        Type::Forall(var, typ2) => {
+            if map.contains_key(&var.id) {
+                collect_free_type_vars(typ2, map);
+            } else {
+                collect_free_type_vars(typ2, map);
+                map.remove(&var.id);
             }
         },
-        Expr::Infix(_, expr1, expr2) => {
-            collect_expr_poly_vars(expr1, map);
-            collect_expr_poly_vars(expr2, map);
-        },
-        Expr::Negate(expr1) => {
-            collect_expr_poly_vars(expr1, map);
-        },
-        Expr::Application(expr1, expr2) => {
-            collect_expr_poly_vars(expr1, map);
-            collect_expr_poly_vars(expr2, map);
-        },
-        Expr::Function(fun) => {
-            collect_expr_poly_vars(&*fun.1, map);
-        },
-        Expr::LetBinding(binding, body) => {
-            collect_expr_poly_vars(&*binding.1, map);
-            collect_pattern_variables(&binding.0, map);
-            collect_expr_poly_vars(body, map);
-        },
-        Expr::Constant(_) => {},
-    }
-}
-
-/* Collect all polymorphic variables occuring in the given definition. */
-fn collect_def_poly_vars(
-    def: &Definition,
-    map: &mut HashMap<VariableId, Variable>,
-) {
-    collect_expr_poly_vars(&*def.0.1, map);
-    collect_pattern_variables(&def.0.0, map);
-}
-
-/* Collect all polymorphic variables occuring in the given module. */
-pub fn collect_module_poly_vars(
-    module: &Module,
-    map: &mut HashMap<VariableId, Variable>,
-) {
-    for def in &module.defs {
-        collect_def_poly_vars(def, map);
-    }
-    for expr in &module.exprs {
-        collect_expr_poly_vars(expr, map);
     }
 }
 
@@ -134,6 +102,7 @@ pub enum Type {
     Variable(Variable),
     Function(Box<Type>, Box<Type>),
     Product(Vec<Type>),
+    Forall(Variable, Box<Type>),
 }
 
 impl Display for Type {
@@ -154,6 +123,8 @@ impl Display for Type {
                 write!(f, ")")?;
                 Ok(())
             },
+            Type::Forall(var, b) =>
+                write!(f, "forall {}. {}", var, b),
         }
     }
 }
@@ -179,6 +150,45 @@ fn pattern_type(pat: &Pattern) -> Type {
     }
 }
 
+/* Assign each variable in the pattern an explicit type, even if that means
+ * expanding upon parts of the given type. */
+fn type_pattern(
+    pat: &Pattern,
+    typ: Type,
+    types: &mut HashMap<VariableId, Type>,
+    gen: &mut VarGen,
+) {
+    match (pat, typ) {
+        (pat, Type::Variable(var)) if types.contains_key(&var.id) =>
+            type_pattern(pat, types[&var.id].clone(), types, gen),
+        (Pattern::Constant(_), typ) =>
+            unify_types(&typ, &Type::Int, types),
+        (Pattern::Variable(var), typ) => {
+            types.insert(var.id, typ.clone());
+        },
+        (Pattern::As(pat, name), typ) => {
+            types.insert(name.id, typ.clone());
+            type_pattern(&pat, typ, types, gen)
+        },
+        (Pattern::Product(pats), Type::Product(typs))
+            if pats.len() == typs.len() =>
+        {
+            for (pat, typ) in pats.iter().zip(typs.iter()) {
+                type_pattern(pat, typ.clone(), types, gen);
+            }
+        },
+        (Pattern::Product(pats), Type::Variable(var)) => {
+            let mut typs = vec![];
+            for _pat in pats {
+                typs.push(Type::Variable(Variable::new(gen.generate_id())));
+            }
+            types.insert(var.id, Type::Product(typs));
+            type_pattern(&Pattern::Product(pats.clone()), Type::Variable(var), types, gen);
+        },
+        (pat, typ) => panic!("unable to type pattern {} as {}", pat, typ),
+    }
+}
+
 /* Check if the given variable occurs in the type expression. */
 fn occurs_in(
     var1: &Variable,
@@ -199,6 +209,8 @@ fn occurs_in(
         },
         Type::Function(a, b) =>
             occurs_in(var1, a, types) || occurs_in(var1, b, types),
+        Type::Forall(_, _) =>
+            panic!("universally quantified types cannot be occurs checked"),
     }
 }
 
@@ -266,7 +278,11 @@ fn expand_type(
                 elts.push(expand_type(elt, types));
             }
             Type::Product(elts)
-        }
+        },
+        Type::Forall(var, b) => Type::Forall(
+            var.clone(),
+            Box::new(expand_type(b, types)),
+        ),
     }
 }
 
@@ -287,9 +303,9 @@ fn partial_expand_type(
     typ.clone()
 }
 
-/* Consistently replace all type variables occuring in type expression with
- * fresh ones. Useful for let polymorphism. */
-fn refresh_type_vars(
+/* Consistently replace all quantified type variables occuring in type
+ * expression with fresh ones. Useful for let polymorphism. */
+fn instantiate_type_vars(
     typ: &mut Type,
     map: &mut HashMap<VariableId, VariableId>,
     gen: &mut VarGen
@@ -299,20 +315,63 @@ fn refresh_type_vars(
         Type::Variable(var) => {
             if let Some(target) = map.get(&var.id) {
                 var.id = *target;
-            } else {
-                map.insert(var.id, gen.generate_id());
-                var.id = map[&var.id];
             }
         },
         Type::Function(a, b) => {
-            refresh_type_vars(a, map, gen);
-            refresh_type_vars(b, map, gen);
+            instantiate_type_vars(a, map, gen);
+            instantiate_type_vars(b, map, gen);
         },
         Type::Product(prod) => {
             for elt in prod {
-                refresh_type_vars(elt, map, gen);
+                instantiate_type_vars(elt, map, gen);
             }
+        },
+        Type::Forall(var, b) => {
+            map.insert(var.id, gen.generate_id());
+            instantiate_type_vars(b, map, gen);
+            *typ = *b.clone();
+        },
+    }
+}
+
+/* Infer the principle type of the given binding's expression and make a type
+ * scheme that quantifies all free variables found in the expression that
+ * cannot also be found in the environment. Finally, extend the environment with
+ * the derived type schemes. */
+fn infer_binding_types(
+    def: &LetBinding,
+    env: &mut Vec<Type>,
+    types: &mut HashMap<VariableId, Type>,
+    gen: &mut VarGen,
+) {
+    let expr1_var = expr_type_var(&*def.1);
+    infer_expr_types(&*def.1, env, types, gen);
+    type_pattern(&def.0, expr1_var.clone(), types, gen);
+    // Collect all free variables occuring in the environment
+    let mut env_ftvs = HashMap::new();
+    for env_typ in env.iter() {
+        collect_free_type_vars(&expand_type(env_typ, types), &mut env_ftvs);
+    }
+    // Compute the set of free variables occuring in RHS' TYPE that
+    // do not occur in the type environment
+    let mut quant_vars = HashMap::new();
+    collect_free_type_vars(&expand_type(expr1_var, types), &mut quant_vars);
+    for env_ftv in env_ftvs.keys() {
+        quant_vars.remove(env_ftv);
+    }
+    // Quantify the type of each variable bound by the pattern with the
+    // free variables unique to the RHS
+    let mut pat_vars = HashMap::new();
+    collect_pattern_variables(&def.0, &mut pat_vars);
+    for pat_var in pat_vars.keys() {
+        let quant_expr = types.get_mut(&pat_var).unwrap();
+        // Quantify every free variable unique to the RHS' type
+        for qvar in quant_vars.values() {
+            *quant_expr = Type::Forall(qvar.clone(), Box::new(quant_expr.clone()));
         }
+        // Add this type schema to the type environment in which the let
+        // body is type-checked
+        env.push(quant_expr.clone());
     }
 }
 
@@ -321,7 +380,7 @@ fn refresh_type_vars(
  * context. */
 fn infer_expr_types(
     expr: &TExpr,
-    polymorphics: &HashSet<VariableId>,
+    env: &Vec<Type>,
     types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
@@ -332,8 +391,6 @@ fn infer_expr_types(
             unify_types(expr_var, &Type::Int, types);
         },
         Expr::Infix(InfixOp::Equal, expr1, expr2) => {
-            infer_expr_types(expr1, polymorphics, types, gen);
-            infer_expr_types(expr2, polymorphics, types, gen);
             let expr_var = expr_type_var(expr);
             let expr1_var = expr_type_var(expr1);
             let expr2_var = expr_type_var(expr2);
@@ -341,14 +398,14 @@ fn infer_expr_types(
             unify_types(&expr_var, &Type::Product(vec![]), types);
             // a: c |- b: c
             unify_types(&expr1_var, &expr2_var, types);
+            infer_expr_types(expr1, env, types, gen);
+            infer_expr_types(expr2, env, types, gen);
         },
         Expr::Infix(
             InfixOp::Add | InfixOp::Subtract | InfixOp::Multiply | InfixOp::Divide,
             expr1,
             expr2
         ) => {
-            infer_expr_types(expr1, polymorphics, types, gen);
-            infer_expr_types(expr2, polymorphics, types, gen);
             let expr_var = expr_type_var(expr);
             let expr1_var = expr_type_var(expr1);
             let expr2_var = expr_type_var(expr2);
@@ -358,30 +415,31 @@ fn infer_expr_types(
             unify_types(&expr1_var, &Type::Int, types);
             // b: int
             unify_types(&expr2_var, &Type::Int, types);
+            infer_expr_types(expr1, env, types, gen);
+            infer_expr_types(expr2, env, types, gen);
         },
         Expr::Negate(expr1) => {
-            infer_expr_types(expr1, polymorphics, types, gen);
             let expr_var = expr_type_var(expr);
             let expr1_var = expr_type_var(expr1);
             // (-a): int
             unify_types(&expr_var, &Type::Int, types);
             // a: int
             unify_types(&expr1_var, &Type::Int, types);
+            infer_expr_types(expr1, env, types, gen);
         },
         Expr::Sequence(seq) => {
-            for expr in seq {
-                infer_expr_types(expr, polymorphics, types, gen);
-            }
             let last_expr = seq.last().expect("encountered empty sequence");
             let expr_var = expr_type_var(expr);
             let last_expr_var = expr_type_var(last_expr);
             // aN: c |- (a1; ...; aN): c
             unify_types(&expr_var, &last_expr_var, types);
+            for expr in seq {
+                infer_expr_types(expr, env, types, gen);
+            }
         },
         Expr::Product(prod) => {
             let mut prod_types = vec![];
             for expr in prod {
-                infer_expr_types(expr, polymorphics, types, gen);
                 let expr_var = expr_type_var(expr);
                 prod_types.push(expr_var.clone());
             }
@@ -392,10 +450,11 @@ fn infer_expr_types(
                 &Type::Product(prod_types),
                 types
             );
+            for expr in prod {
+                infer_expr_types(expr, env, types, gen);
+            }
         },
         Expr::Application(expr1, expr2) => {
-            infer_expr_types(expr1, polymorphics, types, gen);
-            infer_expr_types(expr2, polymorphics, types, gen);
             let expr_var = expr_type_var(expr);
             let expr1_var = expr_type_var(expr1);
             let expr2_var = expr_type_var(expr2);
@@ -408,53 +467,42 @@ fn infer_expr_types(
                 ),
                 types
             );
+            infer_expr_types(expr1, env, types, gen);
+            infer_expr_types(expr2, env, types, gen);
         },
         Expr::Function(Function(params, expr1)) => {
-            infer_expr_types(expr1, polymorphics, types, gen);
             let expr_var = expr_type_var(expr);
             let expr1_var = expr_type_var(expr1);
             let mut func_var = expr1_var.clone();
+            let mut env = env.clone();
             for param in params.iter().rev() {
                 let param_var = pattern_type(param);
+                env.push(param_var.clone());
                 func_var = Type::Function(Box::new(param_var), Box::new(func_var));
             }
             // a1: t1, ..., aN: tN |- b: u
             // fun a1 ... aN -> b : t1 -> ... -> tN -> u
             unify_types(&expr_var, &func_var, types);
+            infer_expr_types(expr1, &env, types, gen);
         },
         Expr::LetBinding(def, expr2) => {
-            infer_expr_types(&*def.1, polymorphics, types, gen);
-            let param_var = pattern_type(&def.0);
             let expr_var = expr_type_var(expr);
-            let expr1_var = expr_type_var(&*def.1);
             let expr2_var = expr_type_var(expr2);
-            unify_types(&expr1_var, &param_var, types);
-            infer_expr_types(expr2, polymorphics, types, gen);
+            let mut env = env.clone();
+            infer_binding_types(def, &mut env, types, gen);
             unify_types(&expr_var, &expr2_var, types);
+            infer_expr_types(expr2, &env, types, gen);
         },
         Expr::Variable(var) => {
             let expr_var = expr_type_var(expr);
-            if polymorphics.contains(&var.id) {
-                // If this variable is polymorphic, then we need to copy its
-                // type expression so that we don't affect the original
-                // variables.
-                let mut fresh = expand_type(&Type::Variable(var.clone()), types);
-                let mut new_map = HashMap::new();
-                refresh_type_vars(&mut fresh, &mut new_map, gen);
-                unify_types(
-                    &expr_var,
-                    &fresh,
-                    types
-                );
-            } else {
-                // If the variable is monomorphic, then we do want its
-                // definition to be affected by future constraints.
-                unify_types(
-                    &expr_var,
-                    &Type::Variable(Variable::new(var.id)),
-                    types
-                );
-            }
+            let mut fresh = expand_type(&Type::Variable(var.clone()), types);
+            let mut new_map = HashMap::new();
+            instantiate_type_vars(&mut fresh, &mut new_map, gen);
+            unify_types(
+                &expr_var,
+                &fresh,
+                types
+            );
         },
     }
 }
@@ -463,31 +511,33 @@ fn infer_expr_types(
  */
 fn infer_def_types(
     def: &Definition,
-    polymorphics: &HashSet<VariableId>,
+    env: &mut Vec<Type>,
     types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
-    infer_expr_types(&*def.0.1, polymorphics, types, gen);
-    let param_var = pattern_type(&def.0.0);
-    let expr_var = expr_type_var(&*def.0.1);
-    unify_types(&expr_var, &param_var, types);
+    infer_binding_types(&def.0, env, types, gen);
 }
 
 /* Type check the module using Hindley Milner. */
 pub fn infer_module_types(
     annotated: &mut Module,
+    globals: &HashMap<String, VariableId>,
     types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
     allocate_module_types(annotated, gen);
-    let mut polymorphics = HashMap::new();
-    collect_module_poly_vars(annotated, &mut polymorphics);
-    let polymorphics: HashSet::<_> = polymorphics.into_keys().collect();
+    let mut env = Vec::new();
+    // Initialize the type environment with the types of global variables
+    for (name, id) in globals {
+        let mut var = Variable::new(*id);
+        var.name = Some(name.clone());
+        env.push(Type::Variable(var));
+    }
     for def in &mut annotated.defs {
-        infer_def_types(def, &polymorphics, types, gen);
+        infer_def_types(def, &mut env, types, gen);
     }
     for expr in &mut annotated.exprs {
-        infer_expr_types(expr, &polymorphics, types, gen);
+        infer_expr_types(expr, &env, types, gen);
     }
 }
 
@@ -570,8 +620,8 @@ fn expand_variables(
             *expr = map[&var.id].to_typed_expr(typ);
         },
         Expr::Variable(var) if expr.t.is_some() => {
-            let partial_type = partial_expand_type(expr.t.as_ref().unwrap(), types);
-            if let Type::Product(prod) = partial_type {
+            let expanded_type = expand_type(expr.t.as_ref().unwrap(), types);
+            if let Type::Product(prod) = expanded_type {
                 let mut new_pats = vec![];
                 let mut new_exprs = vec![];
                 for (idx, typ) in prod.into_iter().enumerate() {
@@ -650,6 +700,10 @@ fn unitize_type_functions(
             }
             Type::Product(inner_types)
         },
+        Type::Forall(var, b) => Type::Forall(
+            var.clone(),
+            Box::new(unitize_type_functions(*b.clone(), types)),
+        ),
     }
 }
 

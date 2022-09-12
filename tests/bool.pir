@@ -37,3 +37,7 @@ def pyt a b { a*a + b*b };
 pyt x y = 25;
 // let bindings
 let a = 5 in a*5 = 25;
+// function value
+def myeq2 = fun (a,b) { a = b };
+// polymorphism
+map myeq2 r;

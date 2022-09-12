@@ -226,27 +226,27 @@ fn number_expr_variables(
  * scope. */
 fn number_def_variables(
     def: &mut Definition,
+    locals: &mut HashMap<String, VariableId>,
     globals: &mut HashMap<String, VariableId>,
     gen: &mut VarGen,
 ) {
-    let locals = HashMap::new();
-    number_expr_variables(&mut *def.0.1, &locals, globals, gen);
-    number_pattern_variables(&mut def.0.0, globals, gen);
+    number_expr_variables(&mut *def.0.1, locals, globals, gen);
+    number_pattern_variables(&mut def.0.0, locals, gen);
 }
 
 /* Numbers the variables occuring in the module definitions and then those
  * occuring in the module expressions. */
 pub fn number_module_variables(
     module: &mut Module,
+    globals: &mut HashMap<String, VariableId>,
     gen: &mut VarGen,
 ) {
-    let mut globals = HashMap::new();
+    let mut locals = HashMap::new();
     for def in &mut module.defs {
-        number_def_variables(def, &mut globals, gen);
+        number_def_variables(def, &mut locals, globals, gen);
     }
-    let locals = HashMap::new();
     for expr in &mut module.exprs {
-        number_expr_variables(expr, &locals, &mut globals, gen);
+        number_expr_variables(expr, &locals, globals, gen);
     }
 }
 
@@ -737,11 +737,12 @@ pub fn flatten_module_to_3ac(
 /* Compile the given module down into three-address codes. */
 pub fn compile(mut module: Module) -> Module {
     let mut vg = VarGen::new();
-    number_module_variables(&mut module, &mut vg);
-    infer_module_types(&mut module, &mut HashMap::new(), &mut vg);
+    let mut globals = HashMap::new();
+    number_module_variables(&mut module, &mut globals, &mut vg);
+    infer_module_types(&mut module, &globals, &mut HashMap::new(), &mut vg);
     apply_module_functions(&mut module, &mut vg);
     let mut types = HashMap::new();
-    infer_module_types(&mut module, &mut types, &mut vg);
+    infer_module_types(&mut module, &globals, &mut types, &mut vg);
     // Expand all tuple variables
     expand_module_variables(&mut module, &mut types, &mut vg);
     // Unitize all function expressions
