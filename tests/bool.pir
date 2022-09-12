@@ -43,3 +43,5 @@ let a = 5 in a*5 = 25;
 def myeq2 = fun (a,b) { a = b };
 // polymorphism
 map myeq2 r;
+// some exponentiation
+u^2 = 9;

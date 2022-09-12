@@ -382,6 +382,22 @@ impl TExpr {
         let mut expr =
             Self::parse_expr7(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next_back() {
+            let op = InfixOp::parse(pair).expect("expected arithmetic operator");
+            let lhs_pair = pairs.next_back().expect("expected RHS product");
+            let lhs = Self::parse_expr7(lhs_pair)
+                .expect("expected RHS to be a product");
+            expr = Expr::Infix(op, Box::new(lhs), Box::new(expr)).into();
+        }
+        Some(expr)
+    }
+
+    pub fn parse_expr7(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr7 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next_back().expect("expression should not be empty");
+        let mut expr =
+            Self::parse_expr8(pair).expect("expression should start with product");
+        while let Some(pair) = pairs.next_back() {
             if pair.as_rule() == Rule::negate {
                 expr = Expr::Negate(Box::new(expr)).into();
             } else {
@@ -391,22 +407,22 @@ impl TExpr {
         Some(expr)
     }
 
-    pub fn parse_expr7(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr7 { return None }
+    pub fn parse_expr8(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr8 { return None }
         let mut pairs = pair.into_inner();
         let pair = pairs.next().expect("expression should not be empty");
         let mut expr =
-            Self::parse_expr8(pair).expect("expression should start with product");
+            Self::parse_expr9(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next() {
-            let rhs = Self::parse_expr8(pair)
+            let rhs = Self::parse_expr9(pair)
                 .expect("expected RHS to be a product");
             expr = Expr::Application(Box::new(expr), Box::new(rhs)).into();
         }
         Some(expr)
     }
 
-    pub fn parse_expr8(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr8 { return None }
+    pub fn parse_expr9(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr9 { return None }
         let string = pair.as_str();
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
@@ -486,6 +502,7 @@ pub enum InfixOp {
     Add,
     Subtract,
     Equal,
+    Exponentiate,
 }
 
 impl InfixOp {
@@ -497,6 +514,7 @@ impl InfixOp {
             "*" => Some(Self::Multiply),
             "+" => Some(Self::Add),
             "-" => Some(Self::Subtract),
+            "^" => Some(Self::Exponentiate),
             _ => unreachable!("Encountered unknown infix operator")
         }
     }
@@ -510,6 +528,7 @@ impl fmt::Display for InfixOp {
             Self::Add => write!(f, "+"),
             Self::Subtract => write!(f, "-"),
             Self::Equal => write!(f, "="),
+            Self::Exponentiate => write!(f, "^"),
         }
     }
 }

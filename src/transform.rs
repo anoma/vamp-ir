@@ -653,6 +653,58 @@ fn flatten_expr_to_3ac(
             push_constraint_def(flattened, out.clone(), rhs.into());
             out
         },
+        (out, Expr::Infix(InfixOp::Exponentiate, e1, e2)) => {
+            match e2.v {
+                Expr::Constant(0) =>
+                    flatten_expr_to_3ac(out, &Expr::Constant(1).into(), flattened, gen),
+                Expr::Constant(1) =>
+                    flatten_expr_to_3ac(out, e1, flattened, gen),
+                Expr::Constant(v2) if v2 > 0 => {
+                    // Compute the base once and for all
+                    let out1_term = flatten_expr_to_3ac(None, e1, flattened, gen);
+                    // Compute roughly the sqrt of this expression
+                    let sqrt = Expr::Infix(
+                        InfixOp::Exponentiate,
+                        Box::new(out1_term.to_expr()),
+                        Box::new(Expr::Constant(v2/2).into())
+                    );
+                    let out2_term = flatten_expr_to_3ac(None, &sqrt.into(), flattened, gen);
+                    // Now square the value to obtain roughly this expression
+                    let mut rhs = infix_op(
+                        InfixOp::Multiply,
+                        out2_term.to_expr(),
+                        out2_term.to_expr()
+                    );
+                    // Multiply by the base once more in order to obtain
+                    // original value
+                    if v2%2 == 1 {
+                        rhs = infix_op(
+                            InfixOp::Multiply,
+                            rhs,
+                            out1_term.to_expr()
+                        );
+                    }
+                    flatten_expr_to_3ac(out, &rhs, flattened, gen)
+                },
+                Expr::Constant(v2) => {
+                    // Compute the reciprocal of this expression
+                    let recip = Expr::Infix(
+                        InfixOp::Exponentiate,
+                        Box::new(*e1.clone()),
+                        Box::new(Expr::Constant(-v2).into())
+                    );
+                    let out1_term = flatten_expr_to_3ac(None, &recip.into(), flattened, gen);
+                    // Now invert the value to obtain this expression
+                    let rhs = infix_op(
+                        InfixOp::Divide,
+                        Expr::Constant(1).into(),
+                        out1_term.to_expr()
+                    );
+                    flatten_expr_to_3ac(out, &rhs, flattened, gen)
+                }
+                _ => panic!("variables are not permitted in expression exponents"),
+            }
+        },
         (out, Expr::Infix(op, e1, e2)) => {
             let out1_term = flatten_expr_to_3ac(None, e1, flattened, gen);
             let out2_term = flatten_expr_to_3ac(None, e2, flattened, gen);

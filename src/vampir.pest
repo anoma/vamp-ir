@@ -8,7 +8,7 @@ keyword = { "in" | "let" | "fun" | "def" }
 
 valueName = { !keyword ~ lowercaseIdent }
 
-infixOp = { "/" | "*" | "+" | "-" | "=" }
+infixOp = { "/" | "*" | "+" | "-" | "=" | "^" }
 
 integerLiteral = @{ "0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
 
@@ -34,11 +34,13 @@ expr4 = { expr5 ~ ( &("+" | "-") ~ infixOp ~ expr5 )* }
 
 expr5 = { expr6 ~ ( &("*" | "/") ~ infixOp ~ expr6 )* }
 
-expr6 = { "(" ~ negate+ ~ expr7 ~ ")" | expr7 }
+expr6 = { expr7 ~ ( &"^" ~ infixOp ~ expr7 )* }
 
-expr7 = { expr8+ }
+expr7 = { "(" ~ negate+ ~ expr8 ~ ")" | expr8 }
 
-expr8 = { "(" ~ expr ~ ")" | valueName | constant | &"fun" ~ expr | &"let" ~ expr }
+expr8 = { expr9+ }
+
+expr9 = { "(" ~ expr ~ ")" | valueName | constant | &"fun" ~ expr | &"let" ~ expr }
 
 function = { "fun" ~ pattern+ ~ &"{" ~ expr }
 

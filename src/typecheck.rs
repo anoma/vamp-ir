@@ -402,7 +402,8 @@ fn infer_expr_types(
             infer_expr_types(expr2, env, types, gen);
         },
         Expr::Infix(
-            InfixOp::Add | InfixOp::Subtract | InfixOp::Multiply | InfixOp::Divide,
+            InfixOp::Add | InfixOp::Subtract | InfixOp::Multiply |
+            InfixOp::Divide | InfixOp::Exponentiate,
             expr1,
             expr2
         ) => {
