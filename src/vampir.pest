@@ -1,6 +1,6 @@
 WHITESPACE = _{ " " | "\t" | NEWLINE }
 
-COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 lowercaseIdent = @{ (ASCII_ALPHA_LOWER | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 

@@ -1,3 +1,5 @@
+/* Multi line
+comments. */
 // defining a constant
 def myval = 0;
 // constraint expression
