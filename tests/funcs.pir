@@ -4,8 +4,9 @@
    vamp-ir prove circuit.plonk params.pp proof.plonk
    vamp-ir verify circuit.plonk params.pp proof.plonk
    */
-// defining a two parameter function
-def myeq a b { a = b };
+// defining a two parameter function.
+// function body contains two constraints.
+def myeq a b { a = b; b = a };
 // solicit equal user inputs
 myeq b c;
 // currying example
