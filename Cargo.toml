@@ -20,5 +20,5 @@ ark-serialize = "0.3.0"
 num-bigint = "^0.4.0"
 bincode = "2.0.0-rc.1"
 rand_core = "0.6.3"
-plonk = { path = "../plonk" }
-plonk-core = { path = "../plonk/plonk-core", features = [ "std", "trace", "trace-print" ] }
+plonk = { git = "https://github.com/ZK-Garage/plonk", rev = "2c876bc9" }
+plonk-core = { git = "https://github.com/ZK-Garage/plonk", rev = "2c876bc9", features = [ "std", "trace", "trace-print" ] }

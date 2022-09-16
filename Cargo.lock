@@ -602,6 +602,7 @@ checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
 [[package]]
 name = "plonk"
 version = "0.8.2"
+source = "git+https://github.com/ZK-Garage/plonk?rev=2c876bc9#2c876bc90d7833dc9cc5a36422e453fc03bd4b83"
 dependencies = [
  "plonk-core",
  "plonk-hashing",
@@ -610,6 +611,7 @@ dependencies = [
 [[package]]
 name = "plonk-core"
 version = "0.1.0"
+source = "git+https://github.com/ZK-Garage/plonk?rev=2c876bc9#2c876bc90d7833dc9cc5a36422e453fc03bd4b83"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
@@ -631,6 +633,7 @@ dependencies = [
 [[package]]
 name = "plonk-hashing"
 version = "0.8.2"
+source = "git+https://github.com/ZK-Garage/plonk?rev=2c876bc9#2c876bc90d7833dc9cc5a36422e453fc03bd4b83"
 dependencies = [
  "plonk-core",
 ]
