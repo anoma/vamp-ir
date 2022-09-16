@@ -9,4 +9,5 @@ def pyt a b { a^2 + b^2 };
 // constrain computation
 pyt x y = 25;
 // let bindings
-let a = 5 in a*5 = 25;
+def a = 5;
+a*5 = 25;

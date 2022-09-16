@@ -13,6 +13,8 @@ def map f (a,b,c,d) {
     f c;
     f d
 };
+// defining a function
+def bool x { x*(x-1) = 0 };
 // user higher order function
 map bool q;
 // function value

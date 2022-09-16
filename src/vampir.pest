@@ -22,7 +22,7 @@ pattern2 = { valueName | constant | "(" ~ pattern ~ ")" }
 
 letBinding = { pattern ~ "=" ~ expr | valueName ~ pattern* ~ &"{" ~ expr }
 
-expr = { function | "let" ~ letBinding ~ "in" ~ expr | expr1 }
+expr = { function | "def" ~ letBinding ~ ( ";" ~ expr )+ | expr1 }
 
 expr1 = { expr2 | "{" ~ expr2 ~ ( ";" ~ expr2 )* ~ "}" }
 
@@ -40,7 +40,7 @@ expr7 = { "(" ~ negate+ ~ expr8 ~ ")" | expr8 }
 
 expr8 = { expr9+ }
 
-expr9 = { "(" ~ expr ~ ")" | valueName | constant | &"fun" ~ expr | &"let" ~ expr }
+expr9 = { "(" ~ expr ~ ")" | valueName | constant | &"fun" ~ expr | &"def" ~ expr }
 
 function = { "fun" ~ pattern+ ~ &"{" ~ expr }
 
@@ -48,5 +48,5 @@ negate = { "-" }
 
 definition = { "def" ~ letBinding }
 
-moduleItems = _{ SOI ~ ( definition ~ ";" | expr ~ ";" )* ~ EOI }
+moduleItems = _{ SOI ~ ( ( definition | expr ) ~ ";" )+ ~ EOI }
 

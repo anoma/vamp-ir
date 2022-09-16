@@ -791,6 +791,7 @@ pub fn compile(mut module: Module) -> Module {
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
     number_module_variables(&mut module, &mut globals, &mut vg);
+    println!("{}\n", module);
     infer_module_types(&mut module, &globals, &mut HashMap::new(), &mut vg);
     apply_module_functions(&mut module, &mut vg);
     let mut types = HashMap::new();

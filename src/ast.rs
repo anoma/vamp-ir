@@ -49,10 +49,10 @@ impl Default for Module {
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for def in &self.defs {
-            writeln!(f, "{};;", def)?;
+            writeln!(f, "{};", def)?;
         }
         for expr in &self.exprs {
-            writeln!(f, "{};;", expr)?;
+            writeln!(f, "{};", expr)?;
         }
         Ok(())
     }
@@ -74,7 +74,7 @@ impl Definition {
 impl fmt::Display for Definition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Expr::Function(Function(params, body)) = &self.0.1.v {
-            write!(f, "let {}", self.0.0)?;
+            write!(f, "def {}", self.0.0)?;
             for param in params {
                 write!(f, " {}", param)?;
             }
@@ -91,9 +91,9 @@ impl fmt::Display for Definition {
             write!(val_str, "{}", self.0.1)?;
             if val_str.contains("\n") {
                 val_str = val_str.replace("\n", "\n    ");
-                write!(f, "let {} =\n    {}", self.0.0, val_str)?
+                write!(f, "def {} =\n    {}", self.0.0, val_str)?
             } else {
-                write!(f, "let {} = {}", self.0.0, val_str)?
+                write!(f, "def {} = {}", self.0.0, val_str)?
             }
         }
         Ok(())
@@ -139,7 +139,14 @@ impl fmt::Display for LetBinding {
                 for pat in &fun.0 {
                     write!(f, " {}", pat)?;
                 }
-                write!(f, " = {}", fun.1)?;
+                write!(f, " =")?;
+                let mut body = String::new();
+                write!(body, "{}", fun.1)?;
+                if body.contains("\n") {
+                    write!(f, "\n    {}", body.replace("\n", "\n    "))?;
+                } else {
+                    write!(f, " {}", body)?;
+                }
             },
             _ => write!(f, "{} = {}", self.0, self.1)?,
         };
@@ -286,15 +293,20 @@ impl TExpr {
         if pair.as_rule() != Rule::expr { return None }
         let string = pair.as_str();
         let mut pairs = pair.into_inner();
-        let pair = pairs.next_back().expect("expression should not be empty");
         if string.starts_with("fun") {
+            let pair = pairs.next().expect("expression should not be empty");
             Function::parse(pair).map(|x| Expr::Function(x).into())
-        } else if string.starts_with("let") {
-            let body = Self::parse(pair).expect("expression should end with expression");
+        } else if string.starts_with("def") {
             let pair = pairs.next().expect("body expression should be prefixed by binding");
             let binding = LetBinding::parse(pair).expect("expression should start with binding");
-            Some(Expr::LetBinding(binding, Box::new(body)).into())
+            let mut body = vec![];
+            while let Some(pair) = pairs.next() {
+                body.push(Self::parse(pair).expect("expression should end with expression"));
+            }
+            if body.is_empty() { panic!("expression should not be empty") }
+            Some(Expr::LetBinding(binding, Box::new(Expr::Sequence(body).into())).into())
         } else {
+            let pair = pairs.next().expect("expression should not be empty");
             Self::parse_expr1(pair)
         }
     }
@@ -435,8 +447,8 @@ impl TExpr {
         } else if pair.as_rule() == Rule::valueName {
             let name = Variable::parse(pair).expect("expression should be value name");
             Some(Expr::Variable(name).into())
-        } else if string.starts_with("(") || string.starts_with("fun") |
-        string.starts_with("let") {
+        } else if string.starts_with("(") || string.starts_with("fun") ||
+        string.starts_with("def") {
             Self::parse(pair)
         } else {
             unreachable!("expression is of unknown form")
@@ -448,14 +460,17 @@ impl fmt::Display for TExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.v {
             Expr::Sequence(exprs) => {
+                if exprs.len() > 1 {
+                    write!(f, "{{")?;
+                }
                 let mut iter = exprs.iter();
-                if let Some(expr) = iter.next() {
-                    write!(f, "{}", expr)?;
-                    while let Some(expr) = iter.next() {
-                        write!(f, ";\n{}", expr)?;
-                    }
-                } else {
-                    write!(f, "()")?;
+                let expr = iter.next().expect("sequence should contain at least one expression");
+                write!(f, "{}", expr)?;
+                while let Some(expr) = iter.next() {
+                    write!(f, ";\n{}", expr)?;
+                }
+                if exprs.len() > 1 {
+                    write!(f, "}}")?;
                 }
             },
             Expr::Product(exprs) => {
@@ -476,13 +491,13 @@ impl fmt::Display for TExpr {
             Expr::Variable(var) => write!(f, "{}", var)?,
             Expr::Function(fun) => write!(f, "{}", fun)?,
             Expr::LetBinding(binding, expr) => {
-                let mut body = String::new();
-                write!(body, "{}", expr)?;
-                if body.contains("\n") {
-                    body = body.replace("\n", "\n    ");
-                    write!(f, "let {} in\n    {}", binding, body)?
+                if let Expr::Sequence(seq) = &expr.v {
+                    write!(f, "def {}", binding)?;
+                    for expr in seq {
+                        write!(f, ";\n{}", expr)?;
+                    }
                 } else {
-                    write!(f, "let {} in {}", binding, expr)?
+                    write!(f, "def {};\n{}", binding, expr)?;
                 }
             },
         }
