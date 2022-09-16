@@ -102,123 +102,144 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
     var_assignments
 }
 
+/* Implements the subcommand that tells user how to use this program. */
+fn usage_cmd() {
+    println!("usage 1: vamp-ir setup");
+    println!("usage 2: vamp-ir compile");
+    println!("usage 3: vamp-ir prove");
+    println!("usage 4: vamp-ir verify");
+}
+
+/* Implements the subcommand that generates the public parameters for proofs. */
+fn setup_cmd(args: &[String]) {
+    if args.len() < 1 {
+        println!("usage: vamp-ir setup params.pp");
+        println!("randomly generates public parameters and saves them into params.pp");
+        return;
+    }
+    // Generate CRS
+    let pp = PC::setup(1 << 10, None, &mut OsRng)
+        .map_err(to_pc_error::<BlsScalar, PC>)
+        .expect("unable to setup polynomial commitment scheme public parameters");
+    let mut pp_file = File::create(args[0].clone())
+        .expect("unable to create public parameters file");
+    pp.serialize(&mut pp_file).unwrap();
+}
+
+/* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
+ */
+fn compile_cmd(args: &[String]) {
+    if args.len() < 3 {
+        println!("usage: vamp-ir compile source.pir params.pp circuit.plonk");
+        println!("reads the vamp-ir source code in source.pir and the public\n\
+                  parameters at params.pp and compiles them into a circuit which\n\
+                  is stored at circuit.plonk .");
+        return;
+    }
+    let mut pp_file = File::open(args[1].clone())
+        .expect("unable to load public parameters file");
+    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+    
+    let unparsed_file = fs::read_to_string(args[0].clone()).expect("cannot read file");
+    let module = Module::parse(&unparsed_file).unwrap();
+    let module_3ac = compile(module);
+    println!("{}\n", module_3ac);
+    
+    let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
+    // Compile the circuit
+    let (pk_p, vk) = circuit.compile::<PC>(&pp)
+        .expect("unable to compile circuit");
+    let mut circuit_file = File::create(args[2].clone())
+        .expect("unable to create circuit file");
+    CircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
+}
+
+/* Implements the subcommand that creates a proof from interactively entered
+ * inputs. */
+fn prove_cmd(args: &[String]) {
+    if args.len() < 3 {
+        println!("usage: vamp-ir prove circuit.plonk params.pp proof.plonk");
+        println!("reads the plonk circuit at circuit.plonk and the public\n\
+                  parameters at params.pp, then interactively requests for\n\
+                  private inputs, and then stores the proof at proof.plonk. Note\n\
+                  that this subcommand makes no attempt to verify supplied inputs.");
+        return;
+    }
+    let mut circuit_file = File::open(args[0].clone())
+        .expect("unable to load circuit file");
+    let CircuitData { pk_p, vk: _vk, mut circuit} =
+        CircuitData::read(&mut circuit_file).unwrap();
+
+    let mut pp_file = File::open(args[1].clone())
+        .expect("unable to load public parameters file");
+    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+    // Prover POV
+    println!("Proving...");
+    // Prompt for program inputs
+    let var_assignments = prompt_inputs(&circuit.module);
+    // Populate variable definitions
+    circuit.populate_variables(var_assignments);
+    // Start proving witnesses
+    let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
+
+    let mut proof_file = File::create(args[2].clone())
+        .expect("unable to create proof file");
+    ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
+}
+
+/* Implements the subcommand that verifies that a proof is correct. */
+fn verify_cmd(args: &[String]) {
+    if args.len() < 3 {
+        println!("usage: vamp-ir verify circuit.plonk params.pp proof.plonk");
+        println!("reads the plonk circuit at circuit.plonk, the public\n\
+                  parameters at params.pp, and the proof at proof.plonk and\n\
+                  verifies whether the proof is a correct one.");
+        return;
+    }
+    let mut circuit_file = File::open(args[0].clone())
+        .expect("unable to load circuit file");
+    let CircuitData { pk_p: _pk_p, vk, circuit: _circuit} =
+        CircuitData::read(&mut circuit_file).unwrap();
+
+    let mut proof_file = File::open(args[2].clone())
+        .expect("unable to load proof file");
+    let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
+
+    let mut pp_file = File::open(args[1].clone())
+        .expect("unable to load public parameters file");
+    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+    
+    // Verifier POV
+    println!("Verifying...");
+    let verifier_data = VerifierData::new(vk, pi);
+    let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
+        &pp,
+        verifier_data.key,
+        &proof,
+        &verifier_data.pi,
+        b"Test",
+    );
+    if let Ok(()) = verifier_result {
+        println!("proof is valid");
+    } else {
+        println!("verifier result: {:?}", verifier_result);
+    }
+}
+
+/* Main entry point for vamp-ir compiler, prover, and verifier. */
 fn main() {
     let args: Vec<_> = std::env::args().collect();
     if args.len() < 2 {
-        println!("usage 1: vamp-ir setup");
-        println!("usage 2: vamp-ir compile");
-        println!("usage 3: vamp-ir prove");
-        println!("usage 4: vamp-ir verify");
-        return;
-    }
-
-    if args[1] == "setup" {
-        if args.len() < 3 {
-            println!("usage: vamp-ir setup params.pp");
-            println!("randomly generates public parameters and saves them into params.pp");
-            return;
-        }
-        // Generate CRS
-        let pp = PC::setup(1 << 10, None, &mut OsRng)
-            .map_err(to_pc_error::<BlsScalar, PC>)
-            .expect("unable to setup polynomial commitment scheme public parameters");
-        let mut pp_file = File::create(args[2].clone())
-            .expect("unable to create public parameters file");
-        pp.serialize(&mut pp_file).unwrap();
+        usage_cmd();
+    } else if args[1] == "setup" {
+        setup_cmd(&args[2..]);
     } else if args[1] == "compile" {
-        if args.len() < 5 {
-            println!("usage: vamp-ir compile source.pir params.pp circuit.plonk");
-            println!("reads the vamp-ir source code in source.pir and the public\n\
-                      parameters at params.pp and compiles them into a circuit which\n\
-                      is stored at circuit.plonk .");
-            return;
-        }
-        let mut pp_file = File::open(args[3].clone())
-            .expect("unable to load public parameters file");
-        let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
-        
-        let unparsed_file = fs::read_to_string(args[2].clone()).expect("cannot read file");
-        let module = Module::parse(&unparsed_file).unwrap();
-        let module_3ac = compile(module);
-        println!("{}\n", module_3ac);
-        
-        let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
-        // Compile the circuit
-        let (pk_p, vk) = circuit.compile::<PC>(&pp)
-            .expect("unable to compile circuit");
-        let mut circuit_file = File::create(args[4].clone())
-            .expect("unable to create circuit file");
-        CircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
+        compile_cmd(&args[2..]);
     } else if args[1] == "prove" {
-        if args.len() < 5 {
-            println!("usage: vamp-ir prove circuit.plonk params.pp proof.plonk");
-            println!("reads the plonk circuit at circuit.plonk and the public\n\
-                      parameters at params.pp, then interactively requests for\n\
-                      private inputs, and then stores the proof at proof.plonk. Note\n\
-                      that this subcommand makes no attempt to verify supplied inputs.");
-            return;
-        }
-        let mut circuit_file = File::open(args[2].clone())
-            .expect("unable to load circuit file");
-        let CircuitData { pk_p, vk: _vk, mut circuit} =
-            CircuitData::read(&mut circuit_file).unwrap();
-
-        let mut pp_file = File::open(args[3].clone())
-            .expect("unable to load public parameters file");
-        let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
-        // Prover POV
-        println!("Proving...");
-        // Prompt for program inputs
-        let var_assignments = prompt_inputs(&circuit.module);
-        // Populate variable definitions
-        circuit.populate_variables(var_assignments);
-        // Start proving witnesses
-        let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
-
-        let mut proof_file = File::create(args[4].clone())
-            .expect("unable to create proof file");
-        ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
+        prove_cmd(&args[2..]);
     } else if args[1] == "verify" {
-        if args.len() < 5 {
-            println!("usage: vamp-ir verify circuit.plonk params.pp proof.plonk");
-            println!("reads the plonk circuit at circuit.plonk, the public\n\
-                      parameters at params.pp, and the proof at proof.plonk and\n\
-                      verifies whether the proof is a correct one.");
-            return;
-        }
-        let mut circuit_file = File::open(args[2].clone())
-            .expect("unable to load circuit file");
-        let CircuitData { pk_p: _pk_p, vk, circuit: _circuit} =
-            CircuitData::read(&mut circuit_file).unwrap();
-
-        let mut proof_file = File::open(args[4].clone())
-            .expect("unable to load proof file");
-        let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
-
-        let mut pp_file = File::open(args[3].clone())
-            .expect("unable to load public parameters file");
-        let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
-        
-        // Verifier POV
-        println!("Verifying...");
-        let verifier_data = VerifierData::new(vk, pi);
-        let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
-            &pp,
-            verifier_data.key,
-            &proof,
-            &verifier_data.pi,
-            b"Test",
-        );
-        if let Ok(()) = verifier_result {
-            println!("proof is valid");
-        } else {
-            println!("verifier result: {:?}", verifier_result);
-        }
+        verify_cmd(&args[2..]);
     } else {
-        println!("usage 1: vamp-ir setup");
-        println!("usage 2: vamp-ir compile");
-        println!("usage 3: vamp-ir prove");
-        println!("usage 4: vamp-ir verify");
-        return;
+        usage_cmd();
     }
 }
