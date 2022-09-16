@@ -4,7 +4,7 @@ COMMENT = _{ "//" ~ (!"\n" ~ ANY)* | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 lowercaseIdent = @{ (ASCII_ALPHA_LOWER | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
-keyword = { "in" | "let" | "fun" | "def" }
+keyword = { "fun" | "def" }
 
 valueName = { !keyword ~ lowercaseIdent }
 

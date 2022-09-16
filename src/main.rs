@@ -26,6 +26,51 @@ use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use ark_ec::PairingEngine;
 use plonk_core::proof_system::{ProverKey, VerifierKey, Proof};
 use plonk_core::proof_system::pi::PublicInputs;
+use bincode::error::{DecodeError, EncodeError};
+use ark_serialize::{Read, SerializationError};
+
+type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
+
+/* Captures all the data required to use a circuit. */
+struct CircuitData {
+    pk_p: ProverKey::<BlsScalar>,
+    vk: VerifierKey::<BlsScalar, PC>,
+    circuit: PlonkModule::<BlsScalar, JubJubParameters>,
+}
+
+impl CircuitData {
+    fn read<R>(mut reader: R) -> Result<Self, DecodeError>
+    where R: std::io::Read {
+        let pk_p = ProverKey::<BlsScalar>::deserialize(&mut reader)
+            .map_err(|x| DecodeError::OtherString(x.to_string()))?;
+        let vk = VerifierKey::<_, _>::deserialize(&mut reader)
+            .map_err(|x| DecodeError::OtherString(x.to_string()))?;
+        let circuit: PlonkModule::<BlsScalar, JubJubParameters> =
+            bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
+        Ok(Self { pk_p, vk, circuit })
+    }
+
+    fn write<W>(&self, mut writer: W) -> Result<(), EncodeError>
+    where W: std::io::Write {
+        self.pk_p.serialize(&mut writer)
+            .map_err(|x| EncodeError::OtherString(x.to_string()))?;
+        self.vk.serialize(&mut writer)
+            .map_err(|x| EncodeError::OtherString(x.to_string()))?;
+        bincode::encode_into_std_write(
+            &self.circuit,
+            &mut writer,
+            bincode::config::standard(),
+        )?;
+        Ok(())
+    }
+}
+
+/* Captures all the data generated from proving circuit witnesses. */
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+struct ProofData {
+    proof: Proof<BlsScalar, PC>,
+    pi: PublicInputs<BlsScalar>,
+}
 
 /* Prompt for satisfying inputs to the given program. */
 fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: PrimeField {
@@ -67,7 +112,6 @@ fn main() {
         return;
     }
 
-    type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
     if args[1] == "setup" {
         if args.len() < 3 {
             println!("usage: vamp-ir setup params.pp");
@@ -100,15 +144,11 @@ fn main() {
         
         let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
         // Compile the circuit
-        let (pk_p, vk) = circuit.compile::<PC>(&pp).expect("unable to compile circuit");
-        let mut circuit_file = File::create(args[4].clone()).expect("unable to create circuit file");
-        pk_p.serialize(&mut circuit_file).unwrap();
-        vk.serialize(&mut circuit_file).unwrap();
-        bincode::encode_into_std_write(
-            circuit,
-            &mut circuit_file,
-            bincode::config::standard(),
-        ).unwrap();
+        let (pk_p, vk) = circuit.compile::<PC>(&pp)
+            .expect("unable to compile circuit");
+        let mut circuit_file = File::create(args[4].clone())
+            .expect("unable to create circuit file");
+        CircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
     } else if args[1] == "prove" {
         if args.len() < 5 {
             println!("usage: vamp-ir prove circuit.plonk params.pp proof.plonk");
@@ -120,10 +160,9 @@ fn main() {
         }
         let mut circuit_file = File::open(args[2].clone())
             .expect("unable to load circuit file");
-        let pk_p = ProverKey::<_>::deserialize(&mut circuit_file).unwrap();
-        let _vk = VerifierKey::<BlsScalar, PC>::deserialize(&mut circuit_file).unwrap();
-        let mut circuit: PlonkModule::<BlsScalar, JubJubParameters> = bincode::decode_from_std_read(&mut circuit_file, bincode::config::standard()).unwrap();
-        
+        let CircuitData { pk_p, vk: _vk, mut circuit} =
+            CircuitData::read(&mut circuit_file).unwrap();
+
         let mut pp_file = File::open(args[3].clone())
             .expect("unable to load public parameters file");
         let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
@@ -138,8 +177,7 @@ fn main() {
 
         let mut proof_file = File::create(args[4].clone())
             .expect("unable to create proof file");
-        proof.serialize(&mut proof_file).unwrap();
-        pi.serialize(&mut proof_file).unwrap();
+        ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
     } else if args[1] == "verify" {
         if args.len() < 5 {
             println!("usage: vamp-ir verify circuit.plonk params.pp proof.plonk");
@@ -150,14 +188,12 @@ fn main() {
         }
         let mut circuit_file = File::open(args[2].clone())
             .expect("unable to load circuit file");
-        let _pk_p = ProverKey::<BlsScalar>::deserialize(&mut circuit_file).unwrap();
-        let vk = VerifierKey::<_, _>::deserialize(&mut circuit_file).unwrap();
-        let _circuit: PlonkModule::<BlsScalar, JubJubParameters> = bincode::decode_from_std_read(&mut circuit_file, bincode::config::standard()).unwrap();
+        let CircuitData { pk_p: _pk_p, vk, circuit: _circuit} =
+            CircuitData::read(&mut circuit_file).unwrap();
 
         let mut proof_file = File::open(args[4].clone())
             .expect("unable to load proof file");
-        let proof = Proof::<_, _>::deserialize(&mut proof_file).unwrap();
-        let pi = PublicInputs::<_>::deserialize(&mut proof_file).unwrap();
+        let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
 
         let mut pp_file = File::open(args[3].clone())
             .expect("unable to load public parameters file");
