@@ -1,5 +1,5 @@
 use std::fmt::{self, Display};
-use crate::ast::{Module, VariableId, Pattern, Variable, TExpr, InfixOp, Function, Definition, Expr, LetBinding};
+use crate::ast::{Module, VariableId, Pattern, Variable, TExpr, InfixOp, Function, Definition, Expr, LetBinding, Intrinsic};
 use crate::transform::{VarGen, collect_pattern_variables};
 use std::collections::HashMap;
 use bincode::{Decode, Encode};
@@ -43,26 +43,18 @@ fn allocate_expr_types(
     expr.t = Some(Type::Variable(Variable::new(new_var)));
     
     match &mut expr.v {
-        Expr::Sequence(seq) => {
-            for expr in seq {
+        Expr::Sequence(exprs) | Expr::Product(exprs) |
+        Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+            for expr in exprs {
                 allocate_expr_types(expr, gen);
             }
         },
-        Expr::Product(prod) => {
-            for expr in prod {
-                allocate_expr_types(expr, gen);
-            }
-        },
-        Expr::Infix(_, expr1, expr2) => {
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
             allocate_expr_types(expr1, gen);
             allocate_expr_types(expr2, gen);
         },
         Expr::Negate(expr1) => {
             allocate_expr_types(expr1, gen);
-        },
-        Expr::Application(expr1, expr2) => {
-            allocate_expr_types(expr1, gen);
-            allocate_expr_types(expr2, gen);
         },
         Expr::Function(fun) => {
             allocate_expr_types(&mut *fun.1, gen);
@@ -487,6 +479,19 @@ fn infer_expr_types(
             unify_types(&expr_var, &func_var, types);
             infer_expr_types(expr1, &env, types, gen);
         },
+        Expr::Intrinsic(Intrinsic { args, imp_typ, ..}) => {
+            let expr_var = expr_type_var(expr);
+            let mut func_var = expr_var.clone();
+            for arg in args.iter().rev() {
+                let arg_var = expr_type_var(arg);
+                func_var = Type::Function(Box::new(arg_var.clone()), Box::new(func_var));
+            }
+            // b: t, a b: u |- a: t -> u
+            unify_types(&func_var, &imp_typ, types);
+            for arg in args {
+                infer_expr_types(arg, &env, types, gen);
+            }
+        },
         Expr::LetBinding(def, expr2) => {
             let expr_var = expr_type_var(expr);
             let expr2_var = expr_type_var(expr2);
@@ -600,17 +605,13 @@ fn expand_variables(
             expand_pattern_variables(&mut binding.0, &typ, map, gen);
             expand_variables(body, map, types, gen);
         },
-        Expr::Sequence(seq) => {
-            for expr in seq {
+        Expr::Sequence(exprs) | Expr::Product(exprs) |
+        Expr::Intrinsic(Intrinsic { args: exprs, .. })=> {
+            for expr in exprs {
                 expand_variables(expr, map, types, gen);
             }
         },
-        Expr::Product(prod) => {
-            for expr in prod {
-                expand_variables(expr, map, types, gen);
-            }
-        },
-        Expr::Infix(_, expr1, expr2) => {
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
             expand_variables(expr1, map, types, gen);
             expand_variables(expr2, map, types, gen);
         },
@@ -646,10 +647,6 @@ fn expand_variables(
             expand_variables(&mut fun.1, map, types, gen);
         },
         Expr::Constant(_) | Expr::Variable(_) => {},
-        Expr::Application(expr1, expr2) => {
-            expand_variables(expr1, map, types, gen);
-            expand_variables(expr2, map, types, gen);
-        }
     }
 }
 
@@ -752,7 +749,8 @@ fn unitize_expr_functions(
         Expr::Function(_) => {
             expr.v = Expr::Product(vec![]);
         },
-        Expr::Sequence(exprs) | Expr::Product(exprs) => {
+        Expr::Sequence(exprs) | Expr::Product(exprs) |
+        Expr::Intrinsic(Intrinsic { args: exprs, ..}) => {
             for expr in exprs {
                 unitize_expr_functions(expr, types);
             }

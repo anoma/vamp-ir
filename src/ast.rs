@@ -4,6 +4,8 @@ use std::fmt::Write;
 use crate::typecheck::Type;
 use crate::pest::Parser;
 use bincode::{Encode, Decode};
+use std::collections::HashMap;
+use crate::transform::VarGen;
 #[derive(Parser)]
 #[grammar = "vampir.pest"]
 pub struct VampirParser;
@@ -285,6 +287,7 @@ pub enum Expr {
     Constant(i32),
     Variable(Variable),
     Function(Function),
+    Intrinsic(Intrinsic),
     LetBinding(LetBinding, Box<TExpr>),
 }
 
@@ -490,6 +493,7 @@ impl fmt::Display for TExpr {
             Expr::Constant(val) => write!(f, "{}", val)?,
             Expr::Variable(var) => write!(f, "{}", var)?,
             Expr::Function(fun) => write!(f, "{}", fun)?,
+            Expr::Intrinsic(intr) => write!(f, "{}", intr)?,
             Expr::LetBinding(binding, expr) => {
                 if let Expr::Sequence(seq) = &expr.v {
                     write!(f, "def {}", binding)?;
@@ -613,5 +617,75 @@ impl fmt::Display for Function {
             write!(f, " -> {}", body)?
         }
         Ok(())
+    }
+}
+
+/* The underlying function that expands an intrinsic call. */
+type IntrinsicImp = fn(&Vec<TExpr>, &HashMap<VariableId, TExpr>, &mut VarGen) -> TExpr;
+
+#[derive(Clone)]
+pub struct Intrinsic {
+    arity: usize,
+    pub imp_typ: Type,
+    imp: IntrinsicImp,
+    pub args: Vec<TExpr>,
+}
+
+impl bincode::Encode for Intrinsic {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        _encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        panic!("intrinsic functions cannot be encoded")
+    }
+}
+
+impl bincode::Decode for Intrinsic {
+    fn decode<D: bincode::de::Decoder>(
+        _decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        panic!("intrinsic functions cannot be decoded")
+    }
+}
+
+impl fmt::Debug for Intrinsic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Intrinsic")
+            .field("arity", &self.arity)
+            .field("args", &self.args)
+            .field("apply", &(self.imp as fn(_, _, _) -> _))
+            .finish()
+    }
+}
+
+impl fmt::Display for Intrinsic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:p}", self.imp as fn(_, _, _) -> _)?;
+        for arg in &self.args {
+            write!(f, " {}", arg)?;
+        }
+        Ok(())
+    }
+}
+
+impl Intrinsic {
+    pub fn new(arity: usize, imp_typ: Type, imp: IntrinsicImp) -> Self {
+        Self { arity, imp, imp_typ, args: vec![] }
+    }
+    
+    pub fn apply(
+        mut self,
+        arg: TExpr,
+        bindings: &HashMap<VariableId, TExpr>,
+        gen: &mut VarGen
+    ) -> TExpr {
+        self.args.push(arg);
+        if self.args.len() < self.arity {
+            Expr::Intrinsic(self).into()
+        } else if self.args.len() == self.arity {
+            (self.imp)(&self.args, bindings, gen)
+        } else {
+            panic!("too many arguments applied to intrinsic function")
+        }
     }
 }

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions};
-use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr};
+use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, Type};
+use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic};
 
 /* A structure for generating unique variable IDs. */
 pub struct VarGen(VariableId);
@@ -24,26 +24,18 @@ fn refresh_expr_variables(
     gen: &mut VarGen,
 ) {
     match &mut expr.v {
-        Expr::Sequence(exprs) => {
+        Expr::Sequence(exprs) | Expr::Product(exprs) |
+        Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
             for expr in exprs {
                 refresh_expr_variables(expr, map, gen);
             }
         },
-        Expr::Product(exprs) => {
-            for expr in exprs {
-                refresh_expr_variables(expr, map, gen);
-            }
-        },
-        Expr::Infix(_, expr1, expr2) => {
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
             refresh_expr_variables(expr1, map, gen);
             refresh_expr_variables(expr2, map, gen);
         },
         Expr::Negate(expr) => {
             refresh_expr_variables(expr, map, gen);
-        },
-        Expr::Application(expr1, expr2) => {
-            refresh_expr_variables(expr1, map, gen);
-            refresh_expr_variables(expr2, map, gen);
         },
         Expr::Constant(_) => {},
         Expr::Variable(var) => {
@@ -171,26 +163,18 @@ fn number_expr_variables(
     gen: &mut VarGen,
 ) {
     match &mut expr.v {
-        Expr::Sequence(exprs) => {
+        Expr::Sequence(exprs) | Expr::Product(exprs) |
+        Expr::Intrinsic(Intrinsic { args: exprs, ..}) => {
             for expr in exprs {
                 number_expr_variables(expr, locals, globals, gen);
             }
         },
-        Expr::Product(exprs) => {
-            for expr in exprs {
-                number_expr_variables(expr, locals, globals, gen);
-            }
-        },
-        Expr::Infix(_, expr1, expr2) => {
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
             number_expr_variables(expr1, locals, globals, gen);
             number_expr_variables(expr2, locals, globals, gen);
         },
         Expr::Negate(expr) => {
             number_expr_variables(expr, locals, globals, gen);
-        },
-        Expr::Application(expr1, expr2) => {
-            number_expr_variables(expr1, locals, globals, gen);
-            number_expr_variables(expr2, locals, globals, gen);
         },
         Expr::Constant(_) => {},
         Expr::Variable(var) => {
@@ -263,6 +247,11 @@ fn apply_functions(
             match &mut expr1.v {
                 Expr::Application(_, _) => {
                     apply_functions(expr1, bindings, gen);
+                    apply_functions(expr, bindings, gen)
+                },
+                Expr::Intrinsic(intr) => {
+                    let expr2_norm = apply_functions(expr2, bindings, gen);
+                    *expr = intr.clone().apply(expr2_norm, bindings, gen);
                     apply_functions(expr, bindings, gen)
                 },
                 Expr::Variable(var) => {
@@ -354,6 +343,12 @@ fn apply_functions(
             }
         },
         Expr::Function(fun) => Expr::Function(fun.clone()).into(),
+        Expr::Intrinsic(intr) => {
+            for arg in &mut intr.args {
+                *arg = apply_functions(arg, &bindings, gen);
+            }
+            Expr::Intrinsic(intr.clone()).into()
+        },
     }
 }
 
@@ -372,14 +367,14 @@ fn apply_def_functions(
  * binding containing an inlined body. */
 pub fn apply_module_functions(
     module: &mut Module,
+    bindings: &mut HashMap<VariableId, TExpr>,
     gen: &mut VarGen,
 ) {
-    let mut bindings = HashMap::new();
     for def in &mut module.defs {
-        apply_def_functions(def, &mut bindings, gen);
+        apply_def_functions(def, bindings, gen);
     }
     for expr in &mut module.exprs {
-        apply_functions(expr, &mut bindings, gen);
+        apply_functions(expr, bindings, gen);
     }
 }
 
@@ -414,26 +409,18 @@ fn collect_expr_variables(
         Expr::Variable(var) => {
             map.insert(var.id, var.clone());
         },
-        Expr::Sequence(seq) => {
-            for expr in seq {
+        Expr::Sequence(exprs) | Expr::Product(exprs) |
+        Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+            for expr in exprs {
                 collect_expr_variables(expr, map);
             }
         },
-        Expr::Product(prod) => {
-            for expr in prod {
-                collect_expr_variables(expr, map);
-            }
-        },
-        Expr::Infix(_, expr1, expr2) => {
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
             collect_expr_variables(expr1, map);
             collect_expr_variables(expr2, map);
         },
         Expr::Negate(expr1) => {
             collect_expr_variables(expr1, map);
-        },
-        Expr::Application(expr1, expr2) => {
-            collect_expr_variables(expr1, map);
-            collect_expr_variables(expr2, map);
         },
         Expr::Function(fun) => {
             for param in &fun.0 {
@@ -484,7 +471,17 @@ fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
         (InfixOp::Add, Expr::Constant(0), _) => e2,
         (InfixOp::Add, _, Expr::Constant(0)) => e1,
         (InfixOp::Subtract, _, Expr::Constant(0)) => e1,
-        (op, _, _) => Expr::Infix(op, Box::new(e1), Box::new(e2)).into()
+        (InfixOp::Equal, _, _) =>
+            TExpr {
+                v: Expr::Infix(op, Box::new(e1), Box::new(e2)),
+                t: Some(Type::Product(vec![])),
+            },
+        (InfixOp::Multiply | InfixOp::Divide | InfixOp::Add |
+         InfixOp::Subtract | InfixOp::Exponentiate, _, _) =>
+            TExpr {
+                v: Expr::Infix(op, Box::new(e1), Box::new(e2)),
+                t: Some(Type::Int),
+            },
     }
 }
 
@@ -589,7 +586,7 @@ fn flatten_expression(
             flatten_binding(&binding.0, &val, flattened);
             flatten_expression(body, flattened)
         }
-        Expr::Function(_) | Expr::Application(_, _) =>
+        Expr::Function(_) | Expr::Application(_, _) | Expr::Intrinsic(_) =>
             unreachable!("functions must already by inlined and eliminated"),
     }
 }
@@ -790,10 +787,12 @@ pub fn flatten_module_to_3ac(
 pub fn compile(mut module: Module) -> Module {
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
+    let mut bindings = HashMap::new();
+    register_range_intrinsic(&mut globals, &mut bindings, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
     println!("{}\n", module);
     infer_module_types(&mut module, &globals, &mut HashMap::new(), &mut vg);
-    apply_module_functions(&mut module, &mut vg);
+    apply_module_functions(&mut module, &mut bindings, &mut vg);
     let mut types = HashMap::new();
     infer_module_types(&mut module, &globals, &mut types, &mut vg);
     // Expand all tuple variables
@@ -808,4 +807,86 @@ pub fn compile(mut module: Module) -> Module {
     let mut module_3ac = Module::default();
     flatten_module_to_3ac(&constraints, &mut module_3ac, &mut vg);
     module_3ac
+}
+
+/* Register the range intrinsic in the compilation environment. */
+fn register_range_intrinsic(
+    globals: &mut HashMap<String, VariableId>,
+    bindings: &mut HashMap<VariableId, TExpr>,
+    gen: &mut VarGen,
+) {
+    let range_func_id = gen.generate_id();
+    // Register the range function in global namespace
+    globals.insert("range".to_string(), range_func_id);
+    // Describe the intrinsic's type, arity, and implementation
+    let range_intrinsic = Intrinsic::new(
+        2,
+        Type::Function(
+            Box::new(Type::Int),
+            Box::new(Type::Function(
+                Box::new(Type::Int),
+                Box::new(Type::Product(vec![]))
+            ))
+        ),
+        expand_range_intrinsic,
+    );
+    // Register the intrinsic descriptor with the global binding
+    bindings.insert(range_func_id, Expr::Intrinsic(range_intrinsic).into());
+}
+
+/* Expand a range call into a series of constraints that force the value
+ * argument to be the given number of bits. */
+fn expand_range_intrinsic(
+    args: &Vec<TExpr>,
+    _bindings: &HashMap<VariableId, TExpr>,
+    gen: &mut VarGen,
+) -> TExpr {
+    if let [TExpr { v: Expr::Constant(bit_len), ..}, val] = &args[..] {
+        let mut constraints = vec![];
+        let mut val_constraint = TExpr { v: Expr::Constant(0), t: Some(Type::Int) };
+        // Constrain the variables involved in this expansion to be bits
+        for _ in 0..*bit_len {
+            // expression: b
+            let bit_var = Expr::Variable(Variable::new(gen.generate_id()));
+            let bit_var = TExpr { v: bit_var, t: Some(Type::Int) };
+            // expression: b-1
+            let bit_var_m1 = infix_op(
+                InfixOp::Subtract,
+                bit_var.clone(),
+                TExpr { v: Expr::Constant(1), t: Some(Type::Int) }
+            );
+            // expression: val_constraint := 2*val_constraint + b
+            val_constraint = infix_op(
+                InfixOp::Add,
+                bit_var.clone(),
+                infix_op(
+                    InfixOp::Multiply,
+                    TExpr { v: Expr::Constant(2), t: Some(Type::Int) },
+                    val_constraint,
+                ),
+            );
+            // constraint: b*(b-1) = 0
+            constraints.push(infix_op(
+                InfixOp::Equal,
+                infix_op(
+                    InfixOp::Multiply,
+                    bit_var,
+                    bit_var_m1,
+                ),
+                TExpr { v: Expr::Constant(0), t: Some(Type::Int) },
+            ));
+        }
+        // constraint: val = 2*(2*(2*(..) + b_2) + b_1) + b_0
+        // Uses Horner's method
+        constraints.push(infix_op(
+            InfixOp::Equal,
+            val_constraint,
+            val.clone(),
+        ));
+        // The aggregate of the above constraints constrains the given value to
+        // be the given number of bits
+        TExpr { v: Expr::Sequence(constraints), t: Some(Type::Int) }
+    } else {
+        panic!("unexpected arguments to range: {:?}", args);
+    }
 }
