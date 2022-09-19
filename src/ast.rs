@@ -4,7 +4,7 @@ use std::fmt::Write;
 use crate::typecheck::Type;
 use crate::pest::Parser;
 use bincode::{Encode, Decode};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::transform::VarGen;
 #[derive(Parser)]
 #[grammar = "vampir.pest"]
@@ -523,6 +523,8 @@ pub enum InfixOp {
     Subtract,
     Equal,
     Exponentiate,
+    IntDivide,
+    Modulo,
 }
 
 impl InfixOp {
@@ -535,6 +537,8 @@ impl InfixOp {
             "+" => Some(Self::Add),
             "-" => Some(Self::Subtract),
             "^" => Some(Self::Exponentiate),
+            // IntDivide and Modulo purposefully not included in the source
+            // language due to their inefficiency
             _ => unreachable!("Encountered unknown infix operator")
         }
     }
@@ -549,6 +553,8 @@ impl fmt::Display for InfixOp {
             Self::Subtract => write!(f, "-"),
             Self::Equal => write!(f, "="),
             Self::Exponentiate => write!(f, "^"),
+            Self::IntDivide => write!(f, "//"),
+            Self::Modulo => write!(f, " mod "),
         }
     }
 }
@@ -621,7 +627,12 @@ impl fmt::Display for Function {
 }
 
 /* The underlying function that expands an intrinsic call. */
-type IntrinsicImp = fn(&Vec<TExpr>, &HashMap<VariableId, TExpr>, &mut VarGen) -> TExpr;
+type IntrinsicImp = fn(
+    &Vec<TExpr>,
+    &HashMap<VariableId, TExpr>,
+    &mut HashSet<VariableId>,
+    &mut VarGen
+) -> TExpr;
 
 #[derive(Clone)]
 pub struct Intrinsic {
@@ -653,14 +664,14 @@ impl fmt::Debug for Intrinsic {
         f.debug_struct("Intrinsic")
             .field("arity", &self.arity)
             .field("args", &self.args)
-            .field("apply", &(self.imp as fn(_, _, _) -> _))
+            .field("apply", &(self.imp as fn(_, _, _, _) -> _))
             .finish()
     }
 }
 
 impl fmt::Display for Intrinsic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:p}", self.imp as fn(_, _, _) -> _)?;
+        write!(f, "{:p}", self.imp as fn(_, _, _, _) -> _)?;
         for arg in &self.args {
             write!(f, " {}", arg)?;
         }
@@ -677,13 +688,14 @@ impl Intrinsic {
         mut self,
         arg: TExpr,
         bindings: &HashMap<VariableId, TExpr>,
+        prover_defs: &mut HashSet<VariableId>,
         gen: &mut VarGen
     ) -> TExpr {
         self.args.push(arg);
         if self.args.len() < self.arity {
             Expr::Intrinsic(self).into()
         } else if self.args.len() == self.arity {
-            (self.imp)(&self.args, bindings, gen)
+            (self.imp)(&self.args, bindings, prover_defs, gen)
         } else {
             panic!("too many arguments applied to intrinsic function")
         }

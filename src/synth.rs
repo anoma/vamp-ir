@@ -75,6 +75,12 @@ fn evaluate_expr<F>(
         Expr::Infix(InfixOp::Divide, a, b) =>
             evaluate_expr(&a, defs, assigns) /
             evaluate_expr(&b, defs, assigns),
+        Expr::Infix(InfixOp::IntDivide, a, b) =>
+            (Into::<BigUint>::into(evaluate_expr(&a, defs, assigns)) /
+            Into::<BigUint>::into(evaluate_expr(&b, defs, assigns))).into(),
+        Expr::Infix(InfixOp::Modulo, a, b) =>
+            (Into::<BigUint>::into(evaluate_expr(&a, defs, assigns)) %
+            Into::<BigUint>::into(evaluate_expr(&b, defs, assigns))).into(),
         _ => unreachable!("encountered unexpected expression: {}", expr),
     }
 }

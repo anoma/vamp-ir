@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, Type};
 use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic};
 
@@ -240,24 +240,25 @@ pub fn number_module_variables(
 fn apply_functions(
     expr: &mut TExpr,
     bindings: &HashMap<VariableId, TExpr>,
+    prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) -> TExpr {
     match &mut expr.v {
         Expr::Application(expr1, expr2) => {
             match &mut expr1.v {
                 Expr::Application(_, _) => {
-                    apply_functions(expr1, bindings, gen);
-                    apply_functions(expr, bindings, gen)
+                    apply_functions(expr1, bindings, prover_defs, gen);
+                    apply_functions(expr, bindings, prover_defs, gen)
                 },
                 Expr::Intrinsic(intr) => {
-                    let expr2_norm = apply_functions(expr2, bindings, gen);
-                    *expr = intr.clone().apply(expr2_norm, bindings, gen);
-                    apply_functions(expr, bindings, gen)
+                    let expr2_norm = apply_functions(expr2, bindings, prover_defs, gen);
+                    *expr = intr.clone().apply(expr2_norm, bindings, prover_defs, gen);
+                    apply_functions(expr, bindings, prover_defs, gen)
                 },
                 Expr::Variable(var) => {
                     if let Some(val) = bindings.get(&var.id) {
                         *expr = Expr::Application(Box::new(val.clone()), expr2.clone()).into();
-                        apply_functions(expr, bindings, gen)
+                        apply_functions(expr, bindings, prover_defs, gen)
                     } else {
                         panic!("encountered unbound variable {}", var)
                     }
@@ -273,7 +274,7 @@ fn apply_functions(
                         let new_body = if fun.0.is_empty() { &*fun.1 } else { expr1 };
                         let new_bind = LetBinding(arg1, expr2.clone());
                         *expr = Expr::LetBinding(new_bind, Box::new(new_body.clone())).into();
-                        apply_functions(expr, bindings, gen)
+                        apply_functions(expr, bindings, prover_defs, gen)
                     } else {
                         unreachable!("refreshing variables changed expression type")
                     }
@@ -282,7 +283,7 @@ fn apply_functions(
                     if let Some(val) = seq.last_mut() {
                         *val = Expr::Application(Box::new(val.clone()), expr2.clone()).into();
                         *expr = *expr1.clone();
-                        apply_functions(expr, bindings, gen)
+                        apply_functions(expr, bindings, prover_defs, gen)
                     } else {
                         unreachable!("encountered an empty sequence")
                     }
@@ -290,7 +291,7 @@ fn apply_functions(
                 Expr::LetBinding(_, body) => {
                     *body = Box::new(Expr::Application(body.clone(), expr2.clone()).into());
                     *expr = *expr1.clone();
-                    apply_functions(expr, bindings, gen)
+                    apply_functions(expr, bindings, prover_defs, gen)
                 },
                 Expr::Infix(_, _, _) => {
                     panic!("cannot apply argument {} to infix {}", expr2, expr1)
@@ -307,32 +308,32 @@ fn apply_functions(
             }
         },
         Expr::LetBinding(binding, body) => {
-            let val = apply_functions(&mut *binding.1, bindings, gen);
+            let val = apply_functions(&mut *binding.1, bindings, prover_defs, gen);
             let mut bindings = bindings.clone();
             match_pattern_expr(&binding.0, &val, &mut bindings, gen);
-            apply_functions(body, &bindings, gen)
+            apply_functions(body, &bindings, prover_defs, gen)
         },
         Expr::Sequence(seq) => {
             let mut val = None;
             for expr in seq {
-                val = Some(apply_functions(expr, &bindings, gen));
+                val = Some(apply_functions(expr, &bindings, prover_defs, gen));
             }
             val.expect("encountered empty sequence")
         },
         Expr::Product(prod) => {
             let mut vals = vec![];
             for expr in prod {
-                vals.push(apply_functions(expr, &bindings, gen));
+                vals.push(apply_functions(expr, &bindings, prover_defs, gen));
             }
             Expr::Product(vals).into()
         },
         Expr::Infix(op, expr1, expr2) => {
-            let expr1 = apply_functions(expr1, &bindings, gen);
-            let expr2 = apply_functions(expr2, &bindings, gen);
+            let expr1 = apply_functions(expr1, &bindings, prover_defs, gen);
+            let expr2 = apply_functions(expr2, &bindings, prover_defs, gen);
             Expr::Infix(op.clone(), Box::new(expr1), Box::new(expr2)).into()
         },
         Expr::Negate(expr1) => {
-            Expr::Negate(Box::new(apply_functions(expr1, &bindings, gen))).into()
+            Expr::Negate(Box::new(apply_functions(expr1, &bindings, prover_defs, gen))).into()
         },
         Expr::Constant(val) => Expr::Constant(*val).into(),
         Expr::Variable(var) => {
@@ -345,7 +346,7 @@ fn apply_functions(
         Expr::Function(fun) => Expr::Function(fun.clone()).into(),
         Expr::Intrinsic(intr) => {
             for arg in &mut intr.args {
-                *arg = apply_functions(arg, &bindings, gen);
+                *arg = apply_functions(arg, &bindings, prover_defs, gen);
             }
             Expr::Intrinsic(intr.clone()).into()
         },
@@ -357,9 +358,10 @@ fn apply_functions(
 fn apply_def_functions(
     def: &mut Definition,
     bindings: &mut HashMap<VariableId, TExpr>,
+    prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) {
-    let val = apply_functions(&mut def.0.1, bindings, gen);
+    let val = apply_functions(&mut def.0.1, bindings, prover_defs, gen);
     match_pattern_expr(&def.0.0, &val, bindings, gen);
 }
 
@@ -368,13 +370,14 @@ fn apply_def_functions(
 pub fn apply_module_functions(
     module: &mut Module,
     bindings: &mut HashMap<VariableId, TExpr>,
+    prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) {
     for def in &mut module.defs {
-        apply_def_functions(def, bindings, gen);
+        apply_def_functions(def, bindings, prover_defs, gen);
     }
     for expr in &mut module.exprs {
-        apply_functions(expr, bindings, gen);
+        apply_functions(expr, bindings, prover_defs, gen);
     }
 }
 
@@ -468,6 +471,9 @@ fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
         (InfixOp::Multiply, Expr::Constant(0), _) => e1,
         (InfixOp::Multiply, _, Expr::Constant(0)) => e2,
         (InfixOp::Divide, _, Expr::Constant(1)) => e1,
+        (InfixOp::IntDivide, _, Expr::Constant(1)) => e1,
+        (InfixOp::Modulo, _, Expr::Constant(1)) =>
+            TExpr { v: Expr::Constant(0), t: Some(Type::Int) },
         (InfixOp::Add, Expr::Constant(0), _) => e2,
         (InfixOp::Add, _, Expr::Constant(0)) => e1,
         (InfixOp::Subtract, _, Expr::Constant(0)) => e1,
@@ -477,7 +483,8 @@ fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
                 t: Some(Type::Product(vec![])),
             },
         (InfixOp::Multiply | InfixOp::Divide | InfixOp::Add |
-         InfixOp::Subtract | InfixOp::Exponentiate, _, _) =>
+         InfixOp::Subtract | InfixOp::Exponentiate | InfixOp::IntDivide |
+         InfixOp::Modulo, _, _) =>
             TExpr {
                 v: Expr::Infix(op, Box::new(e1), Box::new(e2)),
                 t: Some(Type::Int),
@@ -732,11 +739,17 @@ fn flatten_def_to_3ac(
  * form. */
 pub fn flatten_module_to_3ac(
     module: &Module,
+    prover_defs: &HashSet<VariableId>,
     flattened: &mut Module,
     gen: &mut VarGen,
 ) {
     for def in &module.defs {
-        flatten_def_to_3ac(def, flattened, gen);
+        match &def.0.0 {
+            Pattern::Variable(var) if !prover_defs.contains(&var.id) =>
+                flatten_def_to_3ac(def, flattened, gen),
+            Pattern::Variable(_) => { flattened.defs.push(def.clone()); },
+            _ => unreachable!("encountered unexpected pattern: {}", def.0.0)
+        }
     }
     for expr in &module.exprs {
         if let Expr::Infix(InfixOp::Equal, lhs, rhs) = &expr.v {
@@ -792,7 +805,8 @@ pub fn compile(mut module: Module) -> Module {
     number_module_variables(&mut module, &mut globals, &mut vg);
     println!("{}\n", module);
     infer_module_types(&mut module, &globals, &mut HashMap::new(), &mut vg);
-    apply_module_functions(&mut module, &mut bindings, &mut vg);
+    let mut prover_defs = HashSet::new();
+    apply_module_functions(&mut module, &mut bindings, &mut prover_defs, &mut vg);
     let mut types = HashMap::new();
     infer_module_types(&mut module, &globals, &mut types, &mut vg);
     // Expand all tuple variables
@@ -805,7 +819,7 @@ pub fn compile(mut module: Module) -> Module {
     flatten_module(&module, &mut constraints);
     println!("{}\n", constraints);
     let mut module_3ac = Module::default();
-    flatten_module_to_3ac(&constraints, &mut module_3ac, &mut vg);
+    flatten_module_to_3ac(&constraints, &prover_defs, &mut module_3ac, &mut vg);
     module_3ac
 }
 
@@ -839,15 +853,34 @@ fn register_range_intrinsic(
 fn expand_range_intrinsic(
     args: &Vec<TExpr>,
     _bindings: &HashMap<VariableId, TExpr>,
+    prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) -> TExpr {
     if let [TExpr { v: Expr::Constant(bit_len), ..}, val] = &args[..] {
         let mut constraints = vec![];
+        let mut bit_bindings = HashMap::new();
         let mut val_constraint = TExpr { v: Expr::Constant(0), t: Some(Type::Int) };
         // Constrain the variables involved in this expansion to be bits
-        for _ in 0..*bit_len {
+        let bit_len = u32::try_from(*bit_len)
+            .expect("bit count supplied to range must be non-negative");
+        for i in (0..bit_len).rev() {
             // expression: b
-            let bit_var = Expr::Variable(Variable::new(gen.generate_id()));
+            let bit_var = gen.generate_id();
+            // do not put the explicit definition of this variable into circuit
+            prover_defs.insert(bit_var);
+            // definition: b = (val // (2^i)) mod 2
+            let explicit_val = infix_op(
+                InfixOp::Modulo,
+                infix_op(
+                    InfixOp::IntDivide,
+                    val.clone(),
+                    TExpr { v: Expr::Constant(2i32.pow(i)), t: Some(Type::Int) }
+                ),
+                TExpr { v: Expr::Constant(2), t: Some(Type::Int) }
+            );
+            bit_bindings.insert(bit_var, explicit_val);
+            // expression: b
+            let bit_var = Expr::Variable(Variable::new(bit_var));
             let bit_var = TExpr { v: bit_var, t: Some(Type::Int) };
             // expression: b-1
             let bit_var_m1 = infix_op(
@@ -885,7 +918,22 @@ fn expand_range_intrinsic(
         ));
         // The aggregate of the above constraints constrains the given value to
         // be the given number of bits
-        TExpr { v: Expr::Sequence(constraints), t: Some(Type::Int) }
+        let mut constraint = TExpr { v: Expr::Sequence(constraints), t: Some(Type::Int) };
+        // To help the prover derive the bit assignments, surround the
+        // constraints with explicit definitions
+        for (bit_var, explicit_var) in bit_bindings {
+            constraint = TExpr {
+                t: Some(Type::Product(vec![])),
+                v: Expr::LetBinding(
+                    LetBinding(
+                        Pattern::Variable(Variable::new(bit_var)),
+                        Box::new(explicit_var),
+                    ),
+                    Box::new(constraint)
+                ),
+            };
+        }
+        constraint
     } else {
         panic!("unexpected arguments to range: {:?}", args);
     }
