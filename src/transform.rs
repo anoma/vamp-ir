@@ -860,6 +860,7 @@ fn expand_range_intrinsic(
         let mut constraints = vec![];
         let mut bit_bindings = HashMap::new();
         let mut val_constraint = TExpr { v: Expr::Constant(0), t: Some(Type::Int) };
+        let mut witness = TExpr { v: Expr::Product(vec![]), t: Some(Type::Product(vec![])) };
         // Constrain the variables involved in this expansion to be bits
         let bit_len = u32::try_from(*bit_len)
             .expect("bit count supplied to range must be non-negative");
@@ -903,11 +904,16 @@ fn expand_range_intrinsic(
                 InfixOp::Equal,
                 infix_op(
                     InfixOp::Multiply,
-                    bit_var,
+                    bit_var.clone(),
                     bit_var_m1,
                 ),
                 TExpr { v: Expr::Constant(0), t: Some(Type::Int) },
             ));
+            // expression: witness = (b, witness)
+            witness = TExpr {
+                v: Expr::Product(vec![bit_var, witness.clone()]),
+                t: Some(Type::Product(vec![Type::Int, witness.t.unwrap()]))
+            };
         }
         // constraint: val = 2*(2*(2*(..) + b_2) + b_1) + b_0
         // Uses Horner's method
@@ -916,14 +922,16 @@ fn expand_range_intrinsic(
             val_constraint,
             val.clone(),
         ));
+        // value: (b0, (b1, (b2, (...))))
+        constraints.push(witness.clone());
         // The aggregate of the above constraints constrains the given value to
         // be the given number of bits
-        let mut constraint = TExpr { v: Expr::Sequence(constraints), t: Some(Type::Int) };
+        let mut constraint = TExpr { v: Expr::Sequence(constraints), t: witness.t };
         // To help the prover derive the bit assignments, surround the
         // constraints with explicit definitions
         for (bit_var, explicit_var) in bit_bindings {
             constraint = TExpr {
-                t: Some(Type::Product(vec![])),
+                t: constraint.t.clone(),
                 v: Expr::LetBinding(
                     LetBinding(
                         Pattern::Variable(Variable::new(bit_var)),
