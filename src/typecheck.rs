@@ -747,11 +747,10 @@ fn unitize_expr_functions(
     types: &mut HashMap<VariableId, Type>,
 ) {
     match &mut expr.v {
-        Expr::Function(_) => {
+        Expr::Function(_) | Expr::Intrinsic(_) => {
             expr.v = Expr::Product(vec![]);
         },
-        Expr::Sequence(exprs) | Expr::Product(exprs) |
-        Expr::Intrinsic(Intrinsic { args: exprs, ..}) => {
+        Expr::Sequence(exprs) | Expr::Product(exprs) => {
             for expr in exprs {
                 unitize_expr_functions(expr, types);
             }
