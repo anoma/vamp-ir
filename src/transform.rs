@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, Type};
-use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic};
+use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function};
 
 /* A structure for generating unique variable IDs. */
 pub struct VarGen(VariableId);
@@ -820,7 +820,144 @@ pub fn compile(mut module: Module) -> Module {
     println!("{}\n", constraints);
     let mut module_3ac = Module::default();
     flatten_module_to_3ac(&constraints, &prover_defs, &mut module_3ac, &mut vg);
+    // Start doing basic optimizations
+    copy_propagate(&mut module_3ac);
+    eliminate_dead_equalities(&mut module_3ac);
+    eliminate_dead_definitions(&mut module_3ac);
     module_3ac
+}
+
+/* Apply all the substitutions in the given map to the given expression. */
+pub fn copy_propagate_expr(
+    expr: &mut TExpr,
+    substitutions: &HashMap<VariableId, TExpr>,
+) {
+    match &mut expr.v {
+        Expr::Variable(v2) if substitutions.contains_key(&v2.id) => {
+            *expr = substitutions[&v2.id].clone();
+            copy_propagate_expr(expr, substitutions);
+        },
+        Expr::Sequence(exprs) | Expr::Product(exprs) |
+        Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+            for expr in exprs {
+                copy_propagate_expr(expr, substitutions);
+            }
+        },
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
+            copy_propagate_expr(expr1, substitutions);
+            copy_propagate_expr(expr2, substitutions);
+        },
+        Expr::Negate(expr1) | Expr::Function(Function(_, expr1)) => {
+            copy_propagate_expr(expr1, substitutions);
+        },
+        Expr::LetBinding(binding, expr2) => {
+            copy_propagate_expr(&mut binding.1, substitutions);
+            copy_propagate_expr(expr2, substitutions);
+        },
+        Expr::Constant(_) | Expr::Variable(_) => {},
+    }
+}
+
+/* Apply the given substitutions into the given definition's expression. And if
+ * the result is a variable or constant, then make a new substitution for the
+ * LHS. This optimization will reduce the number of variables in the circuit. */
+pub fn copy_propagate_def(
+    def: &mut Definition,
+    substitutions: &mut HashMap<VariableId, TExpr>,
+) {
+    if let Pattern::Variable(v1) = &mut def.0.0 {
+        copy_propagate_expr(&mut def.0.1, &substitutions);
+        match &def.0.1.v {
+            Expr::Variable(_) | Expr::Constant(_) => {
+                substitutions.insert(v1.id, *def.0.1.clone());
+            },
+            _ => {},
+        }
+    } else {
+        panic!("only variable patterns should be present at this stage");
+    }
+}
+
+/* Replace all variables defined to be equal with a single representative.
+ * If a variable is proven to be equal to a constant, then replace its
+ * occurences with the constant. */
+pub fn copy_propagate(module: &mut Module) {
+    let mut substitutions: HashMap<VariableId, TExpr> = HashMap::new();
+    for def in &mut module.defs {
+        copy_propagate_def(def, &mut substitutions);
+    }
+    for expr in &mut module.exprs {
+        copy_propagate_expr(expr, &substitutions);
+    }
+}
+
+/* Eliminate equalities that are obviously true from the constraint set. This
+ * will reduce the number of gates in the circuit. */
+pub fn eliminate_dead_equalities(module: &mut Module) {
+    let mut new_exprs = vec![];
+    for expr in &mut module.exprs {
+        match &expr.v {
+            Expr::Infix(InfixOp::Equal, expr1, expr2) if
+                matches!((&expr1.v, &expr2.v), (Expr::Constant(c1), Expr::Constant(c2)) if
+                         c1 == c2) => {},
+            Expr::Infix(InfixOp::Equal, expr1, expr2) if
+                matches!((&expr1.v, &expr2.v), (Expr::Variable(v1), Expr::Variable(v2)) if
+                         v1.id == v2.id) => {},
+            _ => {
+                new_exprs.push(expr.clone());
+            },
+        }
+    }
+    module.exprs = new_exprs;
+}
+
+/* Eliminate those definitions that are not directly or indirectly used in the
+ * moudle constraints. Achieve this by doing a breadth first search for
+ * variables starting with those used in the module constraints. */
+pub fn eliminate_dead_definitions(module: &mut Module) {
+    // To ease the lookup of definitions by the variables they define
+    let mut defs = HashMap::new();
+    for def in &module.defs {
+        if let Pattern::Variable(v1) = &def.0.0 {
+            defs.insert(v1.id, &def.0.1);
+        } else {
+            panic!("only variable patterns should be present at this stage");
+        }
+    }
+    // The current set of variables being searched
+    let mut active_vars = HashMap::new();
+    for expr in &mut module.exprs {
+        collect_expr_variables(expr, &mut active_vars);
+    }
+    let mut explored = HashSet::new();
+    let mut next_vars = HashMap::new();
+    // Find the set of all the variables reachable from the current active set
+    while active_vars.len() > 0 {
+        // Collect the set of variables depended upon by the current active set
+        for (var, _) in active_vars.drain() {
+            if !explored.contains(&var) {
+                explored.insert(var);
+                if let Some(expr) = defs.get(&var) {
+                    collect_expr_variables(expr, &mut next_vars);
+                }
+            }
+        }
+        active_vars = next_vars;
+        next_vars = HashMap::new();
+    }
+    // Now eliminate those definitions that are not reachable from the
+    // constraint set
+    let mut new_defs = Vec::new();
+    for def in &module.defs {
+        if let Pattern::Variable(v1) = &def.0.0 {
+            if explored.contains(&v1.id) {
+                new_defs.push(def.clone());
+            }
+        } else {
+            panic!("only variable patterns should be present at this stage");
+        }
+    }
+    module.defs = new_defs;
 }
 
 /* Register the range intrinsic in the compilation environment. */
