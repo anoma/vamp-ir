@@ -86,7 +86,7 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
     let mut var_assignments = HashMap::new();
     // Solicit input variables from user and solve for choice point values
     for (id, var) in input_variables {
-        print!("{}: ", var);
+        print!("** {}: ", var);
         std::io::stdout().flush().expect("flush failed!");
         let mut input_line = String::new();
         std::io::stdin()
@@ -104,6 +104,7 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
 
 /* Implements the subcommand that tells user how to use this program. */
 fn usage_cmd() {
+    println!("Vampir Aliased Multivariate Polynomial Intermediate Representation");
     println!("usage 1: vamp-ir setup");
     println!("usage 2: vamp-ir compile");
     println!("usage 3: vamp-ir prove");
@@ -118,12 +119,14 @@ fn setup_cmd(args: &[String]) {
         return;
     }
     // Generate CRS
+    println!("* Setting up public parameters...");
     let pp = PC::setup(1 << 10, None, &mut OsRng)
         .map_err(to_pc_error::<BlsScalar, PC>)
         .expect("unable to setup polynomial commitment scheme public parameters");
     let mut pp_file = File::create(args[0].clone())
         .expect("unable to create public parameters file");
     pp.serialize(&mut pp_file).unwrap();
+    println!("* Public parameter setup success!");
 }
 
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
@@ -136,22 +139,28 @@ fn compile_cmd(args: &[String]) {
                   is stored at circuit.plonk .");
         return;
     }
+    println!("* Reading public parameters...");
     let mut pp_file = File::open(args[1].clone())
         .expect("unable to load public parameters file");
     let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
-    
+
+    println!("* Compiling constraints...");
     let unparsed_file = fs::read_to_string(args[0].clone()).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
     let module_3ac = compile(module);
     println!("{}\n", module_3ac);
-    
+
+    println!("* Synthesizing arithmetic circuit...");
     let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
     // Compile the circuit
     let (pk_p, vk) = circuit.compile::<PC>(&pp)
         .expect("unable to compile circuit");
+    println!("* Serializing circuit to storage...");
     let mut circuit_file = File::create(args[2].clone())
         .expect("unable to create circuit file");
     CircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
+
+    println!("* Constraint compilation success!");
 }
 
 /* Implements the subcommand that creates a proof from interactively entered
@@ -165,26 +174,32 @@ fn prove_cmd(args: &[String]) {
                   that this subcommand makes no attempt to verify supplied inputs.");
         return;
     }
+    println!("* Reading arithmetic circuit...");
     let mut circuit_file = File::open(args[0].clone())
         .expect("unable to load circuit file");
     let CircuitData { pk_p, vk: _vk, mut circuit} =
         CircuitData::read(&mut circuit_file).unwrap();
 
+    println!("* Reading public parameters...");
     let mut pp_file = File::open(args[1].clone())
         .expect("unable to load public parameters file");
     let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
     // Prover POV
-    println!("Proving...");
+    println!("* Soliciting circuit witnesses...");
     // Prompt for program inputs
     let var_assignments = prompt_inputs(&circuit.module);
     // Populate variable definitions
     circuit.populate_variables(var_assignments);
     // Start proving witnesses
+    println!("* Proving knowledge of witnesses...");
     let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
 
+    println!("* Serializing proof to storage...");
     let mut proof_file = File::create(args[2].clone())
         .expect("unable to create proof file");
     ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
+
+    println!("* Proof generation success!");
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
@@ -196,21 +211,24 @@ fn verify_cmd(args: &[String]) {
                   verifies whether the proof is a correct one.");
         return;
     }
+    println!("* Reading arithmetic circuit...");
     let mut circuit_file = File::open(args[0].clone())
         .expect("unable to load circuit file");
     let CircuitData { pk_p: _pk_p, vk, circuit: _circuit} =
         CircuitData::read(&mut circuit_file).unwrap();
 
+    println!("* Reading zero-knowledge proof...");
     let mut proof_file = File::open(args[2].clone())
         .expect("unable to load proof file");
     let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
 
+    println!("* Reading public parameters...");
     let mut pp_file = File::open(args[1].clone())
         .expect("unable to load public parameters file");
     let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
     
     // Verifier POV
-    println!("Verifying...");
+    println!("* Verifying proof validity...");
     let verifier_data = VerifierData::new(vk, pi);
     let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
         &pp,
@@ -220,9 +238,9 @@ fn verify_cmd(args: &[String]) {
         b"Test",
     );
     if let Ok(()) = verifier_result {
-        println!("proof is valid");
+        println!("* Zero-knowledge proof is valid");
     } else {
-        println!("verifier result: {:?}", verifier_result);
+        println!("* Result from verifier: {:?}", verifier_result);
     }
 }
 
