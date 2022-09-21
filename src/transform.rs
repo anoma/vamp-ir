@@ -92,7 +92,8 @@ fn match_pattern_expr(
             map.insert(var.id, Expr::Product(inner_exprs).into());
             match_pattern_expr(pat, expr, map, gen);
         },
-        (Pattern::Constant(a), Expr::Constant(b)) if a == b => {},
+        (Pattern::Constant(_), Expr::Constant(_) | Expr::Variable(_) |
+         Expr::Infix(_, _, _)) => {},
         _ => panic!("unable to match {} against {}", expr, pat),
     }
 }

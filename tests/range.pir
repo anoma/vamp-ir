@@ -5,6 +5,4 @@
    vamp-ir prove circuit.plonk params.pp proof.plonk
    vamp-ir verify circuit.plonk params.pp proof.plonk
 */
-def (a, (b, z)) = range 5 x;
-b = 1;
-a = 0;
+def (0, (1, z)) = range 5 x;
