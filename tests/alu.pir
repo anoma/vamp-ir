@@ -107,8 +107,53 @@ def rol8 x {
     combine8 (a7,(a0,(a1,(a2,(a3,(a4,(a5,(a6,()))))))))
 };
 
+// Add two 8-bit values modulo 8
+
+def add8 a b {
+    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,(a8,ar))))))))) = range 9 (a+b);
+    combine8 (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,()))))))))
+};
+
+// Subtract two 8-bit values modulo 8
+
+def sub8 a b {
+    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,(a8,ar))))))))) = range 9 (a+256-b);
+    combine8 (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,()))))))))
+};
+
+// Unsigned less than or equal to for 8 bits
+
+def ule8 a b { range 8 (b-a) };
+
+// Unsigned less than for 8 bits
+
+def ult8 a b { range 8 (b-a-1) };
+
+// Signed less than or equal to for 8 bits
+
+def slt8 a b {
+    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(1,(a8,ar))))))))) = range 9 (a+256-b);
+    combine8 (a0,(a1,(a2,(a3,(a4,(a5,(a6,(1,(a8,())))))))))
+};
+
+// Signed less than for 8 bits
+
+def sle8 a b { slt8 a (b+1) };
+
 // Check the operations work correctly
 
 242 = xor8 13 255;
 
 254 = not8 1;
+
+ult8 2 3;
+
+ult8 2 255;
+
+ult8 0 255;
+
+slt8 255 0;
+
+slt8 255 127;
+
+sle8 5 5;
