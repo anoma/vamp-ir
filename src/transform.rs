@@ -310,9 +310,12 @@ fn apply_functions(
         },
         Expr::LetBinding(binding, body) => {
             let val = apply_functions(&mut *binding.1, bindings, prover_defs, gen);
-            let mut bindings = bindings.clone();
-            match_pattern_expr(&binding.0, &val, &mut bindings, gen);
-            apply_functions(body, &bindings, prover_defs, gen)
+            let mut new_bindings = bindings.clone();
+            match_pattern_expr(&binding.0, &val, &mut new_bindings, gen);
+            let mut normal = apply_functions(body, &new_bindings, prover_defs, gen);
+            new_bindings.retain(|k, _v| !bindings.contains_key(k));
+            copy_propagate_expr(&mut normal, &new_bindings);
+            normal
         },
         Expr::Sequence(seq) => {
             let mut val = None;
@@ -808,6 +811,7 @@ pub fn compile(mut module: Module) -> Module {
     infer_module_types(&mut module, &globals, &mut HashMap::new(), &mut vg);
     let mut prover_defs = HashSet::new();
     apply_module_functions(&mut module, &mut bindings, &mut prover_defs, &mut vg);
+    println!("{}\n", module);
     let mut types = HashMap::new();
     infer_module_types(&mut module, &globals, &mut types, &mut vg);
     // Expand all tuple variables
