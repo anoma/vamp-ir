@@ -1,28 +1,26 @@
 // Pair up corresponding elements of each tuple
 
-def zip8
-        (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,ar))))))))
-        (b0,(b1,(b2,(b3,(b4,(b5,(b6,(b7,br)))))))) {
-    ((a0,b0),((a1,b1),((a2,b2),((a3,b3),((a4,b4),((a5,b5),((a6,b6),((a7,b7),()))))))))
-};
+def zip a b i { (a i, b i) };
 
 // Apply function to each element of tuple
 
-def map8 f (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,ar)))))))) {
-    (f a0,(f a1,(f a2,(f a3,(f a4,(f a5,(f a6,(f a7,()))))))))
-};
+def map f g i { f (g i) };
 
 // Multiply each tuple element by corresponding unit
 
-def combine8 (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,ar)))))))) {
+def combine8 a {
+    (a 0) + 2*(a 1) + 4*(a 2) + 8*(a 3) + 16*(a 4) + 32*(a 5) + 64*(a 6) + 128*(a 7)
+};
+
+def combine8t (a0,a1,a2,a3,a4,a5,a6,a7) {
     a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7
 };
 
 // Apply given function to corresponding bit-pairs in bit representation
 
 def bitwise8 g a b {
-    def zipped = zip8 (range 8 a) (range 8 b);
-    def new_bits = map8 g zipped;
+    def zipped = zip (range 8 a) (range 8 b);
+    def new_bits = map g zipped;
     combine8 new_bits
 };
 
@@ -52,7 +50,7 @@ def and8 = bitwise8 bit_and;
 
 // Definition of bitwise not for 8 bit values
 
-def not8 y { combine8 (map8 (fun x { 1-x }) (range 8 y)) };
+def not8 y { combine8 (map (fun x { 1-x }) (range 8 y)) };
 
 // Repeated function applications, useful for big-step rotations/shifts
 
@@ -75,58 +73,55 @@ def apply7 f x { f (apply6 f x) };
 // Arithmetic shift right for 8 bit values
 
 def ashr8 x {
-    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,ar)))))))) = range 8 x;
-    combine8 (a1,(a2,(a3,(a4,(a5,(a6,(a7,(a7,()))))))))
+    def a = range 8 x;
+    combine8t (a 1, a 2, a 3, a 4, a 5, a 6, a 7, a 7)
 };
 
 // Logical shift right for 8 bit values
 
 def lshr8 x {
-    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,ar)))))))) = range 8 x;
-    combine8 (a1,(a2,(a3,(a4,(a5,(a6,(a7,(0,()))))))))
+    def a = range 8 x;
+    combine8t (a 1, a 2, a 3, a 4, a 5, a 6, a 7, 0)
 };
 
 // Shift left for 8 bit values
 
 def shl8 x {
-    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,ar)))))))) = range 8 x;
-    combine8 (0,(a0,(a1,(a2,(a3,(a4,(a5,(a6,()))))))))
+    def a = range 8 x;
+    combine8t (0, a 0, a 1, a 2, a 3, a 4, a 5, a 6)
 };
 
 // Rotate right for 8 bit values
 
 def ror8 x {
-    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,ar)))))))) = range 8 x;
-    combine8 (a1,(a2,(a3,(a4,(a5,(a6,(a7,(a0,()))))))))
+    def a = range 8 x;
+    combine8t (a 1, a 2, a 3, a 4, a 5, a 6, a 7, a 0)
 };
 
 // Rotate left for 8 bit values
 
 def rol8 x {
-    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,ar)))))))) = range 8 x;
-    combine8 (a7,(a0,(a1,(a2,(a3,(a4,(a5,(a6,()))))))))
+    def a = range 8 x;
+    combine8t (a 7, a 0, a 1, a 2, a 3, a 4, a 5, a 6)
 };
 
 // Add two 8-bit values modulo 8
 
 def add8 a b {
-    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,(a8,ar))))))))) = range 9 (a+b);
-    combine8 (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,()))))))))
+    def a = range 9 (a+b);
+    combine8t (a 0, a 1, a 2, a 3, a 4, a 5, a 6, a 7)
 };
 
 // Subtract two 8-bit values modulo 8
 
 def sub8 a b {
-    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,(a8,ar))))))))) = range 9 (a+256-b);
-    combine8 (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,()))))))))
+    def a = range 9 (a+256-b);
+    combine8t (a 0, a 1, a 2, a 3, a 4, a 5, a 6, a 7)
 };
 
 // Unsigned less than or equal to for 8 bits. 1 if true, 0 otherwise
 
-def ule8 a b {
-    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,(a8,ar))))))))) = range 9 (256+b-a);
-    a8
-};
+def ule8 a b { range 9 (256+b-a) 8 };
 
 // Unsigned less than for 8 bits
 
@@ -134,10 +129,7 @@ def ult8 a b { ule8 a (b-1) };
 
 // Signed less than or equal to for 8 bits
 
-def slt8 a b {
-    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,(a8,ar))))))))) = range 9 (a+256-b);
-    a7
-};
+def slt8 a b { range 9 (a+256-b) 7 };
 
 // Signed less than for 8 bits
 
@@ -165,7 +157,7 @@ def divrem a3 b0 {
     def a0 = a1 - c1*b1;
     def c0 = ult8 b0 a0;
     def rem = a0 - c0*b0;
-    (combine8 (c0,(c1,(c2,(c3,(0,(0,(0,(0,())))))))), rem)
+    (combine8t (c0, c1, c2, c3, 0, 0, 0, 0), rem)
 };
 
 def div a b { fst (divrem a b) };

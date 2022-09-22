@@ -289,7 +289,7 @@ pub enum Expr {
     Function(Function),
     Intrinsic(Intrinsic),
     LetBinding(LetBinding, Box<TExpr>),
-    Match(Box<TExpr>, Vec<(Pattern, TExpr)>),
+    Match(Match),
 }
 
 impl TExpr {
@@ -505,20 +505,7 @@ impl fmt::Display for TExpr {
                     write!(f, "def {};\n{}", binding, expr)?;
                 }
             },
-            Expr::Match(expr1, branches) => {
-                writeln!(f, "match {} {{", expr1)?;
-                for (pat, expr2) in branches {
-                    let mut body = String::new();
-                    writeln!(body, "{}", expr2)?;
-                    if body.contains('\n') {
-                        body = body.replace("\n", "\n    ");
-                        writeln!(f, "  {} => {{\n    {}}},", pat, body)?;
-                    } else {
-                        writeln!(f, "  {} => {},", pat, expr2)?;
-                    }
-                }
-                writeln!(f, "}}")?;
-            },
+            Expr::Match(matche) => write!(f, "{}", matche)?,
         }
         Ok(())
     }
@@ -527,6 +514,27 @@ impl fmt::Display for TExpr {
 impl From<Expr> for TExpr {
     fn from(v: Expr) -> TExpr {
         TExpr { v, t: None }
+    }
+}
+
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct Match(pub Box<TExpr>, pub Vec<Pattern>, pub Vec<TExpr>);
+
+impl fmt::Display for Match {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "match {} {{", self.0)?;
+        for (pat, expr2) in self.1.iter().zip(self.2.iter()) {
+            let mut body = String::new();
+            writeln!(body, "{}", expr2)?;
+            if body.contains('\n') {
+                body = body.replace("\n", "\n    ");
+                writeln!(f, "  {} => {{\n    {}}},", pat, body)?;
+            } else {
+                writeln!(f, "  {} => {},", pat, expr2)?;
+            }
+        }
+        writeln!(f, "}}")?;
+        Ok(())
     }
 }
 

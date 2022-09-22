@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, Type};
-use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function};
+use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function, Match};
 
 /* A structure for generating unique variable IDs. */
 pub struct VarGen(VariableId);
@@ -35,9 +35,9 @@ fn refresh_expr_variables(
             refresh_expr_variables(expr1, map, prover_defs, gen);
             refresh_expr_variables(expr2, map, prover_defs, gen);
         },
-        Expr::Match(expr1, branches) => {
-            refresh_expr_variables(expr1, map, prover_defs, gen);
-            for (pat, expr2) in branches {
+        Expr::Match(matche) => {
+            refresh_expr_variables(&mut matche.0, map, prover_defs, gen);
+            for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
                 let mut map = map.clone();
                 refresh_pattern_variables(pat, &mut map, prover_defs, gen);
                 refresh_expr_variables(expr2, &map, prover_defs, gen);
@@ -237,9 +237,9 @@ fn number_expr_variables(
             number_pattern_variables(&mut binding.0, &mut locals, gen);
             number_expr_variables(expr, &mut locals, globals, gen);
         },
-        Expr::Match(expr1, branches) => {
-            number_expr_variables(expr1, locals, globals, gen);
-            for (pat, expr2) in branches {
+        Expr::Match(matche) => {
+            number_expr_variables(&mut matche.0, locals, globals, gen);
+            for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
                 let mut locals = locals.clone();
                 number_pattern_variables(pat, &mut locals, gen);
                 number_expr_variables(expr2, &mut locals, globals, gen);
@@ -289,7 +289,7 @@ fn apply_functions(
     match &mut expr.v {
         Expr::Application(expr1, expr2) => {
             match &mut expr1.v {
-                Expr::Application(_, _) | Expr::Match(_, _) => {
+                Expr::Application(_, _) | Expr::Match(_) => {
                     apply_functions(expr1, bindings, prover_defs, gen);
                     apply_functions(expr, bindings, prover_defs, gen)
                 },
@@ -361,14 +361,15 @@ fn apply_functions(
             copy_propagate_expr(&mut normal, &new_bindings);
             normal
         },
-        Expr::Match(expr1, branches) => {
-            let val = apply_functions(expr1, bindings, prover_defs, gen);
-            for (pat, expr2) in branches.iter_mut() {
+        Expr::Match(matche) => {
+            let val = apply_functions(&mut matche.0, bindings, prover_defs, gen);
+            for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
                 let mut new_bindings = bindings.clone();
-                let res = match_pattern_expr(pat, &val, &mut new_bindings, prover_defs, gen);
+                let res = match_pattern_expr(&pat, &val, &mut new_bindings, prover_defs, gen);
                 match res {
                     Tribool::True => {
                         let mut normal = apply_functions(expr2, &new_bindings, prover_defs, gen);
+                        *expr = expr2.clone();
                         new_bindings.retain(|k, _v| !bindings.contains_key(k) && !prover_defs.contains(k));
                         copy_propagate_expr(&mut normal, &new_bindings);
                         return normal
@@ -378,8 +379,8 @@ fn apply_functions(
                     Tribool::False => continue,
                 }
             }
-            let expr = TExpr { v: Expr::Match(expr1.clone(), branches.clone()), t: None };
-            panic!("cannot match {} to any pattern in {}", expr1, expr);
+            let expr = TExpr { v: Expr::Match(Match(matche.0.clone(), matche.1.clone(), matche.2.clone())), t: None };
+            panic!("cannot match {} to any pattern in {}", matche.0, expr);
         },
         Expr::Sequence(seq) => {
             let mut val = None;
@@ -501,9 +502,9 @@ fn collect_expr_variables(
             collect_pattern_variables(&binding.0, map);
             collect_expr_variables(body, map);
         },
-        Expr::Match(expr1, branches) => {
-            collect_expr_variables(expr1, map);
-            for (pat, expr2) in branches {
+        Expr::Match(matche) => {
+            collect_expr_variables(&matche.0, map);
+            for (pat, expr2) in matche.1.iter().zip(matche.2.iter()) {
                 collect_pattern_variables(pat, map);
                 collect_expr_variables(expr2, map);
             }
@@ -666,7 +667,7 @@ fn flatten_expression(
             flatten_expression(body, flattened)
         }
         Expr::Function(_) | Expr::Application(_, _) | Expr::Intrinsic(_) |
-        Expr::Match(_, _) =>
+        Expr::Match(_) =>
             unreachable!("functions and matches must already by inlined and eliminated"),
     }
 }
@@ -928,9 +929,9 @@ pub fn copy_propagate_expr(
             copy_propagate_expr(&mut binding.1, substitutions);
             copy_propagate_expr(expr2, substitutions);
         },
-        Expr::Match(expr1, branches) => {
-            copy_propagate_expr(expr1, substitutions);
-            for (_, expr2) in branches {
+        Expr::Match(matche) => {
+            copy_propagate_expr(&mut matche.0, substitutions);
+            for expr2 in &mut matche.2 {
                 copy_propagate_expr(expr2, substitutions);
             }
         },
@@ -1079,7 +1080,8 @@ fn expand_range_intrinsic(
         let mut constraints = vec![];
         let mut bit_bindings = HashMap::new();
         let mut val_constraint = TExpr { v: Expr::Constant(0), t: Some(Type::Int) };
-        let mut witness = TExpr { v: Expr::Product(vec![]), t: Some(Type::Product(vec![])) };
+        let mut pats = vec![];
+        let mut branches = vec![];
         // Constrain the variables involved in this expansion to be bits
         let bit_len = u32::try_from(*bit_len)
             .expect("bit count supplied to range must be non-negative");
@@ -1129,10 +1131,8 @@ fn expand_range_intrinsic(
                 TExpr { v: Expr::Constant(0), t: Some(Type::Int) },
             ));
             // expression: witness = (b, witness)
-            witness = TExpr {
-                v: Expr::Product(vec![bit_var, witness.clone()]),
-                t: Some(Type::Product(vec![Type::Int, witness.t.unwrap()]))
-            };
+            pats.push(Pattern::Constant(i as i32));
+            branches.push(bit_var);
         }
         // constraint: val = 2*(2*(2*(..) + b_2) + b_1) + b_0
         // Uses Horner's method
@@ -1142,10 +1142,16 @@ fn expand_range_intrinsic(
             val.clone(),
         ));
         // value: (b0, (b1, (b2, (...))))
-        constraints.push(witness.clone());
+        let branch_var = Variable::new(gen.generate_id());
+        let branch_vare = TExpr { v: Expr::Variable(branch_var.clone()), t: Some(Type::Int) };
+        let matche = Expr::Match(Match(Box::new(branch_vare), pats, branches));
+        let matche = Box::new(TExpr { v: matche, t: Some(Type::Int) });
+        let array = Expr::Function(Function(vec![Pattern::Variable(branch_var)], matche));
+        let array_type = Some(Type::Function(Box::new(Type::Int), Box::new(Type::Int)));
+        constraints.push(TExpr { v: array, t: array_type.clone() });
         // The aggregate of the above constraints constrains the given value to
         // be the given number of bits
-        let mut constraint = TExpr { v: Expr::Sequence(constraints), t: witness.t };
+        let mut constraint = TExpr { v: Expr::Sequence(constraints), t: array_type };
         // To help the prover derive the bit assignments, surround the
         // constraints with explicit definitions
         for (bit_var, explicit_var) in bit_bindings {
