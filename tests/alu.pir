@@ -121,24 +121,56 @@ def sub8 a b {
     combine8 (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,()))))))))
 };
 
-// Unsigned less than or equal to for 8 bits
+// Unsigned less than or equal to for 8 bits. 1 if true, 0 otherwise
 
-def ule8 a b { range 8 (b-a) };
+def ule8 a b {
+    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,(a8,ar))))))))) = range 9 (256+b-a);
+    a8
+};
 
 // Unsigned less than for 8 bits
 
-def ult8 a b { range 8 (b-a-1) };
+def ult8 a b { ule8 a (b-1) };
 
 // Signed less than or equal to for 8 bits
 
 def slt8 a b {
-    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(1,(a8,ar))))))))) = range 9 (a+256-b);
-    combine8 (a0,(a1,(a2,(a3,(a4,(a5,(a6,(1,(a8,())))))))))
+    def (a0,(a1,(a2,(a3,(a4,(a5,(a6,(a7,(a8,ar))))))))) = range 9 (a+256-b);
+    a7
 };
 
 // Signed less than for 8 bits
 
 def sle8 a b { slt8 a (b+1) };
+
+// Extract the first element of any supplied pair
+
+def fst (a,b) { a };
+
+// Extract the second element of any supplied pair
+
+def snd (a,b) { b };
+
+// 4 bit unsigned Euclidean division
+
+def divrem a3 b0 {
+    def b1 = b0*2;
+    def b2 = b1*2;
+    def b3 = b2*2;
+    def c3 = ult8 b3 a3;
+    def a2 = a3 - c3*b3;
+    def c2 = ult8 b2 a2;
+    def a1 = a2 - c2*b2;
+    def c1 = ult8 b1 a1;
+    def a0 = a1 - c1*b1;
+    def c0 = ult8 b0 a0;
+    def rem = a0 - c0*b0;
+    (combine8 (c0,(c1,(c2,(c3,(0,(0,(0,(0,())))))))), rem)
+};
+
+def div a b { fst (divrem a b) };
+
+def rem a b { snd (divrem a b) };
 
 // Check the operations work correctly
 
@@ -146,14 +178,16 @@ def sle8 a b { slt8 a (b+1) };
 
 254 = not8 1;
 
-ult8 2 3;
+1 = ult8 2 3;
 
-ult8 2 255;
+1 = ult8 2 255;
 
-ult8 0 255;
+1 = ult8 0 255;
 
-slt8 255 0;
+1 = slt8 255 0;
 
-slt8 255 127;
+1 = slt8 255 127;
 
-sle8 5 5;
+1 = sle8 5 5;
+
+(4,1) = divrem 9 2;

@@ -774,7 +774,7 @@ where
                         });
                         true
                     }) => {},
-                    _ => panic!("unsupported constraint encountered")
+                    _ => panic!("unsupported constraint encountered: {}", expr)
                 }
             }
         }

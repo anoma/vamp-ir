@@ -21,21 +21,22 @@ impl VarGen {
 fn refresh_expr_variables(
     expr: &mut TExpr,
     map: &HashMap<VariableId, VariableId>,
+    prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) {
     match &mut expr.v {
         Expr::Sequence(exprs) | Expr::Product(exprs) |
         Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
             for expr in exprs {
-                refresh_expr_variables(expr, map, gen);
+                refresh_expr_variables(expr, map, prover_defs, gen);
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
-            refresh_expr_variables(expr1, map, gen);
-            refresh_expr_variables(expr2, map, gen);
+            refresh_expr_variables(expr1, map, prover_defs, gen);
+            refresh_expr_variables(expr2, map, prover_defs, gen);
         },
         Expr::Negate(expr) => {
-            refresh_expr_variables(expr, map, gen);
+            refresh_expr_variables(expr, map, prover_defs, gen);
         },
         Expr::Constant(_) => {},
         Expr::Variable(var) => {
@@ -46,15 +47,15 @@ fn refresh_expr_variables(
         Expr::Function(fun) => {
             let mut map = map.clone();
             for param in &mut fun.0 {
-                refresh_pattern_variables(param, &mut map, gen);
+                refresh_pattern_variables(param, &mut map, prover_defs, gen);
             }
-            refresh_expr_variables(&mut fun.1, &map, gen);
+            refresh_expr_variables(&mut fun.1, &map, prover_defs, gen);
         },
         Expr::LetBinding(binding, expr) => {
-            refresh_expr_variables(&mut binding.1, map, gen);
+            refresh_expr_variables(&mut binding.1, map, prover_defs, gen);
             let mut map = map.clone();
-            refresh_pattern_variables(&mut binding.0, &mut map, gen);
-            refresh_expr_variables(expr, &map, gen);
+            refresh_pattern_variables(&mut binding.0, &mut map, prover_defs, gen);
+            refresh_expr_variables(expr, &map, prover_defs, gen);
         },
     }
 }
@@ -64,13 +65,14 @@ fn match_pattern_expr(
     pat: &Pattern,
     expr: &TExpr,
     map: &mut HashMap<VariableId, TExpr>,
+    prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) {
     match (pat, &expr.v) {
         (pat, Expr::Variable(var)) if map.contains_key(&var.id) =>
-            match_pattern_expr(pat, &map[&var.id].clone(), map, gen),
+            match_pattern_expr(pat, &map[&var.id].clone(), map, prover_defs, gen),
         (Pattern::As(pat, var), _) => {
-            match_pattern_expr(pat, expr, map, gen);
+            match_pattern_expr(pat, expr, map, prover_defs, gen);
             map.insert(var.id, expr.clone().into());
         },
         (Pattern::Variable(var), expr) => {
@@ -80,17 +82,20 @@ fn match_pattern_expr(
             if pats.len() == exprs.len() =>
         {
             for (pat, expr) in pats.iter().zip(exprs.iter()) {
-                match_pattern_expr(pat, expr, map, gen);
+                match_pattern_expr(pat, expr, map, prover_defs, gen);
             }
         },
         (Pattern::Product(pats), Expr::Variable(var)) => {
             let mut inner_exprs = vec![];
             for _ in pats {
                 let new_var = Variable::new(gen.generate_id());
+                if prover_defs.contains(&var.id) {
+                    prover_defs.insert(new_var.id);
+                }
                 inner_exprs.push(Expr::Variable(new_var).into());
             }
             map.insert(var.id, Expr::Product(inner_exprs).into());
-            match_pattern_expr(pat, expr, map, gen);
+            match_pattern_expr(pat, expr, map, prover_defs, gen);
         },
         (Pattern::Constant(_), Expr::Constant(_) | Expr::Variable(_) |
          Expr::Infix(_, _, _)) => {},
@@ -102,21 +107,28 @@ fn match_pattern_expr(
 fn refresh_pattern_variables(
     pat: &mut Pattern,
     map: &mut HashMap<VariableId, VariableId>,
+    prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) {
     match pat {
         Pattern::As(pat, var) => {
-            refresh_pattern_variables(pat, map, gen);
+            refresh_pattern_variables(pat, map, prover_defs, gen);
             map.insert(var.id, gen.generate_id());
+            if prover_defs.contains(&var.id) {
+                prover_defs.insert(map[&var.id]);
+            }
             var.id = map[&var.id];
         },
         Pattern::Product(pats) => {
             for pat in pats {
-                refresh_pattern_variables(pat, map, gen);
+                refresh_pattern_variables(pat, map, prover_defs, gen);
             }
         },
         Pattern::Variable(var) => {
             map.insert(var.id, gen.generate_id());
+            if prover_defs.contains(&var.id) {
+                prover_defs.insert(map[&var.id]);
+            }
             var.id = map[&var.id];
         },
         Pattern::Constant(_) => {},
@@ -256,17 +268,19 @@ fn apply_functions(
                     *expr = intr.clone().apply(expr2_norm, bindings, prover_defs, gen);
                     apply_functions(expr, bindings, prover_defs, gen)
                 },
-                Expr::Variable(var) => {
-                    if let Some(val) = bindings.get(&var.id) {
-                        *expr = Expr::Application(Box::new(val.clone()), expr2.clone()).into();
+                Expr::Variable(var) => match bindings.get(&var.id) {
+                    Some(val) if !prover_defs.contains(&var.id) => {
+                        *expr = Expr::Application(
+                            Box::new(val.clone()),
+                            expr2.clone()
+                        ).into();
                         apply_functions(expr, bindings, prover_defs, gen)
-                    } else {
-                        panic!("encountered unbound variable {}", var)
-                    }
+                    },
+                    _ => panic!("encountered unbound variable {}", var)
                 },
                 Expr::Function(_) => {
                     let substitutions = HashMap::new();
-                    refresh_expr_variables(expr1, &substitutions, gen);
+                    refresh_expr_variables(expr1, &substitutions, prover_defs, gen);
                     if let Expr::Function(fun) = &mut expr1.v {
                         if fun.0.is_empty() {
                             unreachable!("functions should have at least one parameter");
@@ -311,9 +325,9 @@ fn apply_functions(
         Expr::LetBinding(binding, body) => {
             let val = apply_functions(&mut *binding.1, bindings, prover_defs, gen);
             let mut new_bindings = bindings.clone();
-            match_pattern_expr(&binding.0, &val, &mut new_bindings, gen);
+            match_pattern_expr(&binding.0, &val, &mut new_bindings, prover_defs, gen);
             let mut normal = apply_functions(body, &new_bindings, prover_defs, gen);
-            new_bindings.retain(|k, _v| !bindings.contains_key(k));
+            new_bindings.retain(|k, _v| !bindings.contains_key(k) && !prover_defs.contains(k));
             copy_propagate_expr(&mut normal, &new_bindings);
             normal
         },
@@ -340,12 +354,9 @@ fn apply_functions(
             Expr::Negate(Box::new(apply_functions(expr1, &bindings, prover_defs, gen))).into()
         },
         Expr::Constant(val) => Expr::Constant(*val).into(),
-        Expr::Variable(var) => {
-            if let Some(val) = bindings.get(&var.id) {
-                val.clone()
-            } else {
-                expr.clone()
-            }
+        Expr::Variable(var) => match bindings.get(&var.id) {
+            Some(val) if !prover_defs.contains(&var.id) => val.clone(),
+            _ => expr.clone(),
         },
         Expr::Function(fun) => Expr::Function(fun.clone()).into(),
         Expr::Intrinsic(intr) => {
@@ -366,7 +377,7 @@ fn apply_def_functions(
     gen: &mut VarGen,
 ) {
     let val = apply_functions(&mut def.0.1, bindings, prover_defs, gen);
-    match_pattern_expr(&def.0.0, &val, bindings, gen);
+    match_pattern_expr(&def.0.0, &val, bindings, prover_defs, gen);
 }
 
 /* Replace each function application occuring in the module with a let
@@ -826,7 +837,7 @@ pub fn compile(mut module: Module) -> Module {
     let mut module_3ac = Module::default();
     flatten_module_to_3ac(&constraints, &prover_defs, &mut module_3ac, &mut vg);
     // Start doing basic optimizations
-    copy_propagate(&mut module_3ac);
+    copy_propagate(&mut module_3ac, &prover_defs);
     eliminate_dead_equalities(&mut module_3ac);
     eliminate_dead_definitions(&mut module_3ac);
     module_3ac
@@ -869,27 +880,29 @@ pub fn copy_propagate_expr(
 pub fn copy_propagate_def(
     def: &mut Definition,
     substitutions: &mut HashMap<VariableId, TExpr>,
+    prover_defs: &HashSet<VariableId>,
 ) {
-    if let Pattern::Variable(v1) = &mut def.0.0 {
-        copy_propagate_expr(&mut def.0.1, &substitutions);
-        match &def.0.1.v {
-            Expr::Variable(_) | Expr::Constant(_) => {
-                substitutions.insert(v1.id, *def.0.1.clone());
-            },
-            _ => {},
-        }
-    } else {
-        panic!("only variable patterns should be present at this stage");
+    match &mut def.0.0 {
+        Pattern::Variable(v1) => {
+            copy_propagate_expr(&mut def.0.1, &substitutions);
+            match &def.0.1.v {
+                Expr::Variable(_) | Expr::Constant(_) if !prover_defs.contains(&v1.id) => {
+                    substitutions.insert(v1.id, *def.0.1.clone());
+                },
+                _ => {},
+            }
+        },
+        _ => panic!("only variable patterns should be present at this stage"),
     }
 }
 
 /* Replace all variables defined to be equal with a single representative.
  * If a variable is proven to be equal to a constant, then replace its
  * occurences with the constant. */
-pub fn copy_propagate(module: &mut Module) {
+pub fn copy_propagate(module: &mut Module, prover_defs: &HashSet<VariableId>) {
     let mut substitutions: HashMap<VariableId, TExpr> = HashMap::new();
     for def in &mut module.defs {
-        copy_propagate_def(def, &mut substitutions);
+        copy_propagate_def(def, &mut substitutions, prover_defs);
     }
     for expr in &mut module.exprs {
         copy_propagate_expr(expr, &substitutions);
