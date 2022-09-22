@@ -35,6 +35,14 @@ fn refresh_expr_variables(
             refresh_expr_variables(expr1, map, prover_defs, gen);
             refresh_expr_variables(expr2, map, prover_defs, gen);
         },
+        Expr::Match(expr1, branches) => {
+            refresh_expr_variables(expr1, map, prover_defs, gen);
+            for (pat, expr2) in branches {
+                let mut map = map.clone();
+                refresh_pattern_variables(pat, &mut map, prover_defs, gen);
+                refresh_expr_variables(expr2, &map, prover_defs, gen);
+            }
+        },
         Expr::Negate(expr) => {
             refresh_expr_variables(expr, map, prover_defs, gen);
         },
@@ -60,6 +68,9 @@ fn refresh_expr_variables(
     }
 }
 
+#[derive(PartialEq, PartialOrd)]
+enum Tribool { True, Indeterminate, False }
+
 /* Match the given expression against the given pattern. */
 fn match_pattern_expr(
     pat: &Pattern,
@@ -67,23 +78,30 @@ fn match_pattern_expr(
     map: &mut HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
-) {
+) -> Tribool {
     match (pat, &expr.v) {
         (pat, Expr::Variable(var)) if map.contains_key(&var.id) =>
             match_pattern_expr(pat, &map[&var.id].clone(), map, prover_defs, gen),
         (Pattern::As(pat, var), _) => {
-            match_pattern_expr(pat, expr, map, prover_defs, gen);
+            let res = match_pattern_expr(pat, expr, map, prover_defs, gen);
             map.insert(var.id, expr.clone().into());
+            res
         },
         (Pattern::Variable(var), expr) => {
             map.insert(var.id, expr.clone().into());
+            Tribool::True
         },
         (Pattern::Product(pats), Expr::Product(exprs))
             if pats.len() == exprs.len() =>
         {
+            let mut res = Tribool::True;
             for (pat, expr) in pats.iter().zip(exprs.iter()) {
-                match_pattern_expr(pat, expr, map, prover_defs, gen);
+                let inner_res = match_pattern_expr(pat, expr, map, prover_defs, gen);
+                if inner_res < res {
+                    res = inner_res;
+                }
             }
+            res
         },
         (Pattern::Product(pats), Expr::Variable(var)) => {
             let mut inner_exprs = vec![];
@@ -95,10 +113,14 @@ fn match_pattern_expr(
                 inner_exprs.push(Expr::Variable(new_var).into());
             }
             map.insert(var.id, Expr::Product(inner_exprs).into());
-            match_pattern_expr(pat, expr, map, prover_defs, gen);
+            match_pattern_expr(pat, expr, map, prover_defs, gen)
         },
-        (Pattern::Constant(_), Expr::Constant(_) | Expr::Variable(_) |
-         Expr::Infix(_, _, _)) => {},
+        (Pattern::Constant(a), Expr::Constant(b)) if a == b =>
+            Tribool::True,
+        (Pattern::Constant(a), Expr::Constant(b)) if a != b =>
+            Tribool::False,
+        (Pattern::Constant(_), Expr::Variable(_) | Expr::Infix(_, _, _)) =>
+            Tribool::Indeterminate,
         _ => panic!("unable to match {} against {}", expr, pat),
     }
 }
@@ -215,6 +237,14 @@ fn number_expr_variables(
             number_pattern_variables(&mut binding.0, &mut locals, gen);
             number_expr_variables(expr, &mut locals, globals, gen);
         },
+        Expr::Match(expr1, branches) => {
+            number_expr_variables(expr1, locals, globals, gen);
+            for (pat, expr2) in branches {
+                let mut locals = locals.clone();
+                number_pattern_variables(pat, &mut locals, gen);
+                number_expr_variables(expr2, &mut locals, globals, gen);
+            }
+        },
     }
 }
 
@@ -259,7 +289,7 @@ fn apply_functions(
     match &mut expr.v {
         Expr::Application(expr1, expr2) => {
             match &mut expr1.v {
-                Expr::Application(_, _) => {
+                Expr::Application(_, _) | Expr::Match(_, _) => {
                     apply_functions(expr1, bindings, prover_defs, gen);
                     apply_functions(expr, bindings, prover_defs, gen)
                 },
@@ -330,6 +360,26 @@ fn apply_functions(
             new_bindings.retain(|k, _v| !bindings.contains_key(k) && !prover_defs.contains(k));
             copy_propagate_expr(&mut normal, &new_bindings);
             normal
+        },
+        Expr::Match(expr1, branches) => {
+            let val = apply_functions(expr1, bindings, prover_defs, gen);
+            for (pat, expr2) in branches.iter_mut() {
+                let mut new_bindings = bindings.clone();
+                let res = match_pattern_expr(pat, &val, &mut new_bindings, prover_defs, gen);
+                match res {
+                    Tribool::True => {
+                        let mut normal = apply_functions(expr2, &new_bindings, prover_defs, gen);
+                        new_bindings.retain(|k, _v| !bindings.contains_key(k) && !prover_defs.contains(k));
+                        copy_propagate_expr(&mut normal, &new_bindings);
+                        return normal
+                    },
+                    Tribool::Indeterminate =>
+                        panic!("cannot statically match {} against {}", val, pat),
+                    Tribool::False => continue,
+                }
+            }
+            let expr = TExpr { v: Expr::Match(expr1.clone(), branches.clone()), t: None };
+            panic!("cannot match {} to any pattern in {}", expr1, expr);
         },
         Expr::Sequence(seq) => {
             let mut val = None;
@@ -450,6 +500,13 @@ fn collect_expr_variables(
             collect_expr_variables(&*binding.1, map);
             collect_pattern_variables(&binding.0, map);
             collect_expr_variables(body, map);
+        },
+        Expr::Match(expr1, branches) => {
+            collect_expr_variables(expr1, map);
+            for (pat, expr2) in branches {
+                collect_pattern_variables(pat, map);
+                collect_expr_variables(expr2, map);
+            }
         },
         Expr::Constant(_) => {},
     }
@@ -608,8 +665,9 @@ fn flatten_expression(
             flatten_binding(&binding.0, &val, flattened);
             flatten_expression(body, flattened)
         }
-        Expr::Function(_) | Expr::Application(_, _) | Expr::Intrinsic(_) =>
-            unreachable!("functions must already by inlined and eliminated"),
+        Expr::Function(_) | Expr::Application(_, _) | Expr::Intrinsic(_) |
+        Expr::Match(_, _) =>
+            unreachable!("functions and matches must already by inlined and eliminated"),
     }
 }
 
@@ -869,6 +927,12 @@ pub fn copy_propagate_expr(
         Expr::LetBinding(binding, expr2) => {
             copy_propagate_expr(&mut binding.1, substitutions);
             copy_propagate_expr(expr2, substitutions);
+        },
+        Expr::Match(expr1, branches) => {
+            copy_propagate_expr(expr1, substitutions);
+            for (_, expr2) in branches {
+                copy_propagate_expr(expr2, substitutions);
+            }
         },
         Expr::Constant(_) | Expr::Variable(_) => {},
     }

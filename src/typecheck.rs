@@ -63,6 +63,12 @@ fn allocate_expr_types(
             allocate_expr_types(&mut *binding.1, gen);
             allocate_expr_types(body, gen);
         },
+        Expr::Match(expr1, branches) => {
+            allocate_expr_types(expr1, gen);
+            for (_, expr2) in branches {
+                allocate_expr_types(expr2, gen);
+            }
+        },
         Expr::Constant(_) | Expr::Variable(_) => {},
     }
 }
@@ -480,6 +486,19 @@ fn infer_expr_types(
             unify_types(&expr_var, &func_var, types);
             infer_expr_types(expr1, &env, types, gen);
         },
+        Expr::Match(expr1, branches) => {
+            let expr_var = expr_type_var(expr);
+            let expr1_var = expr_type_var(expr1);
+            for (pat, expr2) in branches {
+                let pat_var = pattern_type(pat);
+                unify_types(&pat_var, &expr1_var, types);
+                let expr2_var = expr_type_var(expr2);
+                unify_types(&expr_var, &expr2_var, types);
+            }
+            for (_, expr2) in branches {
+                infer_expr_types(expr2, &env, types, gen);
+            }
+        },
         Expr::Intrinsic(Intrinsic { args, imp_typ, ..}) => {
             let expr_var = expr_type_var(expr);
             let mut func_var = expr_var.clone();
@@ -607,9 +626,17 @@ fn expand_variables(
             expand_variables(body, map, types, gen);
         },
         Expr::Sequence(exprs) | Expr::Product(exprs) |
-        Expr::Intrinsic(Intrinsic { args: exprs, .. })=> {
+        Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
             for expr in exprs {
                 expand_variables(expr, map, types, gen);
+            }
+        },
+        Expr::Match(expr1, branches) => {
+            expand_variables(expr1, map, types, gen);
+            let pat_typ = expand_type(expr1.t.as_ref().unwrap(), types);
+            for (pat, expr2) in branches {
+                expand_pattern_variables(pat, &pat_typ, map, gen);
+                expand_variables(expr2, map, types, gen);
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
@@ -753,6 +780,14 @@ fn unitize_expr_functions(
         Expr::Sequence(exprs) | Expr::Product(exprs) => {
             for expr in exprs {
                 unitize_expr_functions(expr, types);
+            }
+        },
+        Expr::Match(expr1, branches) => {
+            unitize_expr_functions(expr1, types);
+            let pat_type = expr1.t.as_ref().unwrap();
+            for (pat, expr2) in branches {
+                *pat = unitize_pattern_functions(pat.clone(), pat_type, types);
+                unitize_expr_functions(expr2, types);
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {

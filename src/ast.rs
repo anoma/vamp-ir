@@ -289,6 +289,7 @@ pub enum Expr {
     Function(Function),
     Intrinsic(Intrinsic),
     LetBinding(LetBinding, Box<TExpr>),
+    Match(Box<TExpr>, Vec<(Pattern, TExpr)>),
 }
 
 impl TExpr {
@@ -503,6 +504,20 @@ impl fmt::Display for TExpr {
                 } else {
                     write!(f, "def {};\n{}", binding, expr)?;
                 }
+            },
+            Expr::Match(expr1, branches) => {
+                writeln!(f, "match {} {{", expr1)?;
+                for (pat, expr2) in branches {
+                    let mut body = String::new();
+                    writeln!(body, "{}", expr2)?;
+                    if body.contains('\n') {
+                        body = body.replace("\n", "\n    ");
+                        writeln!(f, "  {} => {{\n    {}}},", pat, body)?;
+                    } else {
+                        writeln!(f, "  {} => {},", pat, expr2)?;
+                    }
+                }
+                writeln!(f, "}}")?;
             },
         }
         Ok(())
