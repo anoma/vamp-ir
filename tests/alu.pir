@@ -1,3 +1,11 @@
+/* An implementation of standard arithmetic logic unit operations in vampir. Run
+   as follows:
+   vamp-ir setup params.pp
+   vamp-ir compile tests/alu.pir params.pp circuit.plonk
+   vamp-ir prove circuit.plonk params.pp proof.plonk
+   vamp-ir verify circuit.plonk params.pp proof.plonk
+*/
+
 // Pair up corresponding elements of each tuple
 
 def zip a b i { (a i, b i) };

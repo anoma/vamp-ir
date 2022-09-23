@@ -148,7 +148,6 @@ fn compile_cmd(args: &[String]) {
     let unparsed_file = fs::read_to_string(args[0].clone()).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
     let module_3ac = compile(module);
-    println!("{}\n", module_3ac);
 
     println!("* Synthesizing arithmetic circuit...");
     let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());

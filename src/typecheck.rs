@@ -109,7 +109,7 @@ impl Display for Type {
         match self {
             Type::Int => write!(f, "int"),
             Type::Variable(var) => write!(f, "{}", var),
-            Type::Function(a, b) => write!(f, "{} -> {}", a, b),
+            Type::Function(a, b) => write!(f, "({} -> {})", a, b),
             Type::Product(prod) => {
                 write!(f, "(")?;
                 let mut iter = prod.iter();
@@ -833,5 +833,14 @@ pub fn unitize_module_functions(
     }
     for expr in &mut module.exprs {
         unitize_expr_functions(expr, types);
+    }
+}
+
+/* Print out the types of top-level program definitions. */
+pub fn print_types(module: &Module, types: &HashMap<VariableId, Type>) {
+    for def in &module.defs {
+        if let Some(typ) = &def.0.1.t {
+            println!("{}: {}", def.0.0, expand_type(typ, types));
+        }
     }
 }

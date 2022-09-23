@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, Type};
+use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, print_types, Type};
 use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function, Match};
 
 /* A structure for generating unique variable IDs. */
@@ -877,22 +877,21 @@ pub fn compile(mut module: Module) -> Module {
     let mut bindings = HashMap::new();
     register_range_intrinsic(&mut globals, &mut bindings, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
-    println!("{}\n", module);
-    infer_module_types(&mut module, &globals, &mut HashMap::new(), &mut vg);
+    let mut prog_types = HashMap::new();
+    infer_module_types(&mut module, &globals, &mut prog_types, &mut vg);
+    println!("** Inferring types...");
+    print_types(&module, &prog_types);
     let mut prover_defs = HashSet::new();
     apply_module_functions(&mut module, &mut bindings, &mut prover_defs, &mut vg);
-    println!("{}\n", module);
     let mut types = HashMap::new();
     infer_module_types(&mut module, &globals, &mut types, &mut vg);
     // Expand all tuple variables
     expand_module_variables(&mut module, &mut types, &mut vg);
     // Unitize all function expressions
     unitize_module_functions(&mut module, &mut types);
-    println!("{}\n", module);
     // Start generating arithmetic constraints
     let mut constraints = Module::default();
     flatten_module(&module, &mut constraints);
-    println!("{}\n", constraints);
     let mut module_3ac = Module::default();
     flatten_module_to_3ac(&constraints, &prover_defs, &mut module_3ac, &mut vg);
     // Start doing basic optimizations
@@ -1130,28 +1129,42 @@ fn expand_range_intrinsic(
                 ),
                 TExpr { v: Expr::Constant(0), t: Some(Type::Int) },
             ));
-            // expression: witness = (b, witness)
+            // Record bit index and value for the coming array creation
             pats.push(Pattern::Constant(i as i32));
             branches.push(bit_var);
         }
         // constraint: val = 2*(2*(2*(..) + b_2) + b_1) + b_0
-        // Uses Horner's method
+        // Uses Horner's method.
         constraints.push(infix_op(
             InfixOp::Equal,
             val_constraint,
             val.clone(),
         ));
-        // value: (b0, (b1, (b2, (...))))
+        // Make a function that maps bit indicies to bit values. I.e.
+        // fun x { match x { 0 => b_0, 1 => b_1, ..., n => b_n } }
         let branch_var = Variable::new(gen.generate_id());
-        let branch_vare = TExpr { v: Expr::Variable(branch_var.clone()), t: Some(Type::Int) };
-        let matche = Expr::Match(Match(Box::new(branch_vare), pats, branches));
-        let matche = Box::new(TExpr { v: matche, t: Some(Type::Int) });
-        let array = Expr::Function(Function(vec![Pattern::Variable(branch_var)], matche));
-        let array_type = Some(Type::Function(Box::new(Type::Int), Box::new(Type::Int)));
-        constraints.push(TExpr { v: array, t: array_type.clone() });
+        let array_type = Some(Type::Function(
+            Box::new(Type::Int),
+            Box::new(Type::Int),
+        ));
+        let array = TExpr {
+            v: Expr::Function(Function(
+                vec![Pattern::Variable(branch_var.clone())],
+                Box::new(TExpr {
+                    v: Expr::Match(Match(Box::new(TExpr {
+                        v: Expr::Variable(branch_var),
+                        t: Some(Type::Int),
+                    }), pats, branches)),
+                    t: Some(Type::Int) }))),
+            t: array_type.clone(),
+        };
+        constraints.push(array);
         // The aggregate of the above constraints constrains the given value to
         // be the given number of bits
-        let mut constraint = TExpr { v: Expr::Sequence(constraints), t: array_type };
+        let mut constraint = TExpr {
+            v: Expr::Sequence(constraints),
+            t: array_type
+        };
         // To help the prover derive the bit assignments, surround the
         // constraints with explicit definitions
         for (bit_var, explicit_var) in bit_bindings {
