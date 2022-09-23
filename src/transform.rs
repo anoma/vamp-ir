@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, print_types, Type};
+use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, Type};
 use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function, Match};
 
 /* A structure for generating unique variable IDs. */
@@ -877,12 +877,10 @@ pub fn compile(mut module: Module) -> Module {
     let mut bindings = HashMap::new();
     register_range_intrinsic(&mut globals, &mut bindings, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
-    let mut prog_types = HashMap::new();
-    infer_module_types(&mut module, &globals, &mut prog_types, &mut vg);
-    println!("** Inferring types...");
-    print_types(&module, &prog_types);
     let mut prover_defs = HashSet::new();
     apply_module_functions(&mut module, &mut bindings, &mut prover_defs, &mut vg);
+    // Unitize all function expressions
+    unitize_module_functions(&mut module, &mut HashMap::new());
     let mut types = HashMap::new();
     infer_module_types(&mut module, &globals, &mut types, &mut vg);
     // Expand all tuple variables
@@ -1078,9 +1076,8 @@ fn expand_range_intrinsic(
     if let [TExpr { v: Expr::Constant(bit_len), ..}, val] = &args[..] {
         let mut constraints = vec![];
         let mut bit_bindings = HashMap::new();
-        let mut val_constraint = TExpr { v: Expr::Constant(0), t: Some(Type::Int) };
-        let mut pats = vec![];
-        let mut branches = vec![];
+        let mut val_constraint = TExpr { v: Expr::Constant(0), t: None };
+        let mut witnesses = vec![];
         // Constrain the variables involved in this expansion to be bits
         let bit_len = u32::try_from(*bit_len)
             .expect("bit count supplied to range must be non-negative");
@@ -1130,8 +1127,7 @@ fn expand_range_intrinsic(
                 TExpr { v: Expr::Constant(0), t: Some(Type::Int) },
             ));
             // Record bit index and value for the coming array creation
-            pats.push(Pattern::Constant(i as i32));
-            branches.push(bit_var);
+            witnesses.insert(0, bit_var);
         }
         // constraint: val = 2*(2*(2*(..) + b_2) + b_1) + b_0
         // Uses Horner's method.
@@ -1140,30 +1136,13 @@ fn expand_range_intrinsic(
             val_constraint,
             val.clone(),
         ));
-        // Make a function that maps bit indicies to bit values. I.e.
-        // fun x { match x { 0 => b_0, 1 => b_1, ..., n => b_n } }
-        let branch_var = Variable::new(gen.generate_id());
-        let array_type = Some(Type::Function(
-            Box::new(Type::Int),
-            Box::new(Type::Int),
-        ));
-        let array = TExpr {
-            v: Expr::Function(Function(
-                vec![Pattern::Variable(branch_var.clone())],
-                Box::new(TExpr {
-                    v: Expr::Match(Match(Box::new(TExpr {
-                        v: Expr::Variable(branch_var),
-                        t: Some(Type::Int),
-                    }), pats, branches)),
-                    t: Some(Type::Int) }))),
-            t: array_type.clone(),
-        };
-        constraints.push(array);
+        // expression: (b0, b1, ..., bN)
+        constraints.push(TExpr { v: Expr::Product(witnesses), t: None });
         // The aggregate of the above constraints constrains the given value to
         // be the given number of bits
         let mut constraint = TExpr {
             v: Expr::Sequence(constraints),
-            t: array_type
+            t: None,
         };
         // To help the prover derive the bit assignments, surround the
         // constraints with explicit definitions

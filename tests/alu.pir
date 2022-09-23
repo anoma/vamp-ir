@@ -8,26 +8,26 @@
 
 // Pair up corresponding elements of each tuple
 
-def zip a b i { (a i, b i) };
+def zip8 (a0,a1,a2,a3,a4,a5,a6,a7) (b0,b1,b2,b3,b4,b5,b6,b7) {
+    ((a0,b0),(a1,b1),(a2,b2),(a3,b3),(a4,b4),(a5,b5),(a6,b6),(a7,b7))
+};
 
 // Apply function to each element of tuple
 
-def map f g i { f (g i) };
+def map f (g0,g1,g2,g3,g4,g5,g6,g7) {
+    (f g0, f g1, f g2, f g3, f g4, f g5, f g6, f g7)
+};
 
 // Multiply each tuple element by corresponding unit
 
-def combine8 a {
-    (a 0) + 2*(a 1) + 4*(a 2) + 8*(a 3) + 16*(a 4) + 32*(a 5) + 64*(a 6) + 128*(a 7)
-};
-
-def combine8t (a0,a1,a2,a3,a4,a5,a6,a7) {
+def combine8 (a0,a1,a2,a3,a4,a5,a6,a7) {
     a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7
 };
 
 // Apply given function to corresponding bit-pairs in bit representation
 
 def bitwise8 g a b {
-    def zipped = zip (range 8 a) (range 8 b);
+    def zipped = zip8 (range 8 a) (range 8 b);
     def new_bits = map g zipped;
     combine8 new_bits
 };
@@ -81,55 +81,58 @@ def apply7 f x { f (apply6 f x) };
 // Arithmetic shift right for 8 bit values
 
 def ashr8 x {
-    def a = range 8 x;
-    combine8t (a 1, a 2, a 3, a 4, a 5, a 6, a 7, a 7)
+    def (a0,a1,a2,a3,a4,a5,a6,a7) = range 8 x;
+    combine8 (a1, a2, a3, a4, a5, a6, a7, a7)
 };
 
 // Logical shift right for 8 bit values
 
 def lshr8 x {
-    def a = range 8 x;
-    combine8t (a 1, a 2, a 3, a 4, a 5, a 6, a 7, 0)
+    def (a0,a1,a2,a3,a4,a5,a6,a7) = range 8 x;
+    combine8 (a1, a2, a3, a4, a5, a6, a7, 0)
 };
 
 // Shift left for 8 bit values
 
 def shl8 x {
-    def a = range 8 x;
-    combine8t (0, a 0, a 1, a 2, a 3, a 4, a 5, a 6)
+    def (a0,a1,a2,a3,a4,a5,a6,a7) = range 8 x;
+    combine8 (0, a0, a1, a2, a3, a4, a5, a6)
 };
 
 // Rotate right for 8 bit values
 
 def ror8 x {
-    def a = range 8 x;
-    combine8t (a 1, a 2, a 3, a 4, a 5, a 6, a 7, a 0)
+    def (a0,a1,a2,a3,a4,a5,a6,a7) = range 8 x;
+    combine8 (a1, a2, a3, a4, a5, a6, a7, a0)
 };
 
 // Rotate left for 8 bit values
 
 def rol8 x {
-    def a = range 8 x;
-    combine8t (a 7, a 0, a 1, a 2, a 3, a 4, a 5, a 6)
+    def (a0,a1,a2,a3,a4,a5,a6,a7) = range 8 x;
+    combine8 (a7, a0, a1, a2, a3, a4, a5, a6)
 };
 
 // Add two 8-bit values modulo 8
 
 def add8 a b {
-    def a = range 9 (a+b);
-    combine8t (a 0, a 1, a 2, a 3, a 4, a 5, a 6, a 7)
+    def (a0,a1,a2,a3,a4,a5,a6,a7,a8) = range 9 (a+b);
+    combine8 (a0, a1, a2, a3, a4, a5, a6, a7)
 };
 
 // Subtract two 8-bit values modulo 8
 
 def sub8 a b {
-    def a = range 9 (a+256-b);
-    combine8t (a 0, a 1, a 2, a 3, a 4, a 5, a 6, a 7)
+    def (a0,a1,a2,a3,a4,a5,a6,a7,a8) = range 9 (a+256-b);
+    combine8 (a0, a1, a2, a3, a4, a5, a6, a7)
 };
 
 // Unsigned less than or equal to for 8 bits. 1 if true, 0 otherwise
 
-def ule8 a b { range 9 (256+b-a) 8 };
+def ule8 a b {
+    def (c0,c1,c2,c3,c4,c5,c6,c7,c8) = range 9 (256+b-a);
+    c8
+};
 
 // Unsigned less than for 8 bits
 
@@ -137,7 +140,10 @@ def ult8 a b { ule8 a (b-1) };
 
 // Signed less than or equal to for 8 bits
 
-def slt8 a b { range 9 (a+256-b) 7 };
+def slt8 a b {
+    def (c0,c1,c2,c3,c4,c5,c6,c7,c8) = range 9 (a+256-b);
+    c7
+};
 
 // Signed less than for 8 bits
 
@@ -165,7 +171,7 @@ def divrem a3 b0 {
     def a0 = a1 - c1*b1;
     def c0 = ult8 b0 a0;
     def rem = a0 - c0*b0;
-    (combine8t (c0, c1, c2, c3, 0, 0, 0, 0), rem)
+    (combine8 (c0, c1, c2, c3, 0, 0, 0, 0), rem)
 };
 
 def div a b { fst (divrem a b) };

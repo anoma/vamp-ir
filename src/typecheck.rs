@@ -795,8 +795,9 @@ fn unitize_expr_functions(
             unitize_expr_functions(expr2, types);
         },
         Expr::LetBinding(binding, body) => {
-            let binding_type = binding.1.t.as_ref().unwrap();
-            binding.0 = unitize_pattern_functions(binding.0.clone(), binding_type, types);
+            if let Some(binding_type) = binding.1.t.as_ref() {
+                binding.0 = unitize_pattern_functions(binding.0.clone(), binding_type, types);
+            }
             unitize_expr_functions(&mut *binding.1, types);
             unitize_expr_functions(body, types);
         },
@@ -818,8 +819,9 @@ fn unitize_def_functions(
     def: &mut Definition,
     types: &mut HashMap<VariableId, Type>,
 ) {
-    let binding_type = def.0.1.t.as_ref().unwrap();
-    def.0.0 = unitize_pattern_functions(def.0.0.clone(), binding_type, types);
+    if let Some(binding_type) = def.0.1.t.as_ref() {
+        def.0.0 = unitize_pattern_functions(def.0.0.clone(), binding_type, types);
+    }
     unitize_expr_functions(&mut *def.0.1, types);
 }
 
@@ -833,14 +835,5 @@ pub fn unitize_module_functions(
     }
     for expr in &mut module.exprs {
         unitize_expr_functions(expr, types);
-    }
-}
-
-/* Print out the types of top-level program definitions. */
-pub fn print_types(module: &Module, types: &HashMap<VariableId, Type>) {
-    for def in &module.defs {
-        if let Some(typ) = &def.0.1.t {
-            println!("{}: {}", def.0.0, expand_type(typ, types));
-        }
     }
 }
