@@ -158,8 +158,9 @@ impl fmt::Display for LetBinding {
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Pattern {
+    Unit,
     As(Box<Pattern>, Variable),
-    Product(Vec<Pattern>),
+    Product(Box<Pattern>, Box<Pattern>),
     Variable(Variable),
     Constant(i32),
 }
@@ -181,15 +182,15 @@ impl Pattern {
     pub fn parse_pat1(pair: Pair<Rule>) -> Option<Self> {
         if pair.as_rule() != Rule::pattern1 { return None }
         let mut pairs = pair.into_inner();
-        let pair = pairs.next().expect("pattern should not be empty");
+        let pair = pairs.next_back().expect("pattern should not be empty");
         let mut pats =
-            vec![Self::parse_pat2(pair).expect("expression should start with product")];
-        while let Some(pair) = pairs.next() {
+            Self::parse_pat2(pair).expect("expression should start with product");
+        while let Some(pair) = pairs.next_back() {
             let rhs = Self::parse_pat2(pair)
                 .expect("expected RHS to be a product");
-            pats.push(rhs);
+            pats = Self::Product(Box::new(rhs), Box::new(pats));
         }
-        Some(if pats.len() == 1 { pats[0].clone() } else { Self::Product(pats) })
+        Some(pats)
     }
 
     pub fn parse_pat2(pair: Pair<Rule>) -> Option<Self> {
@@ -198,7 +199,7 @@ impl Pattern {
         let pair = pairs.next_back().expect("expression should not be empty");
         match pair.as_rule() {
             Rule::constant if pair.as_str().starts_with("(") => {
-                Some(Self::Product(vec![]))
+                Some(Self::Unit)
             },
             Rule::constant => {
                 let value = pair.as_str().parse().ok().expect("constant should be an integer");
@@ -215,15 +216,15 @@ impl Pattern {
 
     pub fn to_expr(&self) -> TExpr {
         match self {
+            Self::Unit => Expr::Unit.into(),
             Self::Constant(val) => Expr::Constant(*val).into(),
             Self::Variable(var) => Expr::Variable(var.clone()).into(),
             Self::As(pat, _name) => pat.to_expr(),
-            Self::Product(pats) => {
-                let mut exprs = vec![];
-                for pat in pats {
-                    exprs.push(pat.to_expr());
-                }
-                Expr::Product(exprs).into()
+            Self::Product(pat1, pat2) => {
+                Expr::Product(
+                    Box::new(pat1.to_expr()),
+                    Box::new(pat2.to_expr()),
+                ).into()
             }
         }
     }
@@ -235,14 +236,14 @@ impl Pattern {
             (Self::Variable(var), typ) =>
                 TExpr { v:Expr::Variable(var.clone()), t: Some(typ) },
             (Self::As(pat, _name), typ) => pat.to_typed_expr(typ),
-            (Self::Product(pats), Type::Product(types))
-                if pats.len() == types.len() =>
+            (Self::Product(pat1, pat2), Type::Product(typ1, typ2)) =>
             {
-                let mut exprs = vec![];
-                for (pat, typ) in pats.iter().zip(types.iter()) {
-                    exprs.push(pat.to_typed_expr(typ.clone()));
+                let expr1 = Box::new(pat1.to_typed_expr(*typ1.clone()));
+                let expr2 = Box::new(pat2.to_typed_expr(*typ2.clone()));
+                TExpr {
+                    v: Expr::Product(expr1, expr2),
+                    t: Some(Type::Product(typ1, typ2)),
                 }
-                TExpr{v:Expr::Product(exprs), t: Some(Type::Product(types)) }
             },
             (_, typ) => panic!("expression {} cannot have the type {}", self, typ),
         }
@@ -252,18 +253,10 @@ impl Pattern {
 impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Unit => write!(f, "()")?,
             Self::As(pat, name) => write!(f, "{} as {}", pat, name)?,
-            Self::Product(pats) => {
-                let mut iter = pats.iter();
-                write!(f, "(")?;
-                if let Some(pat) = iter.next() {
-                    write!(f, "{}", pat)?;
-                    while let Some(pat) = iter.next() {
-                        write!(f, ", {}", pat)?;
-                    }
-                }
-                write!(f, ")")?;
-            },
+            Self::Product(pat1, pat2) =>
+                write!(f, "({}, {})", pat1, pat2)?,
             Self::Variable(var) => write!(f, "{}", var)?,
             Self::Constant(val) => write!(f, "{}", val)?,
         }
@@ -279,8 +272,9 @@ pub struct TExpr {
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Expr {
+    Unit,
     Sequence(Vec<TExpr>),
-    Product(Vec<TExpr>),
+    Product(Box<TExpr>, Box<TExpr>),
     Infix(InfixOp, Box<TExpr>, Box<TExpr>),
     Negate(Box<TExpr>),
     Application(Box<TExpr>, Box<TExpr>),
@@ -333,15 +327,15 @@ impl TExpr {
     pub fn parse_expr2(pair: Pair<Rule>) -> Option<Self> {
         if pair.as_rule() != Rule::expr2 { return None }
         let mut pairs = pair.into_inner();
-        let pair = pairs.next().expect("expression should not be empty");
+        let pair = pairs.next_back().expect("expression should not be empty");
         let mut exprs =
-            vec![Self::parse_expr3(pair).expect("expression should start with product")];
-        while let Some(pair) = pairs.next() {
+            Self::parse_expr3(pair).expect("expression should start with product");
+        while let Some(pair) = pairs.next_back() {
             let rhs = Self::parse_expr3(pair)
                 .expect("expected RHS to be a product");
-            exprs.push(rhs);
+            exprs = Expr::Product(Box::new(rhs), Box::new(exprs)).into();
         }
-        Some(if exprs.len() == 1 { exprs[0].clone() } else { Expr::Product(exprs).into() })
+        Some(exprs)
     }
 
     pub fn parse_expr3(pair: Pair<Rule>) -> Option<Self> {
@@ -444,7 +438,7 @@ impl TExpr {
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
         if pair.as_rule() == Rule::constant && string.starts_with("(") {
-            Some(Expr::Product(vec![]).into())
+            Some(Expr::Unit.into())
         } else if pair.as_rule() == Rule::constant {
             let value = pair.as_str().parse().ok().expect("constant should be an integer");
             Some(Expr::Constant(value).into())
@@ -463,12 +457,14 @@ impl TExpr {
 impl fmt::Display for TExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.v {
+            Expr::Unit => write!(f, "()")?,
             Expr::Sequence(exprs) => {
                 if exprs.len() > 1 {
                     write!(f, "{{")?;
                 }
                 let mut iter = exprs.iter();
-                let expr = iter.next().expect("sequence should contain at least one expression");
+                let expr = iter.next()
+                    .expect("sequence should contain at least one expression");
                 write!(f, "{}", expr)?;
                 while let Some(expr) = iter.next() {
                     write!(f, ";\n{}", expr)?;
@@ -477,18 +473,10 @@ impl fmt::Display for TExpr {
                     write!(f, "}}")?;
                 }
             },
-            Expr::Product(exprs) => {
-                let mut iter = exprs.iter();
-                write!(f, "(")?;
-                if let Some(expr) = iter.next() {
-                    write!(f, "{}", expr)?;
-                    while let Some(expr) = iter.next() {
-                        write!(f, ", {}", expr)?;
-                    }
-                }
-                write!(f, ")")?;
-            },
-            Expr::Infix(op, expr1, expr2) => write!(f, "({}{}{})", expr1, op, expr2)?,
+            Expr::Product(expr1, expr2) =>
+                write!(f, "({}, {})", expr1, expr2)?,
+            Expr::Infix(op, expr1, expr2) =>
+                write!(f, "({}{}{})", expr1, op, expr2)?,
             Expr::Negate(expr) => write!(f, "-{}", expr)?,
             Expr::Application(expr1, expr2) => write!(f, "{} {}", expr1, expr2)?,
             Expr::Constant(val) => write!(f, "{}", val)?,

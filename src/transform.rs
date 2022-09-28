@@ -25,13 +25,13 @@ fn refresh_expr_variables(
     gen: &mut VarGen,
 ) {
     match &mut expr.v {
-        Expr::Sequence(exprs) | Expr::Product(exprs) |
-        Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+        Expr::Sequence(exprs) | Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
             for expr in exprs {
                 refresh_expr_variables(expr, map, prover_defs, gen);
             }
         },
-        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
+        Expr::Product(expr1, expr2) => {
             refresh_expr_variables(expr1, map, prover_defs, gen);
             refresh_expr_variables(expr2, map, prover_defs, gen);
         },
@@ -46,7 +46,7 @@ fn refresh_expr_variables(
         Expr::Negate(expr) => {
             refresh_expr_variables(expr, map, prover_defs, gen);
         },
-        Expr::Constant(_) => {},
+        Expr::Constant(_) | Expr::Unit => {},
         Expr::Variable(var) => {
             if let Some(id) = map.get(&var.id) {
                 var.id = *id;
@@ -68,8 +68,8 @@ fn refresh_expr_variables(
     }
 }
 
-#[derive(PartialEq, PartialOrd)]
-enum Tribool { True, Indeterminate, False }
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum Tribool { False, Indeterminate, True }
 
 /* Match the given expression against the given pattern. */
 fn match_pattern_expr(
@@ -91,30 +91,24 @@ fn match_pattern_expr(
             map.insert(var.id, expr.clone().into());
             Tribool::True
         },
-        (Pattern::Product(pats), Expr::Product(exprs))
-            if pats.len() == exprs.len() =>
-        {
-            let mut res = Tribool::True;
-            for (pat, expr) in pats.iter().zip(exprs.iter()) {
-                let inner_res = match_pattern_expr(pat, expr, map, prover_defs, gen);
-                if inner_res < res {
-                    res = inner_res;
-                }
-            }
-            res
+        (Pattern::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
+            let inner_res1 = match_pattern_expr(pat1, expr1, map, prover_defs, gen);
+            let inner_res2 = match_pattern_expr(pat2, expr2, map, prover_defs, gen);
+            std::cmp::min(inner_res1, inner_res2)
         },
-        (Pattern::Product(pats), Expr::Variable(var)) => {
-            let mut inner_exprs = vec![];
-            for _ in pats {
-                let new_var = Variable::new(gen.generate_id());
-                if prover_defs.contains(&var.id) {
-                    prover_defs.insert(new_var.id);
-                }
-                inner_exprs.push(Expr::Variable(new_var).into());
+        (Pattern::Product(_, _), Expr::Variable(var)) => {
+            let new_var1 = Variable::new(gen.generate_id());
+            let new_var2 = Variable::new(gen.generate_id());
+            if prover_defs.contains(&var.id) {
+                prover_defs.insert(new_var1.id);
+                prover_defs.insert(new_var2.id);
             }
-            map.insert(var.id, Expr::Product(inner_exprs).into());
+            let inner_expr1 = Box::new(Expr::Variable(new_var1).into());
+            let inner_expr2 = Box::new(Expr::Variable(new_var2).into());
+            map.insert(var.id, Expr::Product(inner_expr1, inner_expr2).into());
             match_pattern_expr(pat, expr, map, prover_defs, gen)
         },
+        (Pattern::Unit, Expr::Unit) => Tribool::True,
         (Pattern::Constant(a), Expr::Constant(b)) if a == b =>
             Tribool::True,
         (Pattern::Constant(a), Expr::Constant(b)) if a != b =>
@@ -141,10 +135,9 @@ fn refresh_pattern_variables(
             }
             var.id = map[&var.id];
         },
-        Pattern::Product(pats) => {
-            for pat in pats {
-                refresh_pattern_variables(pat, map, prover_defs, gen);
-            }
+        Pattern::Product(pat1, pat2) => {
+            refresh_pattern_variables(pat1, map, prover_defs, gen);
+            refresh_pattern_variables(pat2, map, prover_defs, gen);
         },
         Pattern::Variable(var) => {
             map.insert(var.id, gen.generate_id());
@@ -153,7 +146,7 @@ fn refresh_pattern_variables(
             }
             var.id = map[&var.id];
         },
-        Pattern::Constant(_) => {},
+        Pattern::Constant(_) | Pattern::Unit => {},
     }
 }
 
@@ -172,10 +165,9 @@ fn number_pattern_variables(
                 map.insert(name.clone(), var.id);
             }
         },
-        Pattern::Product(pats) => {
-            for pat in pats {
-                number_pattern_variables(pat, map, gen);
-            }
+        Pattern::Product(pat1, pat2) => {
+            number_pattern_variables(pat1, map, gen);
+            number_pattern_variables(pat2, map, gen);
         },
         Pattern::Variable(var) => {
             if let Some(name) = &var.name {
@@ -183,7 +175,7 @@ fn number_pattern_variables(
                 map.insert(name.clone(), var.id);
             }
         },
-        Pattern::Constant(_) => {},
+        Pattern::Constant(_) | Pattern::Unit => {},
     }
 }
 
@@ -198,20 +190,21 @@ fn number_expr_variables(
     gen: &mut VarGen,
 ) {
     match &mut expr.v {
-        Expr::Sequence(exprs) | Expr::Product(exprs) |
+        Expr::Sequence(exprs) |
         Expr::Intrinsic(Intrinsic { args: exprs, ..}) => {
             for expr in exprs {
                 number_expr_variables(expr, locals, globals, gen);
             }
         },
-        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
+        Expr::Product(expr1, expr2) => {
             number_expr_variables(expr1, locals, globals, gen);
             number_expr_variables(expr2, locals, globals, gen);
         },
         Expr::Negate(expr) => {
             number_expr_variables(expr, locals, globals, gen);
         },
-        Expr::Constant(_) => {},
+        Expr::Constant(_) | Expr::Unit => {},
         Expr::Variable(var) => {
             if let Some(name) = &var.name {
                 if let Some(id) = locals.get(name) {
@@ -344,11 +337,14 @@ fn apply_functions(
                 Expr::Negate(_) => {
                     panic!("cannot apply argument {} to negation {}", expr2, expr1)
                 },
-                Expr::Product(_) => {
+                Expr::Product(_, _) => {
                     panic!("cannot apply argument {} to tuple {}", expr2, expr1)
                 },
                 Expr::Constant(_) => {
                     panic!("cannot apply argument {} to constant {}", expr2, expr1)
+                },
+                Expr::Unit => {
+                    panic!("cannot apply argument {} to unit {}", expr2, expr1)
                 },
             }
         },
@@ -389,12 +385,11 @@ fn apply_functions(
             }
             val.expect("encountered empty sequence")
         },
-        Expr::Product(prod) => {
-            let mut vals = vec![];
-            for expr in prod {
-                vals.push(apply_functions(expr, &bindings, prover_defs, gen));
-            }
-            Expr::Product(vals).into()
+        Expr::Product(expr1, expr2) => {
+            Expr::Product(
+                Box::new(apply_functions(expr1, &bindings, prover_defs, gen)),
+                Box::new(apply_functions(expr2, &bindings, prover_defs, gen)),
+            ).into()
         },
         Expr::Infix(op, expr1, expr2) => {
             let expr1 = apply_functions(expr1, &bindings, prover_defs, gen);
@@ -404,7 +399,7 @@ fn apply_functions(
         Expr::Negate(expr1) => {
             Expr::Negate(Box::new(apply_functions(expr1, &bindings, prover_defs, gen))).into()
         },
-        Expr::Constant(val) => Expr::Constant(*val).into(),
+        t @ (Expr::Constant(_) | Expr::Unit) => t.clone().into(),
         Expr::Variable(var) => match bindings.get(&var.id) {
             Some(val) if !prover_defs.contains(&var.id) => val.clone(),
             _ => expr.clone(),
@@ -460,12 +455,11 @@ pub fn collect_pattern_variables(
             map.insert(var.id, var.clone());
             collect_pattern_variables(pat, map);
         },
-        Pattern::Product(prod) => {
-            for pat in prod {
-                collect_pattern_variables(pat, map);
-            }
+        Pattern::Product(pat1, pat2) => {
+            collect_pattern_variables(pat1, map);
+            collect_pattern_variables(pat2, map);
         },
-        Pattern::Constant(_) => {}
+        Pattern::Constant(_) | Pattern::Unit => {}
     }
 }
 
@@ -478,13 +472,14 @@ fn collect_expr_variables(
         Expr::Variable(var) => {
             map.insert(var.id, var.clone());
         },
-        Expr::Sequence(exprs) | Expr::Product(exprs) |
+        Expr::Sequence(exprs) |
         Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
             for expr in exprs {
                 collect_expr_variables(expr, map);
             }
         },
-        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
+        Expr::Product(expr1, expr2) => {
             collect_expr_variables(expr1, map);
             collect_expr_variables(expr2, map);
         },
@@ -509,7 +504,7 @@ fn collect_expr_variables(
                 collect_expr_variables(expr2, map);
             }
         },
-        Expr::Constant(_) => {},
+        Expr::Constant(_) | Expr::Unit => {},
     }
 }
 
@@ -553,7 +548,7 @@ fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
         (InfixOp::Equal, _, _) =>
             TExpr {
                 v: Expr::Infix(op, Box::new(e1), Box::new(e2)),
-                t: Some(Type::Product(vec![])),
+                t: Some(Type::Unit),
             },
         (InfixOp::Multiply | InfixOp::Divide | InfixOp::Add |
          InfixOp::Subtract | InfixOp::Exponentiate | InfixOp::IntDivide |
@@ -592,10 +587,10 @@ fn flatten_binding(
         (Pattern::As(pat, _name), _) => {
             flatten_binding(pat, expr, flattened);
         },
-        (Pattern::Product(pats), Expr::Product(exprs)) => {
-            for (pat, expr) in pats.iter().zip(exprs.iter()) {
-                flatten_binding(pat, expr, flattened);
-            }
+        (Pattern::Unit, Expr::Unit) => {},
+        (Pattern::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
+            flatten_binding(pat1, expr1, flattened);
+            flatten_binding(pat2, expr2, flattened);
         }
         _ => unreachable!("encountered unexpected binding: {} = {}", pat, expr),
     }
@@ -608,10 +603,10 @@ fn flatten_equals(
     flattened: &mut Module,
 ) {
     match (&expr1.v, &expr2.v) {
-        (Expr::Product(prod1), Expr::Product(prod2)) => {
-            for (expr1, expr2) in prod1.iter().zip(prod2.iter()) {
-                flatten_equals(expr1, expr2, flattened);
-            }
+        (Expr::Unit, Expr::Unit) => {},
+        (Expr::Product(expr11, expr12), Expr::Product(expr21, expr22)) => {
+            flatten_equals(expr11, expr21, flattened);
+            flatten_equals(expr12, expr22, flattened);
         },
         (Expr::Variable(_) | Expr::Negate(_) |
          Expr::Infix(_, _, _) | Expr::Constant(_),
@@ -644,23 +639,22 @@ fn flatten_expression(
             let expr1 = flatten_expression(expr1, flattened);
             let expr2 = flatten_expression(expr2, flattened);
             flatten_equals(&expr1, &expr2, flattened);
-            Expr::Product(vec![]).into()
+            Expr::Unit.into()
         },
         Expr::Infix(op, expr1, expr2) => {
             let expr1 = flatten_expression(expr1, flattened);
             let expr2 = flatten_expression(expr2, flattened);
             Expr::Infix(*op, Box::new(expr1), Box::new(expr2)).into()
         },
-        Expr::Product(prod) => {
-            let mut exprs = vec![];
-            for expr in prod {
-                exprs.push(flatten_expression(expr, flattened));
-            }
-            Expr::Product(exprs).into()
+        Expr::Product(expr1, expr2) => {
+            Expr::Product(
+                Box::new(flatten_expression(expr1, flattened)),
+                Box::new(flatten_expression(expr2, flattened)),
+            ).into()
         },
         Expr::Negate(expr1) =>
             Expr::Negate(Box::new(flatten_expression(expr1, flattened))).into(),
-        Expr::Constant(_) | Expr::Variable(_) => expr.clone(),
+        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit => expr.clone(),
         Expr::LetBinding(binding, body) => {
             let val = flatten_expression(&*binding.1, flattened);
             flatten_binding(&binding.0, &val, flattened);
@@ -911,13 +905,14 @@ pub fn copy_propagate_expr(
             *expr = substitutions[&v2.id].clone();
             copy_propagate_expr(expr, substitutions);
         },
-        Expr::Sequence(exprs) | Expr::Product(exprs) |
+        Expr::Sequence(exprs) |
         Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
             for expr in exprs {
                 copy_propagate_expr(expr, substitutions);
             }
         },
-        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) => {
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
+        Expr::Product(expr1, expr2) => {
             copy_propagate_expr(expr1, substitutions);
             copy_propagate_expr(expr2, substitutions);
         },
@@ -934,7 +929,7 @@ pub fn copy_propagate_expr(
                 copy_propagate_expr(expr2, substitutions);
             }
         },
-        Expr::Constant(_) | Expr::Variable(_) => {},
+        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit => {},
     }
 }
 
@@ -1058,7 +1053,7 @@ fn register_range_intrinsic(
             Box::new(Type::Int),
             Box::new(Type::Function(
                 Box::new(Type::Int),
-                Box::new(Type::Product(vec![]))
+                Box::new(Type::Unit),
             ))
         ),
         expand_range_intrinsic,
