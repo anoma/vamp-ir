@@ -231,8 +231,10 @@ impl Pattern {
 
     pub fn to_typed_expr(&self, typ: Type) -> TExpr {
         match (self, typ) {
-            (Self::Constant(val), typ) =>
-                TExpr { v: Expr::Constant(*val), t: Some(typ) },
+            (Self::Unit, Type::Unit | Type::Variable(_)) =>
+                TExpr { v: Expr::Unit, t: Some(Type::Unit) },
+            (Self::Constant(val), Type::Int | Type::Variable(_)) =>
+                TExpr { v: Expr::Constant(*val), t: Some(Type::Int) },
             (Self::Variable(var), typ) =>
                 TExpr { v:Expr::Variable(var.clone()), t: Some(typ) },
             (Self::As(pat, _name), typ) => pat.to_typed_expr(typ),

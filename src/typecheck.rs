@@ -569,6 +569,10 @@ fn expand_pattern_variables(
             map.insert(var.id, new_pat.clone());
             *pat = new_pat;
         },
+        (Pattern::Variable(var), Type::Unit) => {
+            map.insert(var.id, Pattern::Unit);
+            *pat = Pattern::Unit;
+        },
         (Pattern::Variable(_), _) => {},
         (Pattern::Product(pat1, pat2), Type::Product(typ1, typ2)) => {
             expand_pattern_variables(pat1, typ1, map, gen);
@@ -651,6 +655,9 @@ fn expand_variables(
                     v: Expr::Product(Box::new(var_expr1), Box::new(var_expr2)),
                     t: expr.t.clone(),
                 };
+            } else if let Type::Unit = expanded_type {
+                map.insert(var.id, Pattern::Unit);
+                *expr = TExpr { v: Expr::Unit, t: expr.t.clone() };
             }
         },
         Expr::Function(fun) => {

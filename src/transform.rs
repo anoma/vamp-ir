@@ -869,9 +869,9 @@ pub fn compile(mut module: Module) -> Module {
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
     let mut bindings = HashMap::new();
-    register_range_intrinsic(&mut globals, &mut bindings, &mut vg);
-    number_module_variables(&mut module, &mut globals, &mut vg);
     let mut prog_types = HashMap::new();
+    register_range_intrinsic(&mut globals, &mut bindings, &mut prog_types, &mut vg);
+    number_module_variables(&mut module, &mut globals, &mut vg);
     infer_module_types(&mut module, &globals, &mut prog_types, &mut vg);
     println!("** Inferring types...");
     print_types(&module, &prog_types);
@@ -1037,15 +1037,25 @@ pub fn eliminate_dead_definitions(module: &mut Module) {
     module.defs = new_defs;
 }
 
+/* The number of bits required to represent elements of the field we are working
+ * in. */
+const RANGE_MAX_BITS: u32 = 16;
+
 /* Register the range intrinsic in the compilation environment. */
 fn register_range_intrinsic(
     globals: &mut HashMap<String, VariableId>,
     bindings: &mut HashMap<VariableId, TExpr>,
+    types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
     let range_func_id = gen.generate_id();
     // Register the range function in global namespace
     globals.insert("range".to_string(), range_func_id);
+    // Make the type representing largest bit vector
+    let mut bits_type = Type::Unit;
+    for _ in 0..RANGE_MAX_BITS {
+        bits_type = Type::Product(Box::new(Type::Int), Box::new(bits_type));
+    }
     // Describe the intrinsic's type, arity, and implementation
     let range_intrinsic = Intrinsic::new(
         2,
@@ -1053,12 +1063,13 @@ fn register_range_intrinsic(
             Box::new(Type::Int),
             Box::new(Type::Function(
                 Box::new(Type::Int),
-                Box::new(Type::Unit),
+                Box::new(bits_type),
             ))
         ),
         expand_range_intrinsic,
     );
     // Register the intrinsic descriptor with the global binding
+    types.insert(range_func_id, range_intrinsic.imp_typ.clone());
     bindings.insert(range_func_id, Expr::Intrinsic(range_intrinsic).into());
 }
 
@@ -1073,12 +1084,24 @@ fn expand_range_intrinsic(
     if let [TExpr { v: Expr::Constant(bit_len), ..}, val] = &args[..] {
         let mut constraints = vec![];
         let mut bit_bindings = HashMap::new();
-        let mut val_constraint = TExpr { v: Expr::Constant(0), t: Some(Type::Int) };
-        let mut pats = vec![];
-        let mut branches = vec![];
+        let mut val_constraint = TExpr { v: Expr::Constant(0), t: None };
+        let mut witnesses = TExpr { v: Expr::Unit, t: Some(Type::Unit) };
         // Constrain the variables involved in this expansion to be bits
         let bit_len = u32::try_from(*bit_len)
             .expect("bit count supplied to range must be non-negative");
+        // Put trailing zeros into bit-vector
+        for _ in bit_len..RANGE_MAX_BITS {
+            witnesses = TExpr {
+                v: Expr::Product(
+                    Box::new(TExpr { v: Expr::Constant(0), t: Some(Type::Int) }),
+                    Box::new(witnesses.clone())
+                ),
+                t: Some(Type::Product(
+                    Box::new(Type::Int),
+                    Box::new(witnesses.t.unwrap())
+                )),
+            };
+        }
         for i in (0..bit_len).rev() {
             // expression: b
             let bit_var = gen.generate_id();
@@ -1125,8 +1148,10 @@ fn expand_range_intrinsic(
                 TExpr { v: Expr::Constant(0), t: Some(Type::Int) },
             ));
             // Record bit index and value for the coming array creation
-            pats.push(Pattern::Constant(i as i32));
-            branches.push(bit_var);
+            witnesses = TExpr {
+                v: Expr::Product(Box::new(bit_var), Box::new(witnesses.clone())),
+                t: Some(Type::Product(Box::new(Type::Int), Box::new(witnesses.t.unwrap()))),
+            };
         }
         // constraint: val = 2*(2*(2*(..) + b_2) + b_1) + b_0
         // Uses Horner's method.
@@ -1135,30 +1160,13 @@ fn expand_range_intrinsic(
             val_constraint,
             val.clone(),
         ));
-        // Make a function that maps bit indicies to bit values. I.e.
-        // fun x { match x { 0 => b_0, 1 => b_1, ..., n => b_n } }
-        let branch_var = Variable::new(gen.generate_id());
-        let array_type = Some(Type::Function(
-            Box::new(Type::Int),
-            Box::new(Type::Int),
-        ));
-        let array = TExpr {
-            v: Expr::Function(Function(
-                vec![Pattern::Variable(branch_var.clone())],
-                Box::new(TExpr {
-                    v: Expr::Match(Match(Box::new(TExpr {
-                        v: Expr::Variable(branch_var),
-                        t: Some(Type::Int),
-                    }), pats, branches)),
-                    t: Some(Type::Int) }))),
-            t: array_type.clone(),
-        };
-        constraints.push(array);
+        // expression: (b0, b1, ..., bN)
+        constraints.push(witnesses.clone());
         // The aggregate of the above constraints constrains the given value to
         // be the given number of bits
         let mut constraint = TExpr {
             v: Expr::Sequence(constraints),
-            t: array_type
+            t: witnesses.t,
         };
         // To help the prover derive the bit assignments, surround the
         // constraints with explicit definitions
