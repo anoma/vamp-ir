@@ -6,6 +6,58 @@
    vamp-ir verify circuit.plonk params.pp proof.plonk
 */
 
+// Ensure that the given argument is 1 or 0
+
+def bool x { x*(x-1) = 0 };
+
+// Extract the 8 bits from a number argument
+
+def range8 a {
+    def a0 = fresh ((a\1) % 2);
+    def a1 = fresh ((a\2) % 2);
+    def a2 = fresh ((a\4) % 2);
+    def a3 = fresh ((a\8) % 2);
+    def a4 = fresh ((a\16) % 2);
+    def a5 = fresh ((a\32) % 2);
+    def a6 = fresh ((a\64) % 2);
+    def a7 = fresh ((a\128) % 2);
+    bool a0;
+    bool a1;
+    bool a2;
+    bool a3;
+    bool a4;
+    bool a5;
+    bool a6;
+    bool a7;
+    a = a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7;
+    (a0, a1, a2, a3, a4, a5, a6, a7, ())
+};
+
+// Extract the 9 bits from a number argument
+
+def range9 a {
+    def a0 = fresh ((a\1) % 2);
+    def a1 = fresh ((a\2) % 2);
+    def a2 = fresh ((a\4) % 2);
+    def a3 = fresh ((a\8) % 2);
+    def a4 = fresh ((a\16) % 2);
+    def a5 = fresh ((a\32) % 2);
+    def a6 = fresh ((a\64) % 2);
+    def a7 = fresh ((a\128) % 2);
+    def a8 = fresh ((a\256) % 2);
+    bool a0;
+    bool a1;
+    bool a2;
+    bool a3;
+    bool a4;
+    bool a5;
+    bool a6;
+    bool a7;
+    bool a8;
+    a = a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7 + 256*a8;
+    (a0, a1, a2, a3, a4, a5, a6, a7, a8, ())
+};
+
 // Pair up corresponding elements of each tuple
 
 def zip8 (a0,a1,a2,a3,a4,a5,a6,a7,ar) (b0,b1,b2,b3,b4,b5,b6,b7,br) {
@@ -27,7 +79,7 @@ def combine8 (a0,a1,a2,a3,a4,a5,a6,a7,ar) {
 // Apply given function to corresponding bit-pairs in bit representation
 
 def bitwise8 g a b {
-    def zipped = zip8 (range 8 a) (range 8 b);
+    def zipped = zip8 (range8 a) (range8 b);
     def new_bits = map g zipped;
     combine8 new_bits
 };
@@ -58,7 +110,7 @@ def and8 = bitwise8 bit_and;
 
 // Definition of bitwise not for 8 bit values
 
-def not8 y { combine8 (map (fun x { 1-x }) (range 8 y)) };
+def not8 y { combine8 (map (fun x { 1-x }) (range8 y)) };
 
 // Repeated function applications, useful for big-step rotations/shifts
 
@@ -81,56 +133,56 @@ def apply7 f x { f (apply6 f x) };
 // Arithmetic shift right for 8 bit values
 
 def ashr8 x {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range 8 x;
+    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range8 x;
     combine8 (a1, a2, a3, a4, a5, a6, a7, a7, ())
 };
 
 // Logical shift right for 8 bit values
 
 def lshr8 x {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range 8 x;
+    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range8 x;
     combine8 (a1, a2, a3, a4, a5, a6, a7, 0, ())
 };
 
 // Shift left for 8 bit values
 
 def shl8 x {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range 8 x;
+    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range8 x;
     combine8 (0, a0, a1, a2, a3, a4, a5, a6, ())
 };
 
 // Rotate right for 8 bit values
 
 def ror8 x {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range 8 x;
+    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range8 x;
     combine8 (a1, a2, a3, a4, a5, a6, a7, a0, ())
 };
 
 // Rotate left for 8 bit values
 
 def rol8 x {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range 8 x;
+    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range8 x;
     combine8 (a7, a0, a1, a2, a3, a4, a5, a6, ())
 };
 
 // Add two 8-bit values modulo 8
 
 def add8 a b {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,ar) = range 9 (a+b);
+    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,ar) = range9 (a+b);
     combine8 (a0, a1, a2, a3, a4, a5, a6, a7, ())
 };
 
 // Subtract two 8-bit values modulo 8
 
 def sub8 a b {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,ar) = range 9 (a+256-b);
+    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,ar) = range9 (a+256-b);
     combine8 (a0, a1, a2, a3, a4, a5, a6, a7, ())
 };
 
 // Unsigned less than or equal to for 8 bits. 1 if true, 0 otherwise
 
 def ule8 a b {
-    def (c0,c1,c2,c3,c4,c5,c6,c7,c8, ar) = range 9 (256+b-a);
+    def (c0,c1,c2,c3,c4,c5,c6,c7,c8, ar) = range9 (256+b-a);
     c8
 };
 
@@ -141,7 +193,7 @@ def ult8 a b { ule8 a (b-1) };
 // Signed less than or equal to for 8 bits
 
 def slt8 a b {
-    def (c0,c1,c2,c3,c4,c5,c6,c7,c8,ar) = range 9 (a+256-b);
+    def (c0,c1,c2,c3,c4,c5,c6,c7,c8,ar) = range9 (a+256-b);
     c7
 };
 
