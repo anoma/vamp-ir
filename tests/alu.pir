@@ -6,29 +6,21 @@
    vamp-ir verify circuit.plonk params.pp proof.plonk
 */
 
-// Ensure that the given argument is 1 or 0
+// Ensure that the given argument is 1 or 0, and returns it
 
-def bool x { x*(x-1) = 0 };
+def bool x { x*(x-1) = 0; x };
 
 // Extract the 8 bits from a number argument
 
 def range8 a {
-    def a0 = fresh ((a\1) % 2);
-    def a1 = fresh ((a\2) % 2);
-    def a2 = fresh ((a\4) % 2);
-    def a3 = fresh ((a\8) % 2);
-    def a4 = fresh ((a\16) % 2);
-    def a5 = fresh ((a\32) % 2);
-    def a6 = fresh ((a\64) % 2);
-    def a7 = fresh ((a\128) % 2);
-    bool a0;
-    bool a1;
-    bool a2;
-    bool a3;
-    bool a4;
-    bool a5;
-    bool a6;
-    bool a7;
+    def a0 = bool (fresh ((a\1) % 2));
+    def a1 = bool (fresh ((a\2) % 2));
+    def a2 = bool (fresh ((a\4) % 2));
+    def a3 = bool (fresh ((a\8) % 2));
+    def a4 = bool (fresh ((a\16) % 2));
+    def a5 = bool (fresh ((a\32) % 2));
+    def a6 = bool (fresh ((a\64) % 2));
+    def a7 = bool (fresh ((a\128) % 2));
     a = a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7;
     (a0, a1, a2, a3, a4, a5, a6, a7, ())
 };
@@ -36,24 +28,15 @@ def range8 a {
 // Extract the 9 bits from a number argument
 
 def range9 a {
-    def a0 = fresh ((a\1) % 2);
-    def a1 = fresh ((a\2) % 2);
-    def a2 = fresh ((a\4) % 2);
-    def a3 = fresh ((a\8) % 2);
-    def a4 = fresh ((a\16) % 2);
-    def a5 = fresh ((a\32) % 2);
-    def a6 = fresh ((a\64) % 2);
-    def a7 = fresh ((a\128) % 2);
-    def a8 = fresh ((a\256) % 2);
-    bool a0;
-    bool a1;
-    bool a2;
-    bool a3;
-    bool a4;
-    bool a5;
-    bool a6;
-    bool a7;
-    bool a8;
+    def a0 = bool (fresh ((a\1) % 2));
+    def a1 = bool (fresh ((a\2) % 2));
+    def a2 = bool (fresh ((a\4) % 2));
+    def a3 = bool (fresh ((a\8) % 2));
+    def a4 = bool (fresh ((a\16) % 2));
+    def a5 = bool (fresh ((a\32) % 2));
+    def a6 = bool (fresh ((a\64) % 2));
+    def a7 = bool (fresh ((a\128) % 2));
+    def a8 = bool (fresh ((a\256) % 2));
     a = a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7 + 256*a8;
     (a0, a1, a2, a3, a4, a5, a6, a7, a8, ())
 };
