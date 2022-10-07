@@ -1,756 +1,787 @@
-use ark_ec::twisted_edwards_extended::GroupAffine;
-use crate::ast;
-use std::collections::{HashSet, HashMap};
-use std::marker::PhantomData;
-use plonk_core::prelude::*;
-
-use plonk_core::commitment::HomomorphicCommitment as HomomorphicCommitment;
-use plonk_core::proof_system::proof::Proof as Proof;
-use plonk_core::proof_system::verifier::Verifier as Verifier;
-use plonk_core::proof_system::prover::Prover as Prover;
-use plonk_core::error::to_pc_error;
-
-use ark_ec::models::TEModelParameters;
+use crate::ast::{Module, VariableId, TExpr, InfixOp, Pattern, Expr};
+use crate::transform::collect_module_variables;
 use ark_ff::PrimeField;
+use ark_ec::TEModelParameters;
+use plonk_core::circuit::Circuit;
+use plonk_core::constraint_system::StandardComposer;
+use plonk_core::error::Error;
+use std::collections::{BTreeMap, HashMap};
+use std::marker::PhantomData;
+use num_bigint::BigUint;
 
+struct PrimeFieldBincode<T>(T) where T: PrimeField;
 
-#[derive(Default, Debug)]
-pub struct Gate {
-    name: String,
-    parameters: Vec<String>,
-    /// Input wires
-    wires: Vec<String>,
-    out_wires: Vec<String>
+impl<T> bincode::Encode for PrimeFieldBincode<T> where T: PrimeField {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        let biguint: BigUint = self.0.into();
+        biguint.to_u32_digits().encode(encoder)
+    }
 }
 
-#[derive(Default, Debug)]
-pub struct Synthesizer<F, P>
-where
-    F: PrimeField,
-    P: TEModelParameters<BaseField = F>,
-{
-    /// Maps wire names to plonk-core variables
-    wires: HashMap<String, Option<Variable>>,
-    /// Maps pub wire names to plonk-core pi positions
-    pub_wires: HashMap<String, Option<usize>>,
-    /// Set containing output wire names
-    out_wires: HashSet<String>,
-    gates: Vec<Gate>,
-    size: usize,
-    _f: PhantomData<F>,
-    _p: PhantomData<P>,
+impl<T> bincode::Decode for PrimeFieldBincode<T> where T: PrimeField {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        let digits = Vec::<u32>::decode(decoder)?;
+        T::try_from(BigUint::new(digits))
+            .map(Self)
+            .map_err(|_| bincode::error::DecodeError::OtherString(
+                "cannot convert from BigUint to PrimeField type".to_string()
+            ))
+    }
 }
 
-impl<F, P> Synthesizer<F, P>
-where
-    F: PrimeField,
-    P: TEModelParameters<BaseField = F>,
-{
-    pub fn from_ast(&mut self, ast_circuit: ast::Circuit) -> () {
-        ast_circuit.statements.iter().for_each(|statement| {
-            match statement {
-                ast::Statement::PubStatement(st) => {
-                    st.wires.iter().for_each(|id| {
-                        self.wires.insert(id.value.clone(), None);
-                        self.pub_wires.insert(id.value.clone(), None);
-                    });
-                },
-                ast::Statement::AliasStatement(_) => {
-                },
-                ast::Statement::ConstraintStatement(st) => {
-                    match st {
-                        ast::ConstraintStatement::GateInvocation(gate) => {
-                            let name = gate.name.value.clone();
-                            let wires = gate.wires.iter().map(|wire| {
-                                let wire_name = wire.name.value.clone();
-                                self.wires.insert(wire_name.clone(), None);
-                                if wire.typ == "pub" {
-                                    self.pub_wires.insert(wire_name.clone(), None);
-                                }
-                                wire_name
-                            }).collect();
-                            let parameters = gate.parameters.iter().map(|c| {
-                                c.value.clone()
-                            }).collect();
-                            let gate: Gate = Gate { name, wires, out_wires: vec![], parameters };
-                            self.gates.push(gate);
-                        },
-                        ast::ConstraintStatement::GateInvocationWithOutput(gate) => {
-                            let name = gate.name.value.clone();
-                            let wires = gate.wires.iter().map(|wire| {
-                                let wire_name = wire.name.value.clone();
-                                self.wires.insert(wire_name.clone(), None);
-                                if wire.typ == "pub" {
-                                    self.pub_wires.insert(wire_name.clone(), None);
-                                }
-                                wire_name
-                            }).collect();
-                            let out_wires = gate.out_wires.iter().map(|wire| {
-                                let wire_name = wire.name.value.clone();
-                                self.wires.insert(wire_name.clone(), None);
-                                self.out_wires.insert(wire_name.clone());
-                                if wire.typ == "pub" {
-                                    self.pub_wires.insert(wire_name.clone(), None);
-                                }
-                                wire_name
-                            }).collect();
-                            let parameters = gate.parameters.iter().map(|c| {
-                                c.value.clone()
-                            }).collect();
-                            let gate = Gate { name, wires, out_wires, parameters };
-                            self.gates.push(gate);
-                        },
-                        _ => {}
-                    }
-                }
+// Make field elements from signed values
+fn make_constant<F: PrimeField>(c: i32) -> F {
+    if c >= 0 {
+        F::from(c as u32)
+    } else {
+        -F::from((-c) as u32)
+    }
+}
+
+/* Evaluate the given expression sourcing any variables from the given maps. */
+fn evaluate_expr<F>(
+    expr: &TExpr,
+    defs: &mut HashMap<VariableId, TExpr>,
+    assigns: &mut HashMap<VariableId, F>,
+) -> F where F: PrimeField {
+    match &expr.v {
+        Expr::Constant(c) => make_constant(*c),
+        Expr::Variable(v) => {
+            if let Some(val) = assigns.get(&v.id) {
+                // First look for existing variable assignment
+                *val
+            } else {
+                // Otherwise compute variable from first principles
+                let val = evaluate_expr(&defs[&v.id].clone(), defs, assigns);
+                assigns.insert(v.id, val);
+                val
             }
-        });
+        },
+        Expr::Negate(e) => -evaluate_expr(e, defs, assigns),
+        Expr::Infix(InfixOp::Add, a, b) =>
+            evaluate_expr(&a, defs, assigns) +
+            evaluate_expr(&b, defs, assigns),
+        Expr::Infix(InfixOp::Subtract, a, b) =>
+            evaluate_expr(&a, defs, assigns) -
+            evaluate_expr(&b, defs, assigns),
+        Expr::Infix(InfixOp::Multiply, a, b) =>
+            evaluate_expr(&a, defs, assigns) *
+            evaluate_expr(&b, defs, assigns),
+        Expr::Infix(InfixOp::Divide, a, b) =>
+            evaluate_expr(&a, defs, assigns) /
+            evaluate_expr(&b, defs, assigns),
+        Expr::Infix(InfixOp::IntDivide, a, b) =>
+            (Into::<BigUint>::into(evaluate_expr(&a, defs, assigns)) /
+            Into::<BigUint>::into(evaluate_expr(&b, defs, assigns))).into(),
+        Expr::Infix(InfixOp::Modulo, a, b) =>
+            (Into::<BigUint>::into(evaluate_expr(&a, defs, assigns)) %
+            Into::<BigUint>::into(evaluate_expr(&b, defs, assigns))).into(),
+        _ => unreachable!("encountered unexpected expression: {}", expr),
+    }
+}
 
-        // TODO: fill in the right size
-        self.size = 1 << 12;
+pub struct PlonkModule<F, P>
+where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F>, {
+    pub module: Module,
+    variable_map: HashMap<VariableId, F>,
+    phantom: PhantomData<P>,
+}
+
+impl<F, P> bincode::Encode for PlonkModule<F, P>
+where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F> {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        let mut encoded_variable_map = HashMap::new();
+        for (k, v) in self.variable_map.clone() {
+            encoded_variable_map.insert(k, PrimeFieldBincode(v));
+        }
+        encoded_variable_map.encode(encoder)?;
+        self.module.encode(encoder)?;
+        Ok(())
+    }
+}
+
+impl<F, P> bincode::Decode for PlonkModule<F, P> where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F>, {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        let encoded_variable_map = HashMap::<VariableId, PrimeFieldBincode<F>>::decode(decoder)?;
+        let mut variable_map = HashMap::new();
+        for (k, v) in encoded_variable_map {
+            variable_map.insert(k, v.0);
+        }
+        let module = Module::decode(decoder)?;
+        Ok(PlonkModule { module, variable_map, phantom: PhantomData })
+    }
+}
+
+impl<F, P> PlonkModule<F, P>
+where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F>,
+{
+    /* Make new circuit with default assignments to all variables in module. */
+    pub fn new(module: Module) -> PlonkModule<F, P> {
+        let mut variables = HashMap::new();
+        collect_module_variables(&module, &mut variables);
+        let mut variable_map = HashMap::new();
+        for variable in variables.keys() {
+            variable_map.insert(*variable, F::default());
+        }
+        PlonkModule { module, variable_map, phantom: PhantomData }
     }
 
-    fn synth_using_composer(
+    /* Populate input and auxilliary variables from the given program inputs. */
+    pub fn populate_variables(
+        &mut self,
+        mut field_assigns: HashMap<VariableId, F>,
+    ) {
+        // Get the definitions necessary to populate auxiliary variables
+        let mut definitions = HashMap::new();
+        for def in &self.module.defs {
+            if let Pattern::Variable(var) = &def.0.0 {
+                definitions.insert(var.id, *def.0.1.clone());
+            }
+        }
+        // Start deriving witnesses
+        for (var, value) in &mut self.variable_map {
+            let var_expr = Expr::Variable(crate::ast::Variable::new(*var)).into();
+            *value = evaluate_expr(&var_expr, &mut definitions, &mut field_assigns);
+        }
+    }
+}
+
+impl<F, P> Circuit<F, P> for PlonkModule<F, P>
+where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F>,
+{
+    const CIRCUIT_ID: [u8; 32] = [0xff; 32];
+
+    fn gadget(
         &mut self,
         composer: &mut StandardComposer<F, P>,
-        pub_wire_vals: Option<&HashMap<String, F>>,
-        wire_vals: Option<&HashMap<String, F>>,
-    ) -> Result<HashMap<String, F>, Error> {
-        let _zero = composer.zero_var();
-        // Allocate wires
-        self.wires.iter_mut().for_each(|(wire, plonk_var)| {
-            let val = if let Some(wire_vals) = wire_vals {
-                match wire_vals.get(wire) {
-                    Some(s) => *s,
-                    _ => F::zero()
-                }
-            } else {
-                F::zero()
-            };
-            *plonk_var = Some(composer.add_input(val));
-        });
-        let mut pubout: HashMap<String, F> = HashMap::new();
-        // Synthesize circuit using standard composer
-        self.gates.iter().for_each(|gate| {
-            match gate.name.as_str() {
-                "pubout_poly_gate" => {
-                    let xl = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
-                    let xr = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
-                    let xo = self.wires.get(gate.wires.get(2).unwrap()).unwrap().unwrap();
-
-                    let xp = gate.wires.get(3).unwrap().clone();
-                    let pos = self.pub_wires.get_mut(&xp).unwrap();
-                    *pos = Some(composer.circuit_size());
-
-                    let m = F::from_str(gate.parameters.get(0).unwrap()).unwrap_or(F::zero());
-                    let l = F::from_str(gate.parameters.get(1).unwrap()).unwrap_or(F::zero());
-                    let r = F::from_str(gate.parameters.get(2).unwrap()).unwrap_or(F::zero());
-                    let o = F::from_str(gate.parameters.get(3).unwrap()).unwrap_or(F::zero());
-                    let c = F::from_str(gate.parameters.get(4).unwrap()).unwrap_or(F::zero());
-
-                    let xp_val = if let Some(pub_wire_vals) = pub_wire_vals {
-                        match pub_wire_vals.get(&xp) {
-                            Some(s) => *s,
-                            _ => F::zero()
-                        }
-                    } else {
-                        F::zero()
-                    };
-
-                    composer.poly_gate(xl, xr, xo, m, l, r, o, c, Some(xp_val));
-
-                },
-                "poly_gate" => {
-                    let xl = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
-                    let xr = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
-                    let xo = self.wires.get(gate.wires.get(2).unwrap()).unwrap().unwrap();
-
-                    let m = F::from_str(gate.parameters.get(0).unwrap()).unwrap_or(F::zero());
-                    let l = F::from_str(gate.parameters.get(1).unwrap()).unwrap_or(F::zero());
-                    let r = F::from_str(gate.parameters.get(2).unwrap()).unwrap_or(F::zero());
-                    let o = F::from_str(gate.parameters.get(3).unwrap()).unwrap_or(F::zero());
-                    let c = F::from_str(gate.parameters.get(4).unwrap()).unwrap_or(F::zero());
-
-                    composer.poly_gate(xl, xr, xo, m, l, r, o, c, None);
-                },
-                // out = add x y
-                "add" => {
-                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
-                    let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
-
-                    let out_wire = gate.out_wires.get(0).unwrap();
-
-                    // Add the correct gate depending on if output wire is public
-                    if let Some(pos) = self.pub_wires.get_mut(out_wire) {
-                        let out_val = *composer.variables.get(&x).unwrap() + *composer.variables.get(&y).unwrap();
-                        *pos = Some(composer.circuit_size());
+    ) -> Result<(), Error> {
+        let mut inputs = BTreeMap::new();
+        for (var, field_elt) in &self.variable_map {
+            inputs.insert(var, composer.add_input(*field_elt));
+        }
+        let zero = composer.zero_var();
+        for expr in &self.module.exprs {
+            if let Expr::Infix(InfixOp::Equal, lhs, rhs) = &expr.v {
+                match (&lhs.v, &rhs.v) {
+                    // Variables on the LHS
+                    // v1 = v2
+                    (
+                        Expr::Variable(v1),
+                        Expr::Variable(v2),
+                    ) => {
                         composer.arithmetic_gate(|gate| {
-                            gate.witness(x, y, None).add(F::one(), F::one()).pi(out_val)
+                            gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
+                                .add(F::one(), -F::one())
                         });
-                        pubout.insert(out_wire.clone(), out_val);
-                    } else {
-                        let out = composer.arithmetic_gate(|gate| {
-                            gate.witness(x, y, None).add(F::one(), F::one())
-                        });
-                        self.wires.insert(out_wire.clone(), Some(out));
-                    }
-                },
-                // out = mul x y
-                "mul" => {
-                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
-                    let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
-
-                    let out_wire = gate.out_wires.get(0).unwrap();
-
-                    // Add the correct gate depending on if output wire is public
-                    if let Some(pos) = self.pub_wires.get_mut(out_wire) {
-                        let out_val = *composer.variables.get(&x).unwrap() * *composer.variables.get(&y).unwrap();
-                        *pos = Some(composer.circuit_size());
+                    },
+                    // v1 = c2
+                    (
+                        Expr::Variable(v1),
+                        Expr::Constant(c2),
+                    ) => {
                         composer.arithmetic_gate(|gate| {
-                            gate.witness(x, y, None).mul(F::one()).pi(out_val)
+                            gate.witness(inputs[&v1.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(make_constant(-c2))
                         });
-                        pubout.insert(out_wire.clone(), out_val);
-                    } else {
-                        let out = composer.arithmetic_gate(|gate| {
-                            gate.witness(x, y, None).mul(F::one())
+                    },
+                    // v1 = -c2
+                    (
+                        Expr::Variable(v1),
+                        Expr::Negate(e2),
+                    ) if matches!(&e2.v, Expr::Constant(c2) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(make_constant(*c2))
                         });
-                        self.wires.insert(out_wire.clone(), Some(out));
-                    }
-                },
-                // bit_range[n], where n is even
-                "bit_range" => {
-                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
-                    let num_bits: usize = gate.parameters.get(0).unwrap().parse().unwrap();
-                    composer.range_gate(x, num_bits);
-                },
-                "bool" => {
-                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
-                    composer.boolean_gate(x);
-                },
-                // z = xor[n] x y, where n is even
-                "xor" => {
-                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
-                    let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
-
-                    let num_bits: usize = gate.parameters.get(0).unwrap().parse().unwrap();
-                    let out = composer.xor_gate(x, y, num_bits);
-                    let out_wire = gate.out_wires.get(0).unwrap();
-
-                    // Add additional constraint if output wire is public
-                    if let Some(pos_x) = self.pub_wires.get_mut(out_wire) {
-                        *pos_x = Some(composer.circuit_size());
-                        let val = *composer.variables.get(&out).unwrap();
-                        composer.constrain_to_constant(out, F::zero(), Some(-val));
-                        pubout.insert(out_wire.clone(), val);
-                    } else {
-                        self.wires.insert(out_wire.clone(), Some(out));
-                    }
-                },
-                // z = and[n] x y, where n is even
-                "and" => {
-                    let x = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
-                    let y = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
-
-                    let num_bits: usize = gate.parameters.get(0).unwrap().parse().unwrap();
-                    let out = composer.and_gate(x, y, num_bits);
-                    let out_wire = gate.out_wires.get(0).unwrap();
-
-                    // Add additional constraint if output wire is public
-                    if let Some(pos_x) = self.pub_wires.get_mut(out_wire) {
-                        *pos_x = Some(composer.circuit_size());
-                        let val = *composer.variables.get(&out).unwrap();
-                        composer.constrain_to_constant(out, F::zero(), Some(-val));
-                        pubout.insert(out_wire.clone(), val);
-                    } else {
-                        self.wires.insert(out_wire.clone(), Some(out));
-                    }
-                },
-                // z = cselect bit x y
-                "cselect" => {
-                    let bit = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
-                    let opt_0 = self.wires.get(gate.wires.get(1).unwrap()).unwrap().unwrap();
-                    let opt_1 = self.wires.get(gate.wires.get(2).unwrap()).unwrap().unwrap();
-
-                    let out = composer.conditional_select(bit, opt_0, opt_1);
-                    let out_wire = gate.out_wires.get(0).unwrap();
-                    self.wires.insert(out_wire.clone(), Some(out));
-                },
-                "fixed_base_scalar_mul" => {
-                    let e = self.wires.get(gate.wires.get(0).unwrap()).unwrap().unwrap();
-
-                    let x_wire = gate.out_wires.get(0).unwrap();
-                    let y_wire = gate.out_wires.get(1).unwrap();
-
-                    let (x, y) = P::AFFINE_GENERATOR_COEFFS;
-                    let generator = GroupAffine::new(x, y);
-
-                    let scalar_mul_result =
-                        composer.fixed_base_scalar_mul(e, generator);
-
-                    // Add additional constraint if output wire is public
-                    if let Some(pos_x) = self.pub_wires.get_mut(x_wire) {
-                        *pos_x = Some(composer.circuit_size());
-                        let x_val = *composer.variables.get(&scalar_mul_result.x).unwrap();
-                        composer.constrain_to_constant(scalar_mul_result.x, F::zero(), Some(-x_val));
-                        pubout.insert(x_wire.clone(), x_val);
-                    } else {
-                        self.wires.insert(x_wire.clone(), Some(scalar_mul_result.x));
-                    }
-
-                    // Add additional constraint if output wire is public
-                    if let Some(pos_y) = self.pub_wires.get_mut(y_wire) {
-                        *pos_y = Some(composer.circuit_size());
-                        let y_val = *composer.variables.get(&scalar_mul_result.y).unwrap();
-                        composer.constrain_to_constant(scalar_mul_result.y, F::zero(), Some(-y_val));
-                        pubout.insert(y_wire.clone(), y_val);
-                    } else {
-                        self.wires.insert(y_wire.clone(), Some(scalar_mul_result.y));
-                    }
-                },
-                _ => {
-
+                        true
+                    }) => {},
+                    // v1 = -v2
+                    (
+                        Expr::Variable(v1),
+                        Expr::Negate(e2),
+                    ) if matches!(&e2.v, Expr::Variable(v2) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
+                                .add(F::one(), F::one())
+                        });
+                        true
+                    }) => {},
+                    // v1 = c2 + c3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(make_constant(-c2-c3))
+                        });
+                        true
+                    }) => {},
+                    // v1 = v2 + c3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
+                                .add(F::one(), -F::one())
+                                .constant(make_constant(-c3))
+                        });
+                        true
+                    }) => {},
+                    // v1 = c2 + v3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
+                                .add(F::one(), -F::one())
+                                .constant(make_constant(-c2))
+                        });
+                        true
+                    }) => {},
+                    // v1 = v2 + v3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v2.id], Some(inputs[&v3.id]))
+                                .add(F::one(), -F::one())
+                                .out(-F::one())
+                        });
+                        true
+                    }) => {},
+                    // v1 = c2 - c3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(make_constant(-c2+c3))
+                        });
+                        true
+                    }) => {},
+                    // v1 = v2 - c3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
+                                .add(F::one(), -F::one())
+                                .constant(make_constant(*c3))
+                        });
+                        true
+                    }) => {},
+                    // v1 = c2 - v3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
+                                .add(F::one(), F::one())
+                                .constant(make_constant(-c2))
+                        });
+                        true
+                    }) => {},
+                    // v1 = v2 - v3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v2.id], Some(inputs[&v3.id]))
+                                .add(F::one(), -F::one())
+                                .out(F::one())
+                        });
+                        true
+                    }) => {},
+                    // v1 = c2 / c3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(*c2);
+                        let op2: F = make_constant(*c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(-(op1/op2))
+                        });
+                        true
+                    }) => {},
+                    // v1 = v2 / c3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op2: F = make_constant(*c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
+                                .add(F::one(), -(F::one()/op2))
+                        });
+                        true
+                    }) => {},
+                    // v1 = c2 / v3 ***
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        let op1: F = make_constant(*c2);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
+                                .mul(F::one())
+                                .constant(-op1)
+                        });
+                        true
+                    }) => {},
+                    // v1 = v2 / v3 ***
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v3.id], Some(inputs[&v2.id]))
+                                .mul(F::one())
+                                .out(-F::one())
+                        });
+                        true
+                    }) => {},
+                    // v1 = c2 * c3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(*c2);
+                        let op2: F = make_constant(*c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(-(op1*op2))
+                        });
+                        true
+                    }) => {},
+                    // v1 = v2 * c3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op2: F = make_constant(*c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
+                                .add(F::one(), -op2)
+                        });
+                        true
+                    }) => {},
+                    // v1 = c2 * v3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        let op2: F = make_constant(*c2);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
+                                .add(F::one(), -op2)
+                        });
+                        true
+                    }) => {},
+                    // v1 = v2 * v3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], inputs[&v3.id], Some(inputs[&v1.id]))
+                                .mul(F::one())
+                                .out(-F::one())
+                        });
+                        true
+                    }) => {},
+                    // Now for constants on the LHS
+                    // c1 = v2
+                    (
+                        Expr::Constant(c1),
+                        Expr::Variable(v2),
+                    ) => {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(make_constant(-c1))
+                        });
+                    },
+                    // c1 = c2
+                    (
+                        Expr::Constant(c1),
+                        Expr::Constant(c2),
+                    ) => {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(zero, zero, Some(zero))
+                                .add(F::zero(), F::zero())
+                                .constant(make_constant(c2-c1))
+                        });
+                    },
+                    // c1 = -c2
+                    (
+                        Expr::Constant(c1),
+                        Expr::Negate(e2),
+                    ) if matches!(&e2.v, Expr::Constant(c2) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(zero, zero, Some(zero))
+                                .add(F::zero(), F::zero())
+                                .constant(make_constant(c1+*c2))
+                        });
+                        true
+                    }) => {},
+                    // c1 = -v2
+                    (
+                        Expr::Constant(c1),
+                        Expr::Negate(e2),
+                    ) if matches!(&e2.v, Expr::Variable(v2) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(make_constant(*c1))
+                        });
+                        true
+                    }) => {},
+                    // c1 = c2 + c3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(zero, zero, Some(zero))
+                                .add(F::zero(), F::zero())
+                                .constant(make_constant(c1-c2-c3))
+                        });
+                        true
+                    }) => {},
+                    // c1 = v2 + c3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(make_constant(c3-c1))
+                        });
+                        true
+                    }) => {},
+                    // c1 = c2 + v3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v3.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(make_constant(c2-c1))
+                        });
+                        true
+                    }) => {},
+                    // c1 = v2 + v3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
+                                .add(F::one(), F::one())
+                                .constant(make_constant(-c1))
+                        });
+                        true
+                    }) => {},
+                    // c1 = c2 - c3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(zero, zero, Some(zero))
+                                .add(F::zero(), F::zero())
+                                .constant(make_constant(c2-c3-c1))
+                        });
+                        true
+                    }) => {},
+                    // c1 = v2 - c3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(make_constant(-*c3-c1))
+                        });
+                        true
+                    }) => {},
+                    // c1 = c2 - v3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v3.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(make_constant(c1-c2))
+                        });
+                        true
+                    }) => {},
+                    // c1 = v2 - v3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
+                                .add(F::one(), -F::one())
+                                .constant(make_constant(-c1))
+                        });
+                        true
+                    }) => {},
+                    // c1 = c2 / c3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(*c1);
+                        let op2: F = make_constant(*c2);
+                        let op3: F = make_constant(*c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(zero, zero, Some(zero))
+                                .add(F::zero(), F::zero())
+                                .constant(op1-(op2/op3))
+                        });
+                        true
+                    }) => {},
+                    // c1 = v2 / c3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(*c1);
+                        let op3: F = make_constant(*c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(-(op1*op3))
+                        });
+                        true
+                    }) => {},
+                    // c1 = c2 / v3 ***
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        let op1: F = make_constant(*c1);
+                        let op2: F = make_constant(*c2);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v3.id], zero, Some(zero))
+                                .constant(-(op2/op1))
+                        });
+                        true
+                    }) => {},
+                    // c1 = v2 / v3 ***
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        let op1: F = make_constant(*c1);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
+                                .add(F::one(), -op1)
+                        });
+                        true
+                    }) => {},
+                    // c1 = c2 * c3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(*c1);
+                        let op2: F = make_constant(*c2);
+                        let op3: F = make_constant(*c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(zero, zero, Some(zero))
+                                .add(F::zero(), F::zero())
+                                .constant(op1-(op2*op3))
+                        });
+                        true
+                    }) => {},
+                    // c1 = v2 * c3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(*c1);
+                        let op3: F = make_constant(*c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], zero, Some(zero))
+                                .add(op3, F::zero())
+                                .constant(-op1)
+                        });
+                        true
+                    }) => {},
+                    // c1 = c2 * v3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        let op1: F = make_constant(*c1);
+                        let op2: F = make_constant(*c2);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v3.id], zero, Some(zero))
+                                .add(op2, F::zero())
+                                .constant(-op1)
+                        });
+                        true
+                    }) => {},
+                    // c1 = v2 * v3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        let op1: F = make_constant(*c1);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
+                                .mul(F::one())
+                                .constant(-op1)
+                        });
+                        true
+                    }) => {},
+                    _ => panic!("unsupported constraint encountered: {}", expr)
                 }
             }
-        });
-        Ok(pubout)
-    }
-
-    pub fn compile_prover_and_verifier<PC>(
-        &mut self,
-        u_params: &PC::UniversalParams,
-    ) -> Result<(ProverKey<F>, VerifierKey<F, PC>), Error>
-    where
-        F: PrimeField,
-        PC: HomomorphicCommitment<F>,
-    {
-        // Setup PublicParams
-        let circuit_size = self.size;
-        let (ck, _) = PC::trim(
-            u_params,
-            // +1 per wire, +2 for the permutation poly
-            circuit_size + 6,
-            0,
-            None,
-        )
-        .map_err(to_pc_error::<F, PC>)?;
-
-        // Generate & save `ProverKey` with some random values.
-        let mut prover = Prover::<F, P, PC>::new(b"test");
-        self.synth_using_composer(prover.mut_cs(), None, None)?;
-        prover.preprocess(&ck)?;
-
-        // Generate & save `VerifierKey` with some random values.
-        let mut verifier = Verifier::new(b"test");
-        self.synth_using_composer(verifier.mut_cs(), None, None)?;
-        verifier.preprocess(&ck)?;
-
-        Ok((prover
-            .prover_key
-            .expect("Unexpected error. Missing ProverKey in compilation"),
-            verifier.
-            verifier_key.
-            expect("Unexpected error. Missing VerifierKey in compilation")
-        ))
-    }
-
-
-    pub fn compile_prover<PC>(
-        &mut self,
-        u_params: &PC::UniversalParams,
-    ) -> Result<ProverKey<F>, Error>
-    where
-        F: PrimeField,
-        PC: HomomorphicCommitment<F>,
-    {
-        // Setup PublicParams
-        let circuit_size = self.size;
-        let (ck, _) = PC::trim(
-            u_params,
-            // +1 per wire, +2 for the permutation poly
-            circuit_size + 6,
-            0,
-            None,
-        )
-        .map_err(to_pc_error::<F, PC>)?;
-
-        // Generate & save `ProverKey` with some random values.
-        let mut prover = Prover::<F, P, PC>::new(b"test");
-        self.synth_using_composer(prover.mut_cs(), None, None)?;
-        prover.preprocess(&ck)?;
-
-        Ok(prover
-            .prover_key
-            .expect("Unexpected error. Missing ProverKey in compilation"))
-    }
-
-    pub fn compile_verifier<PC>(
-        &mut self,
-        u_params: &PC::UniversalParams,
-    ) -> Result<VerifierKey<F, PC>, Error>
-    where
-        F: PrimeField,
-        PC: HomomorphicCommitment<F>,
-    {
-        // Setup PublicParams
-        let circuit_size = self.size;
-        let (ck, _) = PC::trim(
-            u_params,
-            // +1 per wire, +2 for the permutation poly
-            circuit_size + 6,
-            0,
-            None,
-        )
-        .map_err(to_pc_error::<F, PC>)?;
-
-        // Generate & save `VerifierKey` with some random values.
-        let mut verifier = Verifier::new(b"test");
-        self.synth_using_composer(verifier.mut_cs(), None, None)?;
-        verifier.preprocess(&ck)?;
-        Ok(verifier.
-            verifier_key.
-            expect("Unexpected error. Missing VerifierKey in compilation"))
-    }
-}
-
-pub fn run_and_prove<F, P, PC> (
-    u_params: &PC::UniversalParams,
-    prover_key: ProverKey<F>,
-    circuit: &mut Synthesizer<F, P>,
-    public_inputs: &HashMap<String, F>,
-    witnesses: &HashMap<String, F>
-) -> Result<(Proof<F, PC>, HashMap<String, F>), Error>
-    where
-        F: PrimeField,
-        P: TEModelParameters<BaseField = F>,
-        PC: HomomorphicCommitment<F>,
-    {
-    let circuit_size = circuit.size;
-    let (ck, _) = PC::trim(
-        u_params,
-        // +1 per wire, +2 for the permutation poly
-        circuit_size + 6,
-        0,
-        None,
-    ).unwrap();
-    // New Prover instance
-    let mut prover = Prover::new(b"test");
-
-    let pubout = circuit.synth_using_composer(prover.mut_cs(), Some(public_inputs), Some(witnesses))?;
-
-    // prover.mut_cs()
-    //         .check_circuit_satisfied();
-
-    // Add ProverKey to Prover
-    prover.prover_key = Some(prover_key);
-    let proof = prover.prove(&ck)?;
-
-    Ok((proof, pubout))
-}
-
-pub fn verify<F, P, PC> (
-    u_params: &PC::UniversalParams,
-    plonk_verifier_key: VerifierKey<F, PC>,
-    circuit: &mut Synthesizer<F, P>,
-    public_inputs: &HashMap<String, F>,
-    proof: &Proof<F, PC>
-) -> Result<(), Error> where
-        F: PrimeField,
-        P: TEModelParameters<BaseField = F>,
-        PC: HomomorphicCommitment<F>,
-    {
-    // Build public input vector
-    let mut pi = vec![F::zero(); circuit.size];
-    circuit.pub_wires.iter().for_each(|(wire, pos)| {
-        let val = *public_inputs.get(&wire.clone()).unwrap();
-        if let Some(pos) = pos {
-            pi[*pos] = val;
         }
-    });
-
-    // Build verifier key
-    let mut verifier: Verifier<F, P, PC> = Verifier::new(b"test");
-    verifier.verifier_key = Some(plonk_verifier_key);
-    let (_ck, vk) = PC::trim(
-        u_params,
-        // +1 per wire, +2 for the permutation poly
-        circuit.size + 6,
-        0,
-        None,
-    ).unwrap();
-
-    verifier.verify(
-        proof,
-        &vk,
-        pi.as_slice(),
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::synth;
-
-    use ark_poly_commit::{PolynomialCommitment, sonic_pc::SonicKZG10};
-    use rand::rngs::OsRng;
-    use ark_bls12_381::{Bls12_381, Fr};
-    use ark_poly::polynomial::univariate::DensePolynomial;
-    use ark_ed_on_bls12_381::EdwardsParameters as JubJubParameters;
-
-    #[test]
-    fn synth_pub_and_gate() {
-        let ast_circuit = ast::parse_circuit_from_string("
-            pub a d
-            gate a pub b
-            gate b c
-        ");
-        let mut circuit = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit.from_ast(ast_circuit);
-        assert_eq!(circuit.pub_wires.len(), 3);
-        assert_eq!(circuit.wires.len(), 4);
-        assert_eq!(circuit.gates.len(), 2);
+        Ok(())
     }
 
-    #[test]
-    fn synth_builtin() {
-        let ast_circuit = ast::parse_circuit_from_string("
-            pub x
-            pubout_poly_gate[0 1 0 0 0] y y y x
-            poly_gate[1 0 0 0 0] y y y y
-        ");
-        let mut circuit = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit.from_ast(ast_circuit);
-        type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
-
-        let pk_p = circuit.compile_prover::<PC>(&pp).unwrap();
-        assert_eq!(pk_p.n, 8);
-    }
-
-    #[test]
-    fn synth_bit_range() {
-        let ast_circuit = ast::parse_circuit_from_string("
-            pub x y
-            bit_range[4] x
-            bit_range[6] y
-        ");
-        let mut circuit = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit.from_ast(ast_circuit);
-        type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
-
-        let pk_p = circuit.compile_prover::<PC>(&pp).unwrap();
-        assert_eq!(pk_p.n, 16);
-    }
-
-    #[test]
-    fn compile() {
-        // Generate CRS
-        type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
-
-        // Circuit
-        let ast_circuit = ast::parse_circuit_from_string("");
-
-        // Runtime inputs
-        let public_inputs: HashMap<String, Fr> = HashMap::from([
-            ("x".to_string(), Fr::from(1u64)),
-        ]);
-        let witnesses: HashMap<String, Fr> = HashMap::from([
-            ("y".to_string(), -Fr::from(1u64))
-        ]);
-
-
-        let mut circuit = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit.from_ast(ast_circuit.clone());
-        let (pk, vk) = circuit.compile_prover_and_verifier::<PC>(&pp).unwrap();
-
-        // Prover POV
-        let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_prover.from_ast(ast_circuit.clone());
-        let pk2 = circuit.compile_prover::<PC>(&pp).unwrap();
-        assert_eq!(pk, pk2);
-        let (proof, _) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
-
-        // Verifier POV
-        let mut circuit_verifier = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_verifier.from_ast(ast_circuit.clone());
-        let vk2 = circuit.compile_verifier::<PC>(&pp).unwrap();
-        assert_eq!(vk, vk2);
-        verify(&pp, vk, &mut circuit_verifier, &public_inputs, &proof).unwrap();
-    }
-
-    #[test]
-    fn pubout_poly_gate() {
-        // Generate CRS
-        type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
-
-        // Circuit
-        let ast_circuit = ast::parse_circuit_from_string("
-            pub x
-            pubout_poly_gate[0 1 0 0 0] y y y x
-        ");
-
-        // Runtime inputs
-        let public_inputs: HashMap<String, Fr> = HashMap::from([
-            ("x".to_string(), Fr::from(1u64)),
-        ]);
-        let witnesses: HashMap<String, Fr> = HashMap::from([
-            ("y".to_string(), -Fr::from(1u64))
-        ]);
-
-        // Prover POV
-        let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_prover.from_ast(ast_circuit.clone());
-        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
-        let (proof, _) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
-
-        // Verifier POV
-        let mut circuit_verifier = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_verifier.from_ast(ast_circuit.clone());
-        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
-        verify(&pp, vk, &mut circuit_verifier, &public_inputs, &proof).unwrap();
-    }
-
-    #[test]
-    fn poly_gate() {
-        // Generate CRS
-        type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
-
-        // Circuit
-        let ast_circuit = ast::parse_circuit_from_string("
-            -y^2 = 3*x - 5^6 + 8*y^3
-        ");
-
-        // Runtime inputs
-        let public_inputs: HashMap<String, Fr> = HashMap::from([]);
-        let witnesses: HashMap<String, Fr> = HashMap::from([
-            ("x".to_string(), Fr::from(1u64)),
-            ("y".to_string(), -Fr::from(1u64))
-        ]);
-
-        // Prover POV
-        let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_prover.from_ast(ast_circuit.clone());
-        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
-        let (proof, _) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
-
-        // Verifier POV
-        let mut circuit_verifier = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_verifier.from_ast(ast_circuit.clone());
-        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
-        verify(&pp, vk, &mut circuit_verifier, &public_inputs, &proof).unwrap();
-    }
-
-    #[test]
-    fn add_mul_pubadd() {
-        // Generate CRS
-        type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
-
-        // Circuit
-        let ast_circuit = ast::parse_circuit_from_string("
-            pub z
-            a = add x y
-            b = mul x y
-            z = add a b
-        ");
-
-        // Runtime inputs
-        let public_inputs: HashMap<String, Fr> = HashMap::from([]);
-        let witnesses: HashMap<String, Fr> = HashMap::from([
-            ("x".to_string(), Fr::from(2u64)),
-            ("y".to_string(), Fr::from(3u64))
-        ]);
-
-        // Prover POV
-        let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_prover.from_ast(ast_circuit.clone());
-        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
-        let (proof, pubout) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
-
-        let z = pubout.get("z").unwrap();
-        assert_eq!(*z, Fr::from(11u64));
-
-        // Verifier POV
-        let mut circuit_verifier = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_verifier.from_ast(ast_circuit.clone());
-        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
-        verify(&pp, vk, &mut circuit_verifier, &pubout, &proof).unwrap();
-    }
-
-    #[test]
-    fn xor_and_pubadd() {
-        // Generate CRS
-        type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 13, None, &mut OsRng).unwrap();
-
-        // Circuit
-        let ast_circuit = ast::parse_circuit_from_string("
-            pub c
-            a = xor[10] x y
-            b = and[10] x y
-            c = add a b
-        ");
-
-        // Runtime inputs
-        let public_inputs: HashMap<String, Fr> = HashMap::from([]);
-        let witnesses: HashMap<String, Fr> = HashMap::from([
-            ("x".to_string(), Fr::from(321u64)),
-            ("y".to_string(), Fr::from(678u64))
-        ]);
-        // Prover POV
-        let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_prover.from_ast(ast_circuit.clone());
-        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
-        let (proof, pubout) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
-
-        // Verifier POV
-        let mut circuit_verifier = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_verifier.from_ast(ast_circuit.clone());
-        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
-        verify(&pp, vk, &mut circuit_verifier, &pubout, &proof).unwrap();
-    }
-
-    #[test]
-    //#[ignore]
-    fn test_circuit() {
-        // Generate CRS
-        type PC = SonicKZG10::<Bls12_381,DensePolynomial<Fr>>;
-        let pp = PC::setup(1 << 14, None, &mut OsRng).unwrap();
-
-        // Circuit
-        let ast_circuit = ast::parse_circuit_from_string("
-            pub c d// x y
-            bit_range[64] a
-            bit_range[32] b
-            c = add a b
-            d = mul a b
-            //x y = fixed_base_scalar_mul e
-        ");
-
-        // Runtime inputs
-        let public_inputs: HashMap<String, Fr> = HashMap::from([
-            ("c".to_string(), Fr::from(25u64)),
-            ("d".to_string(), Fr::from(100u64)),
-        ]);
-        let witnesses: HashMap<String, Fr> = HashMap::from([
-            ("a".to_string(), Fr::from(20u64)),
-            ("b".to_string(), Fr::from(5u64)),
-            //("e".to_string(), Fr::from(2u64)),
-        ]);
-
-        // Prover POV
-        let mut circuit_prover = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_prover.from_ast(ast_circuit.clone());
-        let pk = circuit_prover.compile_prover::<PC>(&pp).unwrap();
-        let (proof, pubout) = run_and_prove(&pp, pk, &mut circuit_prover, &public_inputs, &witnesses).unwrap();
-
-        // Verifier POV
-        let mut circuit_verifier = synth::Synthesizer::<Fr, JubJubParameters>::default();
-        circuit_verifier.from_ast(ast_circuit.clone());
-        let vk = circuit_verifier.compile_verifier::<PC>(&pp).unwrap();
-        verify(&pp, vk, &mut circuit_verifier, &pubout, &proof).unwrap();
+    fn padded_circuit_size(&self) -> usize {
+        1 << 10
     }
 }

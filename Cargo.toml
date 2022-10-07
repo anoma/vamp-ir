@@ -8,9 +8,17 @@ edition = "2021"
 std = []
 
 [dependencies]
-pest = "2.1.0"
-pest_derive = "2.1.0"
-pest-ast = "0.3.3"
-from-pest = "0.3.1"
-ark-ff = "0.3.0"
-lazy_static = "1.3.0"
+pest = "2.0"
+pest_derive = "2.0"
+ark-ff = "0.3"
+ark-ec = "0.3"
+ark-bls12-381 = "0.3"
+ark-ed-on-bls12-381 = "0.3"
+ark-poly = "0.3"
+ark-poly-commit = "0.3"
+ark-serialize = "0.3.0"
+num-bigint = "^0.4.0"
+bincode = "2.0.0-rc.1"
+rand_core = "0.6.3"
+plonk = { git = "https://github.com/ZK-Garage/plonk", rev = "2c876bc9" }
+plonk-core = { git = "https://github.com/ZK-Garage/plonk", rev = "2c876bc9", features = [ "std", "trace", "trace-print" ] }
