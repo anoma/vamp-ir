@@ -1,84 +1,217 @@
-# Vampir Aliased Multivariate Polynomial Intermediate Representation
+# Vamp-IR
 
-Proof system agnostic representation of circuits / constraint systems.
+Vamp-IR is a language for specifying arithmetic circuits. The Vamp-IR compiler can transform an arithmetic circuit into a form that is compatible with any proving system backend.
 
 - [Design rationale](https://specs.anoma.net/master/architecture/language/j-group/vampir/ir_design.html) / [Spec](https://specs.anoma.net/master/architecture/language/j-group/vampir/ir_spec.html)
-- Provides interfaces for `compile`, `prove`, and `verify` using IR.
-- Calls interfaces of `plonk-core`.
 
-## Interfaces
+VAMP-IR stands for:
 
-- Compile: takes input an IR file, outputs compiled prover key, verifier data, as
-  well as necessary metadata mapping IR wires to positions.
-- Prove: takes input the output of compile, as well as a table `PI` mapping
-  public input wires to values and a table `W` mapping non-ouput witness wires
-  to values, outputs a proof.
-- Verify: takes input the output of compile, as well as a table `PI` (same as
-  in prove), and a proof; outputs a boolean value.
+**V**amp-IR
+**A**liased
+**M**ultivariate
+**P**olynomial
+**I**ntermediate
+**R**epresentation
 
-## Testing
+The Vamp-IR language consists of *alias definitions* and *expressions* defining an arithmetic circuit.
 
-```=sh
-cd vamp-ir
-cargo test
+## Interface
+The Vamp-IR compiler takes as input:
+- A Vamp-IR document consisting of alias definitions and a circuit written with those aliases. (The alias definitions may come from Vamp-IR's standard library inwhich they don't need to included in the document itself, or they be written as custom aliases and included in the Vamp-IR document.)
+- Target backend parameters, which may include a specification of the constraint system (R1CS, 3-Plonk, 4-Plonk, etc.), the order of the scalar field, elliptic curve parameters, and so on. These parameters help the Vamp-IR compiler transform the given circuit into an optimized form targetting the backend proving system and give important information that is needed to compute the values during prover runtime (for instance, field division requries knowledge of the order of the scalar field).
+- (optionally) A precomputed prover input map which allows the Vamp-IR compiler to skip the prover runtime step.
+
+The Vamp-IR compiler outputs:
+- A portable, canonical form of the circuit as a `.vampir` document
+
+Additionally, if connected to a backend proving system implementation that has a Vamp-IR -> Backend compiler and parameters for the backend, Vamp-IR can invoke the backend proving system and output:
+- A proof in the backend proving system
+- A verification of a proof provided in the backend proving system
+
+## Components
+Vamp-IR consists of a parser, compiler, and a prover runtime. 
+- The parser parses the text input into an abstract structure tree. 
+- The compiler transforms the data in the tree in various ways, eventually arriving at a form that is compatible with some backend proving system implementation, according to *target backend parameters* which are supplied alongside the text input.
+- The prover runtime takes the circuit IR and the prover's private *initial inputs* and executes the circuit steps to produce the intermediate values of the computation. These are organized and sent to the backend prover in the *prover input map*.
+
+## Vamp-IR language
+
+Vamp-IR is a language for specifying arithmetic circuits. Circuits in Vamp-IR are written as a set of multivariable polynomial expressions. Vamp-IR allows a circuit writer to define their own custom, reusable circuits called *aliases*. Vamp-IR will also ship with a standard library of pre-defined aliases which are commonly needed. 
+
+A Vamp-IR document consists of a set of *aliases* and a *circuit*.
+
+## Circuit
+A Vamp-IR *circuit* is a set of *expressions*.
+
+### Expressions
+An *expression*  in Vamp-IR is a multivariable polynomial constraint written with variables, constants, and the symbols `+`, `-`, `*`, `^`, `(`, `)`, and `=`. 
+
+This constraint (which checks that $(x,y)$ is a point on a certain elliptic curve) is a Vamp-IR expression:
+
+`y^2 = x^3 + 3`
+
+Every expression is implicitly an equation in Vamp-IR. An expression written with no `=` is considered to be constrained to be equal to 0. Therefore, the equation above could be rewritten without the `=` as:
+
+`y^2 - (x^3 + 3)` 
+
+These two forms of expressions are equivalent in Vamp-IR. 
+
+### An example circuit
+
+Here is a small circuit written in Vamp-IR. This circuit checks that two twisted Edwards elliptic curve points $(x_1, y_1)$ and $(x_2, y_2)$ add to a third point $(x_3, y_3)$ on the curve. (This curve uses twisted Edwards parameters $A=3$ and $D=2$.)
+
+```
+(1 + 2*x1*x2*y1*y2)*x3 = x1*y2 + y1*x2
+(1 - 2*x1*x2*y1*y2)*y3 = y1*y2 - 3*x1*x2
 ```
 
-## How it (should) work
+## Aliases
+Since this circuit is likely to be used often, we can define an *alias* for it so it can be reused. An alias can include a *signature* which allows it to be used as a function by designating which internal wires can be considered inputs and outputs. The compiler then knows how to compose circuits together.
 
-### Global variables to keep track
+```
+def alias_name[param1, param2, ...] input1 input2 ... -> output1 output2 ... {
+  expression1
+  expression2
+  ...
+}
+```
 
-Synthesizer use `HashMap`s to keep track of private wires, public wires, and
-gates / aliases.
+Here is the circuit from earlier written as an alias:
+```
+def twisted_edwards_add[A, D] x1 y1 x2 y2 -> x3 y3 {
+  (1 + D*x1*x2*y1*y2)*x3 = x1*y2 + y1*x2
+  (1 - D*x1*x2*y1*y2)*y3 = y1*y2 - A*x1*x2
+}
+```
 
-- Wires: Public / Private, Output / non-output, Value. If a wire is marked as
-  an output wire, the backend also stores information on how it can be derived
-  from the values of other wires. Example: `x = y + z` marks `x` an output wire
-  which can be computed given values of `y` and `z`.
-- Alias: Input wire count, output wire count, body (vector of statements).
-  Should be initialized with the set of built-in gates.
+Then this alias can be called like a function inside a circuit:
+```
+twisted_edwards_add[3, 2] p1 q1 p2 q2
+```
 
-### Compilation pipeline
+### Example with expansion
+Here is a collection of aliases constraining $x$ to be a 1, 2, 4, or 8 bit integer. Then a circuit checks that a triple $(a,b,c)$ satisfies the Pythagorean theorem and that both $a$ and $b$ are bytes.
 
-1. Algebraic simplification
-  - Canonicalize polynomials: remove duplicate terms, collapse constants (e.g. `2^4 -> 16`)
-2. Alias expansion
-  - Recursively expand all aliases
-  - Naming of local wires: for example, a local wire `b` in `some_gate` alias
-    during the 2nd expansion can be named `some_gate#local#2#b`.
-2. Unnamed wire instantiation
-  - Allocate all unnamed wires from gate expressions in the `HashMap` for wires.
-  - Example naming: `some_gate#output#1#2` for the 2nd output of the 1st invocation of the gate `some_gate`.
-3. **(Not necessary for first iteration)** algebraic optimizations, wire eliminations, etc.
-4. Algebraic constraint translation
-  - Translate algebraic constraints to PLONK polynomial gates
-  - Supported polynomial gates
-    ```
-    poly_gate[m l r o c] xl xr -> xo {
-      o * xo = -m * (xl * xr) - l * xl - r * xr - c
-    }
-    ```
-    ```
-    pubout_poly_gate[m l r o c] xl xr xo -> xp {
-      pub xp = - m * (xl * xr) - l * xl - r * xr - o * xo - c
-    }
-    ```
-  - For first iteration: do something naive here, allocate a `poly_gate`
-    for each internal multiplication and addition.
-5. Circuit synthesis (proof-of-concept done in `synth.rs`)
-  - At this point the AST contains only gate constraint statements on
-    explicitly named wires.
-  - First, we need to obtain the metadata for the circuit from the AST
-    - Names of PI wires
-    - Names of output wires (wires that are output of custom gates)
-    - Names of non-output witness wires (and how they are derived from other
-      wires in terms of arithmetic expressions and built-in gates)
-  - Second, to synth the circuit, we simply walk the AST and call the corresponding Plonk functions.
-  - Finally, metadata and output of `plonk-core` (prover key and verifier data) is returned as output.
+```
+// aliases
 
-## Ordered TODO List
+def range[1] x {
+  x*x - x
+}
 
-1. Implement internal AST structs that can be easily manipulated (for alias
-   expansion, expression evaluation, and algebraic manipulations)
-2. Support alias expansion
-3. Support expressions
-4. CLI interfaces. (Use `clap`?)
+def range[2] x {
+  range[1] hi
+  range[1] lo
+  2*hi + lo - x
+}
+
+def range[4] x {
+  range[2] hi
+  range[2] lo
+  4*hi + lo - x
+}
+
+def range[8] x {
+  range[4] hi
+  range[4] lo
+  16*hi + lo - x
+}
+
+
+// circuit
+
+a^2 + b^2 = c^2
+range[8] a
+range[8] b
+```
+
+
+### Expanded form
+The circuit above is expanded by the compiler into a set of polynomial constraints, using $w_k$ to stand in for auxiliary variables required by the invoked aliases.
+```
+a*a + b*b - c*c
+w0*w0 - w0
+w1*w1 - w1
+2*w1 + w0 - w2
+w3*w3 - w3
+w4*w4 - w4
+2*w4 + w3 - w5
+4*w5 + w2 - w6
+w7*w7 - w7
+w8*w8 - w8
+2*w8 + w7 - w9
+w10*w10 - w10
+w11*w11 - w11
+2*w11 + w10 - w12
+4*w12 + w9 - w13
+8*w13 + w6 - a
+w14*w14 - w14
+w15*w15 - w15
+2*w15 + w14 - w16
+w17*w17 - w17
+w18*w18 - w18
+2*w18 + w17 - w19
+4*w19 + w16 - w20
+w21*w21 - w21
+w22*w22 - w22
+2*w22 + w21 - w23
+w24*w24 - w24
+w25*w25 - w25
+2*w25 + w24 - w26
+4*w26 + w23 - w27
+8*w27 + w20 - b
+```
+
+### Prover Input Map
+The compiler can use the expanded list of constraints to compute the values of all variables including the auxiliary variables, from the initial inputs $(a, b, c)$ during the *prover runtime* process.
+
+```
+  a: 3    // b00000011
+  b: 4    // b00000100
+  c: 5    // b00000101
+ w0: 1
+ w1: 1
+ w2: 3
+ w3: 0
+ w4: 0
+ w5: 0
+ w6: 3
+ w7: 0
+ w8: 0
+ w9: 0
+w10: 0
+w11: 0
+w12: 0
+w13: 0
+w14: 1
+w15: 0
+w16: 1
+w17: 1
+w18: 0
+w19: 1
+w20: 5
+w21: 0
+w22: 0
+w23: 0
+w24: 0
+w25: 0
+w26: 0
+w27: 0
+```
+
+## License
+
+Licensed under either of
+
+ * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
+   http://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
+
+### Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in the work by you, as defined in the Apache-2.0
+license, shall be dual licensed as above, without any additional terms or
+conditions.
