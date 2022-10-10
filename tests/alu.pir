@@ -10,36 +10,37 @@
 
 def bool x { x*(x-1) = 0; x };
 
-// Extract the 8 bits from a number argument
+// Extract the n+1 bits from a number argument
+// given a range function for n bits
 
-def range8 a {
-    def a0 = bool (fresh ((a\1) % 2));
-    def a1 = bool (fresh ((a\2) % 2));
-    def a2 = bool (fresh ((a\4) % 2));
-    def a3 = bool (fresh ((a\8) % 2));
-    def a4 = bool (fresh ((a\16) % 2));
-    def a5 = bool (fresh ((a\32) % 2));
-    def a6 = bool (fresh ((a\64) % 2));
-    def a7 = bool (fresh ((a\128) % 2));
-    a = a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7;
-    (a0, a1, a2, a3, a4, a5, a6, a7, ())
+def next_range range a {
+    def a0 = bool (fresh (a%2));
+    def a1 = fresh (a\2);
+    a = a0 + 2*a1;
+    (a0, range a1)
 };
 
-// Extract the 9 bits from a number argument
+// Inductively define range for each bit width
 
-def range9 a {
-    def a0 = bool (fresh ((a\1) % 2));
-    def a1 = bool (fresh ((a\2) % 2));
-    def a2 = bool (fresh ((a\4) % 2));
-    def a3 = bool (fresh ((a\8) % 2));
-    def a4 = bool (fresh ((a\16) % 2));
-    def a5 = bool (fresh ((a\32) % 2));
-    def a6 = bool (fresh ((a\64) % 2));
-    def a7 = bool (fresh ((a\128) % 2));
-    def a8 = bool (fresh ((a\256) % 2));
-    a = a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7 + 256*a8;
-    (a0, a1, a2, a3, a4, a5, a6, a7, a8, ())
-};
+def range0 0 { () };
+
+def range1 = next_range range0;
+
+def range2 = next_range range1;
+
+def range3 = next_range range2;
+
+def range4 = next_range range3;
+
+def range5 = next_range range4;
+
+def range6 = next_range range5;
+
+def range7 = next_range range6;
+
+def range8 = next_range range7;
+
+def range9 = next_range range8;
 
 // Pair up corresponding elements of each tuple
 
@@ -232,3 +233,5 @@ def rem a b { snd (divrem a b) };
 1 = sle8 5 5;
 
 (4,1) = divrem 9 2;
+
+range4 15;
