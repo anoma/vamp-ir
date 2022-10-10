@@ -35,11 +35,11 @@ impl<T> bincode::Decode for PrimeFieldBincode<T> where T: PrimeField {
 }
 
 // Make field elements from signed values
-fn make_constant<F: PrimeField>(c: i32) -> F {
+fn make_constant<F: PrimeField>(c: i64) -> F {
     if c >= 0 {
-        F::from(c as u32)
+        F::from(c as u64)
     } else {
-        -F::from((-c) as u32)
+        -F::from((-c) as u64)
     }
 }
 

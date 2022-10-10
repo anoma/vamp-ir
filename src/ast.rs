@@ -162,7 +162,7 @@ pub enum Pattern {
     As(Box<Pattern>, Variable),
     Product(Box<Pattern>, Box<Pattern>),
     Variable(Variable),
-    Constant(i32),
+    Constant(i64),
 }
 
 impl Pattern {
@@ -280,7 +280,7 @@ pub enum Expr {
     Infix(InfixOp, Box<TExpr>, Box<TExpr>),
     Negate(Box<TExpr>),
     Application(Box<TExpr>, Box<TExpr>),
-    Constant(i32),
+    Constant(i64),
     Variable(Variable),
     Function(Function),
     Intrinsic(Intrinsic),

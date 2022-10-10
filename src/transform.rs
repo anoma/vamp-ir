@@ -1113,7 +1113,7 @@ fn expand_range_intrinsic(
                 infix_op(
                     InfixOp::IntDivide,
                     val.clone(),
-                    TExpr { v: Expr::Constant(2i32.pow(i)), t: Some(Type::Int) }
+                    TExpr { v: Expr::Constant(2i64.pow(i)), t: Some(Type::Int) }
                 ),
                 TExpr { v: Expr::Constant(2), t: Some(Type::Int) }
             );
