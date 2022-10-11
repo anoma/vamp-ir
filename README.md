@@ -15,6 +15,39 @@ VAMP-IR stands for:
 
 The Vamp-IR language consists of *alias definitions* and *expressions* defining an arithmetic circuit.
 
+## Trying Vamp-IR
+
+### Installation
+```
+git clone git@github.com:anoma/vamp-ir
+cd vamp-ir
+cargo build
+```
+
+### Setup
+Creates public parameters for proving and verifying and saves to `params.pp`:
+```
+./target/debug/vamp-ir setup params.pp
+```
+
+### Compile
+Compiles `./tests/alu.pir` to `alu.plonk` using the setup:
+```
+./target/debug/vamp-ir compile ./tests/alu.pir params.pp alu.plonk
+```
+
+### Prove
+Create proof from `alu.plonk` and save to `proof.plonk`:
+```
+ ./target/debug/vamp-ir prove alu.plonk params.pp proof.plonk
+```
+
+### Verify
+Verify `proof.plonk`:
+```
+./target/debug/vamp-ir verify alu.plonk params.pp proof.plonk
+```
+
 ## Interface
 The Vamp-IR compiler takes as input:
 - A Vamp-IR document consisting of alias definitions and a circuit written with those aliases. (The alias definitions may come from Vamp-IR's standard library inwhich they don't need to included in the document itself, or they be written as custom aliases and included in the Vamp-IR document.)
