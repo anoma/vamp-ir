@@ -1039,7 +1039,7 @@ pub fn eliminate_dead_definitions(module: &mut Module) {
 
 /* The number of bits required to represent elements of the field we are working
  * in. */
-const RANGE_MAX_BITS: u32 = 16;
+const RANGE_MAX_BITS: u32 = 32;
 
 /* Register the range intrinsic in the compilation environment. */
 fn register_range_intrinsic(
