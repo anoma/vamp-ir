@@ -120,7 +120,7 @@ fn setup_cmd(args: &[String]) {
     }
     // Generate CRS
     println!("* Setting up public parameters...");
-    let pp = PC::setup(1 << 10, None, &mut OsRng)
+    let pp = PC::setup(1 << 18, None, &mut OsRng)
         .map_err(to_pc_error::<BlsScalar, PC>)
         .expect("unable to setup polynomial commitment scheme public parameters");
     let mut pp_file = File::create(args[0].clone())

@@ -782,6 +782,6 @@ where
     }
 
     fn padded_circuit_size(&self) -> usize {
-        1 << 10
+        1 << 18
     }
 }
