@@ -64,21 +64,3 @@ def (r0, r1, r2, r3, r4) = addition 5 4 2 1;
 r0 = 12;
 
 (12, 5, 4, 2, 1) = addition 5 4 2 1;
-
-
-def g_mixer va vb vc vd x y {
-    /*
-	va1 = va + vb + x;
-	vd1 = r1 xor32 vd va;
-	vc1 = vc + vd;
-	vb1 = r2 xor32 vb vc;
-
-	va2 = va1 + vb1 + y;
-	vd2 = r3 xor32 vd1 va1;
-	vc2 = vc1 + vd1;
-	vb2 = r4 xor32 vb1 vc1;
-
-	(va2, vb2, vc2, vd2)
-	*/
-    (va, vb, vc, vd)
-};
