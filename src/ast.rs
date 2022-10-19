@@ -75,30 +75,7 @@ impl Definition {
 
 impl fmt::Display for Definition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Expr::Function(Function(params, body)) = &self.0.1.v {
-            write!(f, "def {}", self.0.0)?;
-            for param in params {
-                write!(f, " {}", param)?;
-            }
-            let mut body_str = String::new();
-            write!(body_str, "{}", body)?;
-            if body_str.contains("\n") {
-                body_str = body_str.replace("\n", "\n    ");
-                write!(f, " =\n    {}", body_str)?
-            } else {
-                write!(f, " = {}", body_str)?
-            }
-        } else {
-            let mut val_str = String::new();
-            write!(val_str, "{}", self.0.1)?;
-            if val_str.contains("\n") {
-                val_str = val_str.replace("\n", "\n    ");
-                write!(f, "def {} =\n    {}", self.0.0, val_str)?
-            } else {
-                write!(f, "def {} = {}", self.0.0, val_str)?
-            }
-        }
-        Ok(())
+        write!(f, "def {}", self.0)
     }
 }
 
@@ -136,21 +113,30 @@ impl LetBinding {
 impl fmt::Display for LetBinding {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.1.v {
-            Expr::Function(fun) => {
+            Expr::Function(Function(params, body)) => {
                 write!(f, "{}", self.0)?;
-                for pat in &fun.0 {
+                for pat in params {
                     write!(f, " {}", pat)?;
                 }
                 write!(f, " =")?;
-                let mut body = String::new();
-                write!(body, "{}", fun.1)?;
-                if body.contains("\n") {
-                    write!(f, "\n    {}", body.replace("\n", "\n    "))?;
+                let mut body_str = String::new();
+                write!(body_str, "{}", body)?;
+                if body_str.contains("\n") {
+                    write!(f, "\n    {}", body_str.replace("\n", "\n    "))?;
                 } else {
                     write!(f, " {}", body)?;
                 }
             },
-            _ => write!(f, "{} = {}", self.0, self.1)?,
+            _ => {
+                let mut val_str = String::new();
+                write!(val_str, "{}", self.1)?;
+                if val_str.contains("\n") {
+                    let val_str = val_str.replace("\n", "\n    ");
+                    write!(f, "{} =\n    {}", self.0, val_str)?;
+                } else {
+                    write!(f, "{} = {}", self.0, val_str)?;
+                }
+            },
         };
         Ok(())
     }

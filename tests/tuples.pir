@@ -7,14 +7,14 @@
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
 // define higher order function
-def map f (a,b,c,d) {
+def map f (a,b,c,d) = {
     f a;
     f b;
     f c;
     f d
 };
 // defining a function
-def bool x { x*(x-1) = 0 };
+def bool x = { x*(x-1) = 0 };
 // user higher order function
 map bool q;
 // function value
