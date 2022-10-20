@@ -18,7 +18,7 @@ use plonk::error::to_pc_error;
 use std::collections::HashMap;
 use std::io::Write;
 use plonk_core::prelude::VerifierData;
-use crate::synth::PlonkModule;
+use crate::synth::{PlonkModule, make_constant};
 use plonk_core::circuit::Circuit;
 use ark_ff::PrimeField;
 use std::fs::File;
@@ -30,6 +30,7 @@ use bincode::error::{DecodeError, EncodeError};
 use ark_serialize::{Read, SerializationError};
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
+use num_bigint::BigInt;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -175,12 +176,12 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
         std::io::stdin()
             .read_line(&mut input_line)
             .expect("failed to read input");
-        let x: F = if let Ok(x) = input_line.trim().parse() {
+        let x: BigInt = if let Ok(x) = input_line.trim().parse() {
             x
         } else {
             panic!("input not an integer");
         };
-        var_assignments.insert(id, x);
+        var_assignments.insert(id, make_constant(&x));
     }
     var_assignments
 }

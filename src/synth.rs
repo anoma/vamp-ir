@@ -36,7 +36,7 @@ impl<T> bincode::Decode for PrimeFieldBincode<T> where T: PrimeField {
 }
 
 // Make field elements from signed values
-fn make_constant<F: PrimeField>(c: &BigInt) -> F {
+pub fn make_constant<F: PrimeField>(c: &BigInt) -> F {
     let magnitude = F::from(c.magnitude().clone());
     if c.is_positive() {
         magnitude
