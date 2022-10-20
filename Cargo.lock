@@ -980,6 +980,7 @@ dependencies = [
  "bincode",
  "clap",
  "num-bigint",
+ "num-traits",
  "pest",
  "pest_derive",
  "plonk",
