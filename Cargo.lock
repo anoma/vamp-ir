@@ -868,6 +868,7 @@ dependencies = [
  "ark-serialize",
  "bincode",
  "num-bigint",
+ "num-traits",
  "pest",
  "pest_derive",
  "plonk",
