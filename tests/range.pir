@@ -6,6 +6,8 @@
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
 
+pub x;
+
 // Ensure that the given argument is 1 or 0, and returns it
 
 def bool x { x*(x-1) = 0; x };

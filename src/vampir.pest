@@ -4,7 +4,7 @@ COMMENT = _{ "//" ~ (!"\n" ~ ANY)* | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 lowercaseIdent = @{ (ASCII_ALPHA_LOWER | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
-keyword = { "fun" | "def" }
+keyword = { "fun" | "def" | "pub" }
 
 valueName = { !keyword ~ lowercaseIdent }
 
@@ -48,5 +48,6 @@ negate = { "-" }
 
 definition = { "def" ~ letBinding }
 
-moduleItems = _{ SOI ~ ( ( definition | expr ) ~ ";" )+ ~ EOI }
+declaration = { "pub" ~ valueName ~ ( ", " ~ valueName)* }
 
+moduleItems = _{ SOI ~ ( declaration ~ ";" )* ~ ( ( definition | expr ) ~ ";" )+ ~ EOI }
