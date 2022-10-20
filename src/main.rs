@@ -18,7 +18,7 @@ use plonk::error::to_pc_error;
 use std::collections::HashMap;
 use std::io::Write;
 use plonk_core::prelude::VerifierData;
-use crate::synth::PlonkModule;
+use crate::synth::{PlonkModule, make_constant};
 use plonk_core::circuit::Circuit;
 use ark_ff::PrimeField;
 use std::fs::File;
@@ -28,6 +28,7 @@ use plonk_core::proof_system::{ProverKey, VerifierKey, Proof};
 use plonk_core::proof_system::pi::PublicInputs;
 use bincode::error::{DecodeError, EncodeError};
 use ark_serialize::{Read, SerializationError};
+use num_bigint::BigInt;
 
 type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
 
@@ -92,12 +93,12 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
         std::io::stdin()
             .read_line(&mut input_line)
             .expect("failed to read input");
-        let x: F = if let Ok(x) = input_line.trim().parse() {
+        let x: BigInt = if let Ok(x) = input_line.trim().parse() {
             x
         } else {
             panic!("input not an integer");
         };
-        var_assignments.insert(id, x);
+        var_assignments.insert(id, make_constant(&x));
     }
     var_assignments
 }

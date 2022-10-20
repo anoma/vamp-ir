@@ -10,7 +10,7 @@ valueName = { !keyword ~ lowercaseIdent }
 
 infixOp = { "/" | "*" | "+" | "-" | "=" | "^" }
 
-integerLiteral = @{ "0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
+integerLiteral = @{ "-"? ~ ( "0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* ) }
 
 constant = { integerLiteral | "(" ~ ")" }
 
