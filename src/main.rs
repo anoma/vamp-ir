@@ -15,7 +15,7 @@ use ark_poly_commit::{sonic_pc::SonicKZG10, PolynomialCommitment};
 use ark_poly::polynomial::univariate::DensePolynomial;
 use rand_core::OsRng;
 use plonk::error::to_pc_error;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use plonk_core::prelude::VerifierData;
 use crate::synth::PlonkModule;
@@ -82,11 +82,20 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
             input_variables.remove(&var.id);
         }
     }
-    
+    // Collect all public variables in order to enable annotations
+    let mut public_variables = HashSet::new();
+    for var in &annotated.pubs {
+        public_variables.insert(var.id);
+    }
     let mut var_assignments = HashMap::new();
     // Solicit input variables from user and solve for choice point values
     for (id, var) in input_variables {
-        print!("** {}: ", var);
+        let visibility = if public_variables.contains(&id) {
+            "(public)"
+        } else {
+            "(private)"
+        };
+        print!("** {} {}: ", var, visibility);
         std::io::stdout().flush().expect("flush failed!");
         let mut input_line = String::new();
         std::io::stdin()
