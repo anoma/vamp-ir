@@ -1,8 +1,8 @@
 /* Any numbers a,b such that a^2+b^2=25 yield valid proofs. Run as follows:
-   vamp-ir setup params.pp
-   vamp-ir compile tests/pyt.pir params.pp circuit.plonk
-   vamp-ir prove circuit.plonk params.pp proof.plonk
-   vamp-ir verify circuit.plonk params.pp proof.plonk
+   vamp-ir setup -m 10 -o params.pp
+   vamp-ir compile -u params.pp -s tests/pyt.pir -o circuit.plonk
+   vamp-ir prove -u params.pp -c circuit.plonk -o proof.plonk
+   vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
    */
 // computation + BIDMAS
 def pyt a b { a^2 + b^2 };

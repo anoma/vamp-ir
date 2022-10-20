@@ -1,10 +1,10 @@
 /* Any assignment such that the sets {q.0, q.1, q.2, q.3} =
    {0, 1} and r.0.0=r.0.1, r.1.0=r.1.1, r.2.0=r.2.1, r.3.0=r.3.1
    is valid. Run as follows:
-   vamp-ir setup params.pp
-   vamp-ir compile tests/tuples.pir params.pp circuit.plonk
-   vamp-ir prove circuit.plonk params.pp proof.plonk
-   vamp-ir verify circuit.plonk params.pp proof.plonk
+   vamp-ir setup -m 10 -o params.pp
+   vamp-ir compile -u params.pp -s tests/tuples.pir -o circuit.plonk
+   vamp-ir prove -u params.pp -c circuit.plonk -o proof.plonk
+   vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
 // define higher order function
 def map f (a,b,c,d) {
