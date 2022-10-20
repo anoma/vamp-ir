@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, print_types, Type};
 use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function, Match};
+use ark_ff::{One, Zero};
+use num_traits::sign::Signed;
 
 /* A structure for generating unique variable IDs. */
 pub struct VarGen(VariableId);
@@ -552,17 +554,17 @@ pub fn collect_module_variables(
  * simplifications. */
 fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
     match (op, &e1.v, &e2.v) {
-        (InfixOp::Multiply, Expr::Constant(1), _) => e2,
-        (InfixOp::Multiply, _, Expr::Constant(1)) => e1,
-        (InfixOp::Multiply, Expr::Constant(0), _) => e1,
-        (InfixOp::Multiply, _, Expr::Constant(0)) => e2,
-        (InfixOp::Divide, _, Expr::Constant(1)) => e1,
-        (InfixOp::IntDivide, _, Expr::Constant(1)) => e1,
-        (InfixOp::Modulo, _, Expr::Constant(1)) =>
-            TExpr { v: Expr::Constant(0), t: Some(Type::Int) },
-        (InfixOp::Add, Expr::Constant(0), _) => e2,
-        (InfixOp::Add, _, Expr::Constant(0)) => e1,
-        (InfixOp::Subtract, _, Expr::Constant(0)) => e1,
+        (InfixOp::Multiply, Expr::Constant(c), _) if c.is_one() => e2,
+        (InfixOp::Multiply, _, Expr::Constant(c)) if c.is_one() => e1,
+        (InfixOp::Multiply, Expr::Constant(c), _) if c.is_zero() => e1,
+        (InfixOp::Multiply, _, Expr::Constant(c)) if c.is_zero() => e2,
+        (InfixOp::Divide, _, Expr::Constant(c)) if c.is_one() => e1,
+        (InfixOp::IntDivide, _, Expr::Constant(c)) if c.is_one() => e1,
+        (InfixOp::Modulo, _, Expr::Constant(c)) if c.is_one() =>
+            TExpr { v: Expr::Constant(Zero::zero()), t: Some(Type::Int) },
+        (InfixOp::Add, Expr::Constant(c), _) if c.is_zero() => e2,
+        (InfixOp::Add, _, Expr::Constant(c)) if c.is_zero() => e1,
+        (InfixOp::Subtract, _, Expr::Constant(c)) if c.is_zero() => e1,
         (InfixOp::Equal, _, _) =>
             TExpr {
                 v: Expr::Infix(op, Box::new(e1), Box::new(e2)),
@@ -598,7 +600,7 @@ fn flatten_binding(
                  Expr::Infix(_, _, _) | Expr::Negate(_)) => {
             flattened.exprs.push(Expr::Infix(
                 InfixOp::Equal,
-                Box::new(Expr::Constant(*pat).into()),
+                Box::new(Expr::Constant(pat.clone()).into()),
                 Box::new(expr.clone()),
             ).into());
         },
@@ -729,7 +731,7 @@ fn flatten_expr_to_3ac(
     gen: &mut VarGen,
 ) -> Pattern {
     match (out, &expr.v) {
-        (None, Expr::Constant(val)) => Pattern::Constant(*val),
+        (None, Expr::Constant(val)) => Pattern::Constant(val.clone()),
         (None, Expr::Variable(var)) => Pattern::Variable(var.clone()),
         (Some(pat),
          Expr::Constant(_) | Expr::Variable(_)) => {
@@ -745,12 +747,12 @@ fn flatten_expr_to_3ac(
             out
         },
         (out, Expr::Infix(InfixOp::Exponentiate, e1, e2)) => {
-            match e2.v {
-                Expr::Constant(0) =>
-                    flatten_expr_to_3ac(out, &Expr::Constant(1).into(), flattened, gen),
-                Expr::Constant(1) =>
+            match &e2.v {
+                Expr::Constant(c) if c.is_zero() =>
+                    flatten_expr_to_3ac(out, &Expr::Constant(One::one()).into(), flattened, gen),
+                Expr::Constant(c) if c.is_one() =>
                     flatten_expr_to_3ac(out, e1, flattened, gen),
-                Expr::Constant(v2) if v2 > 0 => {
+                Expr::Constant(v2) if v2.is_positive() => {
                     // Compute the base once and for all
                     let out1_term = flatten_expr_to_3ac(None, e1, flattened, gen);
                     // Compute roughly the sqrt of this expression
@@ -768,7 +770,7 @@ fn flatten_expr_to_3ac(
                     );
                     // Multiply by the base once more in order to obtain
                     // original value
-                    if v2%2 == 1 {
+                    if v2%2 == One::one() {
                         rhs = infix_op(
                             InfixOp::Multiply,
                             rhs,
@@ -788,7 +790,7 @@ fn flatten_expr_to_3ac(
                     // Now invert the value to obtain this expression
                     let rhs = infix_op(
                         InfixOp::Divide,
-                        Expr::Constant(1).into(),
+                        Expr::Constant(One::one()).into(),
                         out1_term.to_expr()
                     );
                     flatten_expr_to_3ac(out, &rhs, flattened, gen)
@@ -857,7 +859,7 @@ pub fn flatten_module_to_3ac(
                 (_, Expr::Constant(val), ohs, _) |
                 (ohs, _, _, Expr::Constant(val)) => {
                     flatten_expr_to_3ac(
-                        Some(Pattern::Constant(*val)),
+                        Some(Pattern::Constant(val.clone())),
                         ohs,
                         flattened,
                         gen
