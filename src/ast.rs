@@ -12,6 +12,7 @@ pub struct VampirParser;
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Module {
+    pub pubs: Vec<Variable>,
     pub defs: Vec<Definition>,
     pub exprs: Vec<TExpr>,
 }
@@ -21,6 +22,7 @@ impl Module {
         let mut pairs = VampirParser::parse(Rule::moduleItems, &unparsed_file)?;
         let mut defs = vec![];
         let mut exprs = vec![];
+        let mut pubs = vec![];
         while let Some(pair) = pairs.next() {
             match pair.as_rule() {
                 Rule::expr => {
@@ -31,7 +33,15 @@ impl Module {
                     let definition = Definition::parse(pair).expect("expected definition");
                     defs.push(definition);
                 },
+                Rule::declaration => {
+                    let mut pairs = pair.into_inner();
+                    while let Some(pair) = pairs.next() {
+                        let var = Variable::parse(pair).expect("expected variable");
+                        pubs.push(var);
+                    }
+                },
                 Rule::EOI => return Ok(Self {
+                    pubs,
                     defs,
                     exprs,
                 }),
@@ -44,12 +54,18 @@ impl Module {
 
 impl Default for Module {
     fn default() -> Self {
-        Self { defs: vec![], exprs: vec![] }
+        Self { defs: vec![], exprs: vec![], pubs: vec![] }
     }
 }
 
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut prefix = "pub";
+        for var in &self.pubs {
+            write!(f, "{} {}", prefix, var)?;
+            prefix = ",";
+        }
+        writeln!(f, ";")?;
         for def in &self.defs {
             writeln!(f, "{};", def)?;
         }

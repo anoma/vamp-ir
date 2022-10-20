@@ -34,7 +34,7 @@ type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
 /* Captures all the data required to use a circuit. */
 struct CircuitData {
     pk_p: ProverKey::<BlsScalar>,
-    vk: VerifierKey::<BlsScalar, PC>,
+    vk: (VerifierKey::<BlsScalar, PC>, Vec<usize>),
     circuit: PlonkModule::<BlsScalar, JubJubParameters>,
 }
 
@@ -43,7 +43,7 @@ impl CircuitData {
     where R: std::io::Read {
         let pk_p = ProverKey::<BlsScalar>::deserialize(&mut reader)
             .map_err(|x| DecodeError::OtherString(x.to_string()))?;
-        let vk = VerifierKey::<_, _>::deserialize(&mut reader)
+        let vk = <(VerifierKey::<_, _>, Vec::<usize>)>::deserialize(&mut reader)
             .map_err(|x| DecodeError::OtherString(x.to_string()))?;
         let circuit: PlonkModule::<BlsScalar, JubJubParameters> =
             bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
@@ -213,7 +213,7 @@ fn verify_cmd(args: &[String]) {
     println!("* Reading arithmetic circuit...");
     let mut circuit_file = File::open(args[0].clone())
         .expect("unable to load circuit file");
-    let CircuitData { pk_p: _pk_p, vk, circuit: _circuit} =
+    let CircuitData { pk_p: _pk_p, vk, circuit } =
         CircuitData::read(&mut circuit_file).unwrap();
 
     println!("* Reading zero-knowledge proof...");
@@ -225,10 +225,15 @@ fn verify_cmd(args: &[String]) {
     let mut pp_file = File::open(args[1].clone())
         .expect("unable to load public parameters file");
     let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+
+    println!("* Public inputs:");
+    for (var, val) in circuit.annotate_public_inputs(&vk.1, &pi).values() {
+        println!("{} = {}", var, val);
+    }
     
     // Verifier POV
     println!("* Verifying proof validity...");
-    let verifier_data = VerifierData::new(vk, pi);
+    let verifier_data = VerifierData::new(vk.0, pi);
     let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
         &pp,
         verifier_data.key,
