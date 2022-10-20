@@ -6,6 +6,7 @@ use crate::pest::Parser;
 use bincode::{Encode, Decode};
 use std::collections::{HashMap, HashSet};
 use crate::transform::VarGen;
+use num_bigint::BigInt;
 #[derive(Parser)]
 #[grammar = "vampir.pest"]
 pub struct VampirParser;
@@ -162,13 +163,34 @@ impl fmt::Display for LetBinding {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+// This structure is required to Bincode BigInts
+struct BigIntBincode(BigInt);
+
+impl bincode::Encode for BigIntBincode {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), bincode::error::EncodeError> {
+        self.0.to_signed_bytes_le().encode(encoder)
+    }
+}
+
+impl bincode::Decode for BigIntBincode {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, bincode::error::DecodeError> {
+        let digits = Vec::<u8>::decode(decoder)?;
+        Ok(Self(BigInt::from_signed_bytes_le(&digits)))
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum Pat {
     Unit,
     As(Box<TPat>, Variable),
     Product(Box<TPat>, Box<TPat>),
     Variable(Variable),
-    Constant(i128),
+    Constant(BigInt),
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
@@ -246,7 +268,7 @@ impl TPat {
     pub fn to_expr(&self) -> TExpr {
         let v = match &self.v {
             Pat::Unit => Expr::Unit,
-            Pat::Constant(val) => Expr::Constant(*val),
+            Pat::Constant(val) => Expr::Constant(val.clone()),
             Pat::Variable(var) => Expr::Variable(var.clone()),
             Pat::As(pat, _name) => pat.to_expr().v,
             Pat::Product(pat1, pat2) => {
@@ -274,13 +296,85 @@ impl fmt::Display for TPat {
     }
 }
 
+// Encode is manually implemented for Pattern because some of its fields do not
+// implement Encode. This implementation uses wrappers to effect the encoding of
+// problematic fields.
+impl :: bincode :: Encode for Pat
+{
+    fn encode < E : :: bincode :: enc :: Encoder > (& self, encoder : & mut E)
+    -> core :: result :: Result < (), :: bincode :: error :: EncodeError >
+    {
+        match self
+        {
+            Self :: Unit =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (0u32), encoder) ?
+                ; Ok(())
+            }, Self :: As(field_0, field_1) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (1u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
+                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
+            }, Self :: Product(field_0, field_1) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (2u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
+                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
+            }, Self :: Variable(field_0) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (3u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
+            }, Self :: Constant(field_0) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (4u32), encoder) ?
+                ; :: bincode :: Encode :: encode(&BigIntBincode(field_0.clone()), encoder) ? ; Ok(())
+            },
+        }
+    }
+}
+
+// Decode is manually implemented for Pattern because some of its fields do not
+// implement Decode. This implementation uses wrappers to effect the decoding of
+// problematic fields.
+impl :: bincode :: Decode for Pat
+{
+    fn decode < D : :: bincode :: de :: Decoder > (decoder : & mut D) -> core
+    :: result :: Result < Self, :: bincode :: error :: DecodeError >
+    {
+        let variant_index = < u32 as :: bincode :: Decode > :: decode(decoder)
+        ? ; match variant_index
+        {
+            0u32 => Ok(Self :: Unit {}), 1u32 =>
+            Ok(Self :: As
+            {
+                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
+                :: Decode :: decode(decoder) ?,
+            }), 2u32 =>
+            Ok(Self :: Product
+            {
+                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
+                :: Decode :: decode(decoder) ?,
+            }), 3u32 =>
+            Ok(Self :: Variable
+            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 4u32 =>
+            Ok(Self :: Constant
+            { 0 : <BigIntBincode as :: bincode :: Decode> :: decode(decoder) ?.0, }), variant =>
+            Err(:: bincode :: error :: DecodeError :: UnexpectedVariant
+            {
+                found : variant, type_name : "Pattern", allowed : :: bincode
+                :: error :: AllowedEnumVariants :: Range { min : 0, max : 4 }
+            })
+        }
+    }
+}
+
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct TExpr {
     pub v: Expr,
     pub t: Option<Type>,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Unit,
     Sequence(Vec<TExpr>),
@@ -288,7 +382,7 @@ pub enum Expr {
     Infix(InfixOp, Box<TExpr>, Box<TExpr>),
     Negate(Box<TExpr>),
     Application(Box<TExpr>, Box<TExpr>),
-    Constant(i128),
+    Constant(BigInt),
     Variable(Variable),
     Function(Function),
     Intrinsic(Intrinsic),
@@ -315,6 +409,131 @@ impl Expr {
             Self::Function(_) | Self::Intrinsic(_) => None,
         });
         TExpr { v: self, t }
+    }
+}
+
+// Encode is manually implemented for Expr because some of its fields do not
+// implement Encode. This implementation uses wrappers to effect the encoding of
+// problematic fields.
+impl :: bincode :: Encode for Expr
+{
+    fn encode < E : :: bincode :: enc :: Encoder > (& self, encoder : & mut E)
+    -> core :: result :: Result < (), :: bincode :: error :: EncodeError >
+    {
+        match self
+        {
+            Self :: Unit =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (0u32), encoder) ?
+                ; Ok(())
+            }, Self :: Sequence(field_0) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (1u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
+            }, Self :: Product(field_0, field_1) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (2u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
+                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
+            }, Self :: Infix(field_0, field_1, field_2) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (3u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
+                bincode :: Encode :: encode(field_1, encoder) ? ; :: bincode
+                :: Encode :: encode(field_2, encoder) ? ; Ok(())
+            }, Self :: Negate(field_0) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (4u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
+            }, Self :: Application(field_0, field_1) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (5u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
+                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
+            }, Self :: Constant(field_0) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (6u32), encoder) ?
+                ; :: bincode :: Encode :: encode(&BigIntBincode(field_0.clone()), encoder) ? ; Ok(())
+            }, Self :: Variable(field_0) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (7u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
+            }, Self :: Function(field_0) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (8u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
+            }, Self :: Intrinsic(field_0) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (9u32), encoder) ?
+                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
+            }, Self :: LetBinding(field_0, field_1) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (10u32), encoder)
+                ? ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
+                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
+            }, Self :: Match(field_0) =>
+            {
+                < u32 as :: bincode :: Encode > :: encode(& (11u32), encoder)
+                ? ; :: bincode :: Encode :: encode(field_0, encoder) ? ;
+                Ok(())
+            },
+        }
+    }
+}
+
+// Decode is manually implemented for Expr because some of its fields do not
+// implement Decode. This implementation uses wrappers to effect the decoding of
+// problematic fields.
+impl :: bincode :: Decode for Expr
+{
+    fn decode < D : :: bincode :: de :: Decoder > (decoder : & mut D) -> core
+    :: result :: Result < Self, :: bincode :: error :: DecodeError >
+    {
+        let variant_index = < u32 as :: bincode :: Decode > :: decode(decoder)
+        ? ; match variant_index
+        {
+            0u32 => Ok(Self :: Unit {}), 1u32 =>
+            Ok(Self :: Sequence
+            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 2u32 =>
+            Ok(Self :: Product
+            {
+                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
+                :: Decode :: decode(decoder) ?,
+            }), 3u32 =>
+            Ok(Self :: Infix
+            {
+                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
+                :: Decode :: decode(decoder) ?, 2 : :: bincode :: Decode ::
+                decode(decoder) ?,
+            }), 4u32 =>
+            Ok(Self :: Negate
+            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 5u32 =>
+            Ok(Self :: Application
+            {
+                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
+                :: Decode :: decode(decoder) ?,
+            }), 6u32 =>
+            Ok(Self :: Constant
+            { 0 : <BigIntBincode as :: bincode :: Decode> :: decode(decoder) ?.0, }), 7u32 =>
+            Ok(Self :: Variable
+            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 8u32 =>
+            Ok(Self :: Function
+            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 9u32 =>
+            Ok(Self :: Intrinsic
+            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 10u32 =>
+            Ok(Self :: LetBinding
+            {
+                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
+                :: Decode :: decode(decoder) ?,
+            }), 11u32 =>
+            Ok(Self :: Match
+            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), variant =>
+            Err(:: bincode :: error :: DecodeError :: UnexpectedVariant
+            {
+                found : variant, type_name : "Expr", allowed : :: bincode ::
+                error :: AllowedEnumVariants :: Range { min : 0, max : 11 }
+            })
+        }
     }
 }
 

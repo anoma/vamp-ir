@@ -8,7 +8,8 @@ use plonk_core::error::Error;
 use plonk_core::proof_system::pi::PublicInputs;
 use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
-use num_bigint::BigUint;
+use num_bigint::{BigUint, BigInt};
+use num_traits::Signed;
 use crate::ast::Variable;
 
 struct PrimeFieldBincode<T>(T) where T: PrimeField;
@@ -37,11 +38,12 @@ impl<T> bincode::Decode for PrimeFieldBincode<T> where T: PrimeField {
 }
 
 // Make field elements from signed values
-fn make_constant<F: PrimeField>(c: i128) -> F {
-    if c >= 0 {
-        F::from(c as u128)
+fn make_constant<F: PrimeField>(c: &BigInt) -> F {
+    let magnitude = F::from(c.magnitude().clone());
+    if c.is_positive() {
+        magnitude
     } else {
-        -F::from((-c) as u128)
+        -magnitude
     }
 }
 
@@ -52,7 +54,7 @@ fn evaluate_expr<F>(
     assigns: &mut HashMap<VariableId, F>,
 ) -> F where F: PrimeField {
     match &expr.v {
-        Expr::Constant(c) => make_constant(*c),
+        Expr::Constant(c) => make_constant(c),
         Expr::Variable(v) => {
             if let Some(val) = assigns.get(&v.id) {
                 // First look for existing variable assignment
@@ -235,7 +237,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
-                                .constant(make_constant(-c2))
+                                .constant(make_constant(&-c2))
                         });
                     },
                     // v1 = -c2
@@ -246,7 +248,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
-                                .constant(make_constant(*c2))
+                                .constant(make_constant(c2))
                         });
                         true
                     }) => {},
@@ -272,7 +274,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
-                                .constant(make_constant(-c2-c3))
+                                .constant(make_constant(&(-c2-c3)))
                         });
                         true
                     }) => {},
@@ -287,7 +289,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
                                 .add(F::one(), -F::one())
-                                .constant(make_constant(-c3))
+                                .constant(make_constant(&-c3))
                         });
                         true
                     }) => {},
@@ -302,7 +304,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
                                 .add(F::one(), -F::one())
-                                .constant(make_constant(-c2))
+                                .constant(make_constant(&-c2))
                         });
                         true
                     }) => {},
@@ -332,7 +334,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
-                                .constant(make_constant(-c2+c3))
+                                .constant(make_constant(&(-c2+c3)))
                         });
                         true
                     }) => {},
@@ -347,7 +349,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
                                 .add(F::one(), -F::one())
-                                .constant(make_constant(*c3))
+                                .constant(make_constant(c3))
                         });
                         true
                     }) => {},
@@ -362,7 +364,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
                                 .add(F::one(), F::one())
-                                .constant(make_constant(-c2))
+                                .constant(make_constant(&-c2))
                         });
                         true
                     }) => {},
@@ -389,8 +391,8 @@ where
                         Expr::Constant(c2),
                         Expr::Constant(c3),
                     ) if {
-                        let op1: F = make_constant(*c2);
-                        let op2: F = make_constant(*c3);
+                        let op1: F = make_constant(c2);
+                        let op2: F = make_constant(c3);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
@@ -406,7 +408,7 @@ where
                         Expr::Variable(v2),
                         Expr::Constant(c3),
                     ) if {
-                        let op2: F = make_constant(*c3);
+                        let op2: F = make_constant(c3);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
                                 .add(F::one(), -(F::one()/op2))
@@ -421,7 +423,7 @@ where
                         Expr::Constant(c2),
                         Expr::Variable(v3),
                     ) if {
-                        let op1: F = make_constant(*c2);
+                        let op1: F = make_constant(c2);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
                                 .mul(F::one())
@@ -452,8 +454,8 @@ where
                         Expr::Constant(c2),
                         Expr::Constant(c3),
                     ) if {
-                        let op1: F = make_constant(*c2);
-                        let op2: F = make_constant(*c3);
+                        let op1: F = make_constant(c2);
+                        let op2: F = make_constant(c3);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
@@ -469,7 +471,7 @@ where
                         Expr::Variable(v2),
                         Expr::Constant(c3),
                     ) if {
-                        let op2: F = make_constant(*c3);
+                        let op2: F = make_constant(c3);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
                                 .add(F::one(), -op2)
@@ -484,7 +486,7 @@ where
                         Expr::Constant(c2),
                         Expr::Variable(v3),
                     ) if {
-                        let op2: F = make_constant(*c2);
+                        let op2: F = make_constant(c2);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
                                 .add(F::one(), -op2)
@@ -515,7 +517,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v2.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
-                                .constant(make_constant(-c1))
+                                .constant(make_constant(&-c1))
                         });
                     },
                     // c1 = c2
@@ -526,7 +528,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(zero, zero, Some(zero))
                                 .add(F::zero(), F::zero())
-                                .constant(make_constant(c2-c1))
+                                .constant(make_constant(&(c2-c1)))
                         });
                     },
                     // c1 = -c2
@@ -537,7 +539,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(zero, zero, Some(zero))
                                 .add(F::zero(), F::zero())
-                                .constant(make_constant(c1+*c2))
+                                .constant(make_constant(&(c1+c2)))
                         });
                         true
                     }) => {},
@@ -549,7 +551,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v2.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
-                                .constant(make_constant(*c1))
+                                .constant(make_constant(c1))
                         });
                         true
                     }) => {},
@@ -564,7 +566,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(zero, zero, Some(zero))
                                 .add(F::zero(), F::zero())
-                                .constant(make_constant(c1-c2-c3))
+                                .constant(make_constant(&(c1-c2-c3)))
                         });
                         true
                     }) => {},
@@ -579,7 +581,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v2.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
-                                .constant(make_constant(c3-c1))
+                                .constant(make_constant(&(c3-c1)))
                         });
                         true
                     }) => {},
@@ -594,7 +596,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v3.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
-                                .constant(make_constant(c2-c1))
+                                .constant(make_constant(&(c2-c1)))
                         });
                         true
                     }) => {},
@@ -609,7 +611,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
                                 .add(F::one(), F::one())
-                                .constant(make_constant(-c1))
+                                .constant(make_constant(&-c1))
                         });
                         true
                     }) => {},
@@ -624,7 +626,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(zero, zero, Some(zero))
                                 .add(F::zero(), F::zero())
-                                .constant(make_constant(c2-c3-c1))
+                                .constant(make_constant(&(c2-c3-c1)))
                         });
                         true
                     }) => {},
@@ -639,7 +641,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v2.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
-                                .constant(make_constant(-*c3-c1))
+                                .constant(make_constant(&(-c3-c1)))
                         });
                         true
                     }) => {},
@@ -654,7 +656,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v3.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
-                                .constant(make_constant(c1-c2))
+                                .constant(make_constant(&(c1-c2)))
                         });
                         true
                     }) => {},
@@ -669,7 +671,7 @@ where
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
                                 .add(F::one(), -F::one())
-                                .constant(make_constant(-c1))
+                                .constant(make_constant(&-c1))
                         });
                         true
                     }) => {},
@@ -681,9 +683,9 @@ where
                         Expr::Constant(c2),
                         Expr::Constant(c3),
                     ) if {
-                        let op1: F = make_constant(*c1);
-                        let op2: F = make_constant(*c2);
-                        let op3: F = make_constant(*c3);
+                        let op1: F = make_constant(c1);
+                        let op2: F = make_constant(c2);
+                        let op3: F = make_constant(c3);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(zero, zero, Some(zero))
                                 .add(F::zero(), F::zero())
@@ -699,8 +701,8 @@ where
                         Expr::Variable(v2),
                         Expr::Constant(c3),
                     ) if {
-                        let op1: F = make_constant(*c1);
-                        let op3: F = make_constant(*c3);
+                        let op1: F = make_constant(c1);
+                        let op3: F = make_constant(c3);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v2.id], zero, Some(zero))
                                 .add(F::one(), F::zero())
@@ -716,8 +718,8 @@ where
                         Expr::Constant(c2),
                         Expr::Variable(v3),
                     ) if {
-                        let op1: F = make_constant(*c1);
-                        let op2: F = make_constant(*c2);
+                        let op1: F = make_constant(c1);
+                        let op2: F = make_constant(c2);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v3.id], zero, Some(zero))
                                 .constant(-(op2/op1))
@@ -732,7 +734,7 @@ where
                         Expr::Variable(v2),
                         Expr::Variable(v3),
                     ) if {
-                        let op1: F = make_constant(*c1);
+                        let op1: F = make_constant(c1);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
                                 .add(F::one(), -op1)
@@ -747,9 +749,9 @@ where
                         Expr::Constant(c2),
                         Expr::Constant(c3),
                     ) if {
-                        let op1: F = make_constant(*c1);
-                        let op2: F = make_constant(*c2);
-                        let op3: F = make_constant(*c3);
+                        let op1: F = make_constant(c1);
+                        let op2: F = make_constant(c2);
+                        let op3: F = make_constant(c3);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(zero, zero, Some(zero))
                                 .add(F::zero(), F::zero())
@@ -765,8 +767,8 @@ where
                         Expr::Variable(v2),
                         Expr::Constant(c3),
                     ) if {
-                        let op1: F = make_constant(*c1);
-                        let op3: F = make_constant(*c3);
+                        let op1: F = make_constant(c1);
+                        let op3: F = make_constant(c3);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v2.id], zero, Some(zero))
                                 .add(op3, F::zero())
@@ -782,8 +784,8 @@ where
                         Expr::Constant(c2),
                         Expr::Variable(v3),
                     ) if {
-                        let op1: F = make_constant(*c1);
-                        let op2: F = make_constant(*c2);
+                        let op1: F = make_constant(c1);
+                        let op2: F = make_constant(c2);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v3.id], zero, Some(zero))
                                 .add(op2, F::zero())
@@ -799,7 +801,7 @@ where
                         Expr::Variable(v2),
                         Expr::Variable(v3),
                     ) if {
-                        let op1: F = make_constant(*c1);
+                        let op1: F = make_constant(c1);
                         composer.arithmetic_gate(|gate| {
                             gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
                                 .mul(F::one())
