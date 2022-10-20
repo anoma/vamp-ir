@@ -1,5 +1,5 @@
 /* Any solution such that b=c, d=e, and f=g is valid. Run as follows:
-   vamp-ir setup -m 10 -o params.pp
+   vamp-ir setup -o params.pp
    vamp-ir compile -u params.pp -s tests/funcs.pir -o circuit.plonk
    vamp-ir prove -u params.pp -c circuit.plonk -o proof.plonk
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk

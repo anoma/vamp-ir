@@ -53,7 +53,7 @@ enum Commands {
 #[derive(Args)]
 struct Setup {
     /// Maximum degree exponent of the polynomial commitment scheme
-    #[arg(short, long)]
+    #[arg(short, long, default_value_t = 10)]
     max_degree: u128,
     /// Path to which the public parameters are written
     #[arg(short, long)]

@@ -1,6 +1,6 @@
 /* An implementation of standard arithmetic logic unit operations in vampir. Run
    as follows:
-   vamp-ir setup -m 10 -o params.pp
+   vamp-ir setup -o params.pp
    vamp-ir compile -u params.pp -s tests/alu.pir -o circuit.plonk
    vamp-ir prove -u params.pp -c circuit.plonk -o proof.plonk
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
