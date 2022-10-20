@@ -197,3 +197,5 @@ def rem a b { snd (divrem a b) };
 1 = sle8 5 5;
 
 (4,1) = divrem 9 2;
+
+def D = 10;
