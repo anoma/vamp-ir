@@ -6,7 +6,7 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 use std::fs;
-use crate::ast::{Module, VariableId, Pattern};
+use crate::ast::{Module, VariableId, Pattern, parse_prefixed_num};
 use crate::transform::{compile, collect_module_variables};
 use ark_bls12_381::{Bls12_381, Fr as BlsScalar};
 use ark_ed_on_bls12_381::EdwardsParameters as JubJubParameters;
@@ -28,7 +28,6 @@ use plonk_core::proof_system::{ProverKey, VerifierKey, Proof};
 use plonk_core::proof_system::pi::PublicInputs;
 use bincode::error::{DecodeError, EncodeError};
 use ark_serialize::{Read, SerializationError};
-use num_bigint::BigInt;
 
 type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
 
@@ -93,11 +92,8 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
         std::io::stdin()
             .read_line(&mut input_line)
             .expect("failed to read input");
-        let x: BigInt = if let Ok(x) = input_line.trim().parse() {
-            x
-        } else {
-            panic!("input not an integer");
-        };
+        let x = parse_prefixed_num(input_line.trim())
+            .expect("input not an integer");
         var_assignments.insert(id, make_constant(&x));
     }
     var_assignments
