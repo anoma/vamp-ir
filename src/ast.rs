@@ -7,6 +7,8 @@ use bincode::{Encode, Decode};
 use std::collections::{HashMap, HashSet};
 use crate::transform::VarGen;
 use num_bigint::BigInt;
+use num_traits::Num;
+use std::ops::Neg;
 #[derive(Parser)]
 #[grammar = "vampir.pest"]
 pub struct VampirParser;
@@ -509,6 +511,33 @@ impl :: bincode :: Decode for Expr
     }
 }
 
+/* Parse signed integer literals beginning with at most one occurrence of 0x
+ * (indicating a radix of 16), 0o (radix 8), or 0b (radix 2). */
+pub fn parse_prefixed_num<T>(string: &str) -> Result<T, T::FromStrRadixErr>
+where T: Num + Neg<Output = T> {
+    // Process the number's sign
+    let (pos, magnitude) =
+        if let Some(rest) = string.strip_prefix("-") {
+            (false, rest)
+        } else if let Some(rest) = string.strip_prefix("+") {
+            (true, rest)
+        } else {
+            (true, string)
+        };
+    // Process the number's radix
+    let magnitude = if let Some(rest) = magnitude.strip_prefix("0b") {
+        T::from_str_radix(rest, 2)
+    } else if let Some(rest) = magnitude.strip_prefix("0o") {
+        T::from_str_radix(rest, 8)
+    } else if let Some(rest) = magnitude.strip_prefix("0x") {
+        T::from_str_radix(rest, 16)
+    } else {
+        T::from_str_radix(magnitude, 10)
+    }?;
+    // Combine magnitude and sign
+    Ok(if pos { magnitude } else { -magnitude })
+}
+
 impl TExpr {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
         if pair.as_rule() != Rule::expr { return None }
@@ -663,7 +692,8 @@ impl TExpr {
         if pair.as_rule() == Rule::constant && string.starts_with("(") {
             Some(Expr::Unit.into())
         } else if pair.as_rule() == Rule::constant {
-            let value = pair.as_str().parse().ok().expect("constant should be an integer");
+            let value = parse_prefixed_num(pair.as_str())
+                .expect("constant should be an integer");
             Some(Expr::Constant(value).into())
         } else if pair.as_rule() == Rule::valueName {
             let name = Variable::parse(pair).expect("expression should be value name");
