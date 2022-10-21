@@ -550,8 +550,8 @@ impl InfixOp {
             "+" => Some(Self::Add),
             "-" => Some(Self::Subtract),
             "^" => Some(Self::Exponentiate),
-            // IntDivide and Modulo purposefully not included in the source
-            // language due to their inefficiency
+            "\\" => Some(Self::IntDivide),
+            "%" => Some(Self::Modulo),
             _ => unreachable!("Encountered unknown infix operator")
         }
     }
@@ -566,8 +566,8 @@ impl fmt::Display for InfixOp {
             Self::Subtract => write!(f, "-"),
             Self::Equal => write!(f, "="),
             Self::Exponentiate => write!(f, "^"),
-            Self::IntDivide => write!(f, "//"),
-            Self::Modulo => write!(f, " mod "),
+            Self::IntDivide => write!(f, "\\"),
+            Self::Modulo => write!(f, "%"),
         }
     }
 }
