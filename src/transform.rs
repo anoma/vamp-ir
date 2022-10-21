@@ -3,7 +3,6 @@ use crate::typecheck::{infer_module_types, expand_module_variables, unitize_modu
 use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function, Match};
 use ark_ff::{One, Zero};
 use num_traits::sign::Signed;
-use num_bigint::BigInt;
 
 /* A structure for generating unique variable IDs. */
 pub struct VarGen(VariableId);
@@ -893,7 +892,7 @@ pub fn compile(mut module: Module) -> Module {
     let mut globals = HashMap::new();
     let mut bindings = HashMap::new();
     let mut prog_types = HashMap::new();
-    register_range_intrinsic(&mut globals, &mut bindings, &mut prog_types, &mut vg);
+    register_fresh_intrinsic(&mut globals, &mut bindings, &mut prog_types, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
     infer_module_types(&mut module, &globals, &mut prog_types, &mut vg);
     println!("** Inferring types...");
@@ -1060,153 +1059,57 @@ pub fn eliminate_dead_definitions(module: &mut Module) {
     module.defs = new_defs;
 }
 
-/* The number of bits required to represent elements of the field we are working
- * in. */
-const RANGE_MAX_BITS: u32 = 16;
-
-/* Register the range intrinsic in the compilation environment. */
-fn register_range_intrinsic(
+/* Register the fresh intrinsic in the compilation environment. */
+fn register_fresh_intrinsic(
     globals: &mut HashMap<String, VariableId>,
     bindings: &mut HashMap<VariableId, TExpr>,
     types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
-    let range_func_id = gen.generate_id();
+    let fresh_func_id = gen.generate_id();
+    let fresh_arg = Type::Variable(Variable::new(gen.generate_id()));
     // Register the range function in global namespace
-    globals.insert("range".to_string(), range_func_id);
-    // Make the type representing largest bit vector
-    let mut bits_type = Type::Unit;
-    for _ in 0..RANGE_MAX_BITS {
-        bits_type = Type::Product(Box::new(Type::Int), Box::new(bits_type));
-    }
+    globals.insert("fresh".to_string(), fresh_func_id);
     // Describe the intrinsic's type, arity, and implementation
-    let range_intrinsic = Intrinsic::new(
-        2,
+    let fresh_intrinsic = Intrinsic::new(
+        1,
         Type::Function(
-            Box::new(Type::Int),
-            Box::new(Type::Function(
-                Box::new(Type::Int),
-                Box::new(bits_type),
-            ))
+            Box::new(fresh_arg.clone()),
+            Box::new(fresh_arg),
         ),
-        expand_range_intrinsic,
+        expand_fresh_intrinsic,
     );
     // Register the intrinsic descriptor with the global binding
-    types.insert(range_func_id, range_intrinsic.imp_typ.clone());
-    bindings.insert(range_func_id, Expr::Intrinsic(range_intrinsic).into());
+    types.insert(fresh_func_id, fresh_intrinsic.imp_typ.clone());
+    bindings.insert(fresh_func_id, Expr::Intrinsic(fresh_intrinsic).into());
 }
 
-/* Expand a range call into a series of constraints that force the value
- * argument to be the given number of bits. */
-fn expand_range_intrinsic(
+/* fresh x returns a fresh unconstrained variable whose prover definition equals
+ * the supplied expression. */
+fn expand_fresh_intrinsic(
     args: &Vec<TExpr>,
     _bindings: &HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) -> TExpr {
-    if let [TExpr { v: Expr::Constant(bit_len), ..}, val] = &args[..] {
-        let mut constraints = vec![];
-        let mut bit_bindings = HashMap::new();
-        let mut val_constraint = TExpr { v: Expr::Constant(Zero::zero()), t: None };
-        let mut witnesses = TExpr { v: Expr::Unit, t: Some(Type::Unit) };
-        // Constrain the variables involved in this expansion to be bits
-        let bit_len = u32::try_from(bit_len)
-            .expect("bit count supplied to range must be non-negative");
-        // Put trailing zeros into bit-vector
-        for _ in bit_len..RANGE_MAX_BITS {
-            witnesses = TExpr {
-                v: Expr::Product(
-                    Box::new(TExpr { v: Expr::Constant(Zero::zero()), t: Some(Type::Int) }),
-                    Box::new(witnesses.clone())
+    if let [val] = &args[..] {
+        // Make a new prover definition that is equal to the argument
+        let fresh_arg = Variable::new(gen.generate_id());
+        prover_defs.insert(fresh_arg.id);
+        TExpr {
+            t: val.t.clone(),
+            v: Expr::LetBinding(
+                LetBinding(
+                    Pattern::Variable(fresh_arg.clone()),
+                    Box::new(val.clone()),
                 ),
-                t: Some(Type::Product(
-                    Box::new(Type::Int),
-                    Box::new(witnesses.t.unwrap())
-                )),
-            };
+                Box::new(TExpr {
+                    t: val.t.clone(),
+                    v: Expr::Variable(fresh_arg)
+                })
+            ),
         }
-        for i in (0..bit_len).rev() {
-            // expression: b
-            let bit_var = gen.generate_id();
-            // do not put the explicit definition of this variable into circuit
-            prover_defs.insert(bit_var);
-            // definition: b = (val // (2^i)) mod 2
-            let explicit_val = infix_op(
-                InfixOp::Modulo,
-                infix_op(
-                    InfixOp::IntDivide,
-                    val.clone(),
-                    TExpr { v: Expr::Constant(BigInt::from(2i8).pow(i)), t: Some(Type::Int) }
-                ),
-                TExpr { v: Expr::Constant(2i8.into()), t: Some(Type::Int) }
-            );
-            bit_bindings.insert(bit_var, explicit_val);
-            // expression: b
-            let bit_var = Expr::Variable(Variable::new(bit_var));
-            let bit_var = TExpr { v: bit_var, t: Some(Type::Int) };
-            // expression: b-1
-            let bit_var_m1 = infix_op(
-                InfixOp::Subtract,
-                bit_var.clone(),
-                TExpr { v: Expr::Constant(One::one()), t: Some(Type::Int) }
-            );
-            // expression: val_constraint := 2*val_constraint + b
-            val_constraint = infix_op(
-                InfixOp::Add,
-                bit_var.clone(),
-                infix_op(
-                    InfixOp::Multiply,
-                    TExpr { v: Expr::Constant(2i8.into()), t: Some(Type::Int) },
-                    val_constraint,
-                ),
-            );
-            // constraint: b*(b-1) = 0
-            constraints.push(infix_op(
-                InfixOp::Equal,
-                infix_op(
-                    InfixOp::Multiply,
-                    bit_var.clone(),
-                    bit_var_m1,
-                ),
-                TExpr { v: Expr::Constant(Zero::zero()), t: Some(Type::Int) },
-            ));
-            // Record bit index and value for the coming array creation
-            witnesses = TExpr {
-                v: Expr::Product(Box::new(bit_var), Box::new(witnesses.clone())),
-                t: Some(Type::Product(Box::new(Type::Int), Box::new(witnesses.t.unwrap()))),
-            };
-        }
-        // constraint: val = 2*(2*(2*(..) + b_2) + b_1) + b_0
-        // Uses Horner's method.
-        constraints.push(infix_op(
-            InfixOp::Equal,
-            val_constraint,
-            val.clone(),
-        ));
-        // expression: (b0, b1, ..., bN)
-        constraints.push(witnesses.clone());
-        // The aggregate of the above constraints constrains the given value to
-        // be the given number of bits
-        let mut constraint = TExpr {
-            v: Expr::Sequence(constraints),
-            t: witnesses.t,
-        };
-        // To help the prover derive the bit assignments, surround the
-        // constraints with explicit definitions
-        for (bit_var, explicit_var) in bit_bindings {
-            constraint = TExpr {
-                t: constraint.t.clone(),
-                v: Expr::LetBinding(
-                    LetBinding(
-                        Pattern::Variable(Variable::new(bit_var)),
-                        Box::new(explicit_var),
-                    ),
-                    Box::new(constraint)
-                ),
-            };
-        }
-        constraint
     } else {
-        panic!("unexpected arguments to range: {:?}", args);
+        panic!("unexpected arguments to fresh: {:?}", args);
     }
 }
