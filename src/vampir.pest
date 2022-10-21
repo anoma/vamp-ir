@@ -10,7 +10,13 @@ valueName = { !keyword ~ ident }
 
 infixOp = { "/" | "*" | "+" | "-" | "=" | "^" }
 
-integerLiteral = @{ "0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT* }
+binary = @{ '0'..'1' }
+
+octal = @{ '0'..'7' }
+
+hexadecimal = @{ '0'..'9' | 'a'..'f' | 'A'..'F' }
+
+integerLiteral = @{ "0x" ~ hexadecimal+ | "0o" ~ octal+ | "0b" ~ binary+ | ASCII_DIGIT+ }
 
 constant = { integerLiteral | "(" ~ ")" }
 
