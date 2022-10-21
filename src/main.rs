@@ -15,7 +15,7 @@ use ark_poly_commit::{sonic_pc::SonicKZG10, PolynomialCommitment};
 use ark_poly::polynomial::univariate::DensePolynomial;
 use rand_core::OsRng;
 use plonk::error::to_pc_error;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use plonk_core::prelude::VerifierData;
 use crate::synth::PlonkModule;
@@ -34,7 +34,7 @@ type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
 /* Captures all the data required to use a circuit. */
 struct CircuitData {
     pk_p: ProverKey::<BlsScalar>,
-    vk: VerifierKey::<BlsScalar, PC>,
+    vk: (VerifierKey::<BlsScalar, PC>, Vec<usize>),
     circuit: PlonkModule::<BlsScalar, JubJubParameters>,
 }
 
@@ -43,7 +43,7 @@ impl CircuitData {
     where R: std::io::Read {
         let pk_p = ProverKey::<BlsScalar>::deserialize(&mut reader)
             .map_err(|x| DecodeError::OtherString(x.to_string()))?;
-        let vk = VerifierKey::<_, _>::deserialize(&mut reader)
+        let vk = <(VerifierKey::<_, _>, Vec::<usize>)>::deserialize(&mut reader)
             .map_err(|x| DecodeError::OtherString(x.to_string()))?;
         let circuit: PlonkModule::<BlsScalar, JubJubParameters> =
             bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
@@ -82,11 +82,20 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
             input_variables.remove(&var.id);
         }
     }
-    
+    // Collect all public variables in order to enable annotations
+    let mut public_variables = HashSet::new();
+    for var in &annotated.pubs {
+        public_variables.insert(var.id);
+    }
     let mut var_assignments = HashMap::new();
     // Solicit input variables from user and solve for choice point values
     for (id, var) in input_variables {
-        print!("** {}: ", var);
+        let visibility = if public_variables.contains(&id) {
+            "(public)"
+        } else {
+            "(private)"
+        };
+        print!("** {} {}: ", var, visibility);
         std::io::stdout().flush().expect("flush failed!");
         let mut input_line = String::new();
         std::io::stdin()
@@ -213,7 +222,7 @@ fn verify_cmd(args: &[String]) {
     println!("* Reading arithmetic circuit...");
     let mut circuit_file = File::open(args[0].clone())
         .expect("unable to load circuit file");
-    let CircuitData { pk_p: _pk_p, vk, circuit: _circuit} =
+    let CircuitData { pk_p: _pk_p, vk, circuit } =
         CircuitData::read(&mut circuit_file).unwrap();
 
     println!("* Reading zero-knowledge proof...");
@@ -225,10 +234,15 @@ fn verify_cmd(args: &[String]) {
     let mut pp_file = File::open(args[1].clone())
         .expect("unable to load public parameters file");
     let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+
+    println!("* Public inputs:");
+    for (var, val) in circuit.annotate_public_inputs(&vk.1, &pi).values() {
+        println!("{} = {}", var, val);
+    }
     
     // Verifier POV
     println!("* Verifying proof validity...");
-    let verifier_data = VerifierData::new(vk, pi);
+    let verifier_data = VerifierData::new(vk.0, pi);
     let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
         &pp,
         verifier_data.key,

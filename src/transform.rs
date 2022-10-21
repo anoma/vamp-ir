@@ -179,6 +179,27 @@ fn number_pattern_variables(
     }
 }
 
+/* Numbers the variable according to the binding in local. If there is no such
+ * binding, then the global variable map is searched. If not found, then a new
+ * global variable binding is made. */
+fn number_variable(
+    var: &mut Variable,
+    locals: &HashMap<String, VariableId>,
+    globals: &mut HashMap<String, VariableId>,
+    gen: &mut VarGen,
+) {
+    if let Some(name) = &var.name {
+        if let Some(id) = locals.get(name) {
+            var.id = *id;
+        } else if let Some(id) = globals.get(name) {
+            var.id = *id;
+        } else {
+            var.id = gen.generate_id();
+            globals.insert(name.clone(), var.id);
+        }
+    }
+}
+
 /* Numbers each variable occuring in the expression according to the binding in
  * local. If there is no such binding, then the global variable map is searched.
  * If not found, then a new global variable binding is made. Binding expressions
@@ -206,16 +227,7 @@ fn number_expr_variables(
         },
         Expr::Constant(_) | Expr::Unit => {},
         Expr::Variable(var) => {
-            if let Some(name) = &var.name {
-                if let Some(id) = locals.get(name) {
-                    var.id = *id;
-                } else if let Some(id) = globals.get(name) {
-                    var.id = *id;
-                } else {
-                    var.id = gen.generate_id();
-                    globals.insert(name.clone(), var.id);
-                }
-            }
+            number_variable(var, locals, globals, gen);
         },
         Expr::Function(fun) => {
             let mut locals = locals.clone();
@@ -262,6 +274,9 @@ pub fn number_module_variables(
     gen: &mut VarGen,
 ) {
     let mut locals = HashMap::new();
+    for var in &mut module.pubs {
+        number_variable(var, &locals, globals, gen);
+    }
     for def in &mut module.defs {
         number_def_variables(def, &mut locals, globals, gen);
     }
@@ -522,6 +537,9 @@ pub fn collect_module_variables(
     module: &Module,
     map: &mut HashMap<VariableId, Variable>,
 ) {
+    for var in &module.pubs {
+        map.insert(var.id, var.clone());
+    }
     for def in &module.defs {
         collect_def_variables(def, map);
     }
@@ -680,6 +698,7 @@ pub fn flatten_module(
     module: &Module,
     flattened: &mut Module,
 ) {
+    flattened.pubs.extend(module.pubs.clone());
     for def in &module.defs {
         flatten_definition(def, flattened);
     }
@@ -811,6 +830,7 @@ pub fn flatten_module_to_3ac(
     flattened: &mut Module,
     gen: &mut VarGen,
 ) {
+    flattened.pubs.extend(module.pubs.clone());
     for def in &module.defs {
         match &def.0.0 {
             Pattern::Variable(var) if !prover_defs.contains(&var.id) =>
