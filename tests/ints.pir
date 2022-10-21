@@ -1,5 +1,5 @@
 /* An script to test out large integer arithmetic. x must be
-   342342428479792353453543986 and c must be -32. Run
+   342342428479792353453543986, c must be -32, and f must be -68. Run
    as follows:
    vamp-ir setup params.pp
    vamp-ir compile tests/ints.pir params.pp circuit.plonk
@@ -20,3 +20,6 @@ a = x+1;
 // Check negative number functioning
 def b = (-8);
 b*4 = c;
+
+// Check alternative radixes
+f = 0x22 * (-0b10);
