@@ -1,9 +1,9 @@
 /* An implementation of standard arithmetic logic unit operations in vampir. Run
    as follows:
-   vamp-ir setup params.pp
-   vamp-ir compile tests/alu.pir params.pp circuit.plonk
-   vamp-ir prove circuit.plonk params.pp proof.plonk
-   vamp-ir verify circuit.plonk params.pp proof.plonk
+   vamp-ir setup -o params.pp
+   vamp-ir compile -u params.pp -s tests/alu.pir -o circuit.plonk
+   vamp-ir prove -u params.pp -c circuit.plonk -o proof.plonk
+   vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
 
 // Ensure that the given argument is 1 or 0, and returns it

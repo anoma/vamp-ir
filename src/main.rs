@@ -28,8 +28,91 @@ use plonk_core::proof_system::{ProverKey, VerifierKey, Proof};
 use plonk_core::proof_system::pi::PublicInputs;
 use bincode::error::{DecodeError, EncodeError};
 use ark_serialize::{Read, SerializationError};
+use clap::{Args, Parser, Subcommand};
+use std::path::PathBuf;
+
+#[derive(Parser)]
+#[command(author, version, about, long_about = None)]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Sets up the public parameters required for proving
+    Setup(Setup),
+    /// Compiles a given source file to a circuit
+    Compile(Compile),
+    /// Proves knowledge of witnesses satisfying a circuit
+    Prove(Prove),
+    /// Verifies that a proof is a correct one
+    Verify(Verify),
+}
+
+#[derive(Args)]
+struct Setup {
+    /// Maximum degree exponent of the polynomial commitment scheme
+    #[arg(short, long, default_value_t = 10)]
+    max_degree: u128,
+    /// Path to which the public parameters are written
+    #[arg(short, long)]
+    output: PathBuf,
+    /// Disable validity checks on the generated public parameters
+    #[arg(long)]
+    unchecked: bool,
+}
+
+#[derive(Args)]
+struct Compile {
+    /// Path to public parameters
+    #[arg(short, long)]
+    universal_params: PathBuf,
+    /// Path to source file to be compiled
+    #[arg(short, long)]
+    source: PathBuf,
+    /// Path to which circuit is written
+    #[arg(short, long)]
+    output: PathBuf,
+    /// Do not perform validity checks on public parameters
+    #[arg(long)]
+    unchecked: bool,
+}
+
+#[derive(Args)]
+struct Prove {
+    /// Path to public parameters
+    #[arg(short, long)]
+    universal_params: PathBuf,
+    /// Path to circuit on which to construct proof
+    #[arg(short, long)]
+    circuit: PathBuf,
+    /// Path to which the proof is written
+    #[arg(short, long)]
+    output: PathBuf,
+    /// Do not perform validity checks on public parameters
+    #[arg(long)]
+    unchecked: bool,
+}
+
+#[derive(Args)]
+struct Verify {
+    /// Path to public parameters
+    #[arg(short, long)]
+    universal_params: PathBuf,
+    /// Path to circuit on which to construct proof
+    #[arg(short, long)]
+    circuit: PathBuf,
+    /// Path to the proof that is being verified
+    #[arg(short, long)]
+    proof: PathBuf,
+    /// Do not perform validity checks on public parameters
+    #[arg(long)]
+    unchecked: bool,
+}
 
 type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
+type UniversalParams = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams;
 
 /* Captures all the data required to use a circuit. */
 struct CircuitData {
@@ -102,50 +185,37 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
     var_assignments
 }
 
-/* Implements the subcommand that tells user how to use this program. */
-fn usage_cmd() {
-    println!("Vampir Aliased Multivariate Polynomial Intermediate Representation");
-    println!("usage 1: vamp-ir setup");
-    println!("usage 2: vamp-ir compile");
-    println!("usage 3: vamp-ir prove");
-    println!("usage 4: vamp-ir verify");
-}
-
 /* Implements the subcommand that generates the public parameters for proofs. */
-fn setup_cmd(args: &[String]) {
-    if args.len() < 1 {
-        println!("usage: vamp-ir setup params.pp");
-        println!("randomly generates public parameters and saves them into params.pp");
-        return;
-    }
+fn setup_cmd(Setup { max_degree, output, unchecked }: &Setup) {
     // Generate CRS
     println!("* Setting up public parameters...");
-    let pp = PC::setup(1 << 10, None, &mut OsRng)
+    let pp = PC::setup(1 << max_degree, None, &mut OsRng)
         .map_err(to_pc_error::<BlsScalar, PC>)
         .expect("unable to setup polynomial commitment scheme public parameters");
-    let mut pp_file = File::create(args[0].clone())
+    let mut pp_file = File::create(output)
         .expect("unable to create public parameters file");
-    pp.serialize(&mut pp_file).unwrap();
+    if *unchecked {
+        pp.serialize_unchecked(&mut pp_file)
+    } else {
+        pp.serialize(&mut pp_file)
+    }.unwrap();
     println!("* Public parameter setup success!");
 }
 
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
  */
-fn compile_cmd(args: &[String]) {
-    if args.len() < 3 {
-        println!("usage: vamp-ir compile source.pir params.pp circuit.plonk");
-        println!("reads the vamp-ir source code in source.pir and the public\n\
-                  parameters at params.pp and compiles them into a circuit which\n\
-                  is stored at circuit.plonk .");
-        return;
-    }
+fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile) {
     println!("* Reading public parameters...");
-    let mut pp_file = File::open(args[1].clone())
+    let mut pp_file = File::open(universal_params)
         .expect("unable to load public parameters file");
-    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+    let pp = if *unchecked {
+        UniversalParams::deserialize_unchecked(&mut pp_file)
+    } else {
+        UniversalParams::deserialize(&mut pp_file)
+    }.unwrap();
 
     println!("* Compiling constraints...");
-    let unparsed_file = fs::read_to_string(args[0].clone()).expect("cannot read file");
+    let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
     let module_3ac = compile(module);
 
@@ -155,7 +225,7 @@ fn compile_cmd(args: &[String]) {
     let (pk_p, vk) = circuit.compile::<PC>(&pp)
         .expect("unable to compile circuit");
     println!("* Serializing circuit to storage...");
-    let mut circuit_file = File::create(args[2].clone())
+    let mut circuit_file = File::create(output)
         .expect("unable to create circuit file");
     CircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
 
@@ -164,25 +234,21 @@ fn compile_cmd(args: &[String]) {
 
 /* Implements the subcommand that creates a proof from interactively entered
  * inputs. */
-fn prove_cmd(args: &[String]) {
-    if args.len() < 3 {
-        println!("usage: vamp-ir prove circuit.plonk params.pp proof.plonk");
-        println!("reads the plonk circuit at circuit.plonk and the public\n\
-                  parameters at params.pp, then interactively requests for\n\
-                  private inputs, and then stores the proof at proof.plonk. Note\n\
-                  that this subcommand makes no attempt to verify supplied inputs.");
-        return;
-    }
+fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
     println!("* Reading arithmetic circuit...");
-    let mut circuit_file = File::open(args[0].clone())
+    let mut circuit_file = File::open(circuit)
         .expect("unable to load circuit file");
     let CircuitData { pk_p, vk: _vk, mut circuit} =
         CircuitData::read(&mut circuit_file).unwrap();
 
     println!("* Reading public parameters...");
-    let mut pp_file = File::open(args[1].clone())
+    let mut pp_file = File::open(universal_params)
         .expect("unable to load public parameters file");
-    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+    let pp = if *unchecked {
+        UniversalParams::deserialize_unchecked(&mut pp_file)
+    } else {
+        UniversalParams::deserialize(&mut pp_file)
+    }.unwrap();
     // Prover POV
     println!("* Soliciting circuit witnesses...");
     // Prompt for program inputs
@@ -194,7 +260,7 @@ fn prove_cmd(args: &[String]) {
     let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
 
     println!("* Serializing proof to storage...");
-    let mut proof_file = File::create(args[2].clone())
+    let mut proof_file = File::create(output)
         .expect("unable to create proof file");
     ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
 
@@ -202,29 +268,26 @@ fn prove_cmd(args: &[String]) {
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
-fn verify_cmd(args: &[String]) {
-    if args.len() < 3 {
-        println!("usage: vamp-ir verify circuit.plonk params.pp proof.plonk");
-        println!("reads the plonk circuit at circuit.plonk, the public\n\
-                  parameters at params.pp, and the proof at proof.plonk and\n\
-                  verifies whether the proof is a correct one.");
-        return;
-    }
+fn verify_cmd(Verify { universal_params, circuit, proof, unchecked }: &Verify) {
     println!("* Reading arithmetic circuit...");
-    let mut circuit_file = File::open(args[0].clone())
+    let mut circuit_file = File::open(circuit)
         .expect("unable to load circuit file");
     let CircuitData { pk_p: _pk_p, vk, circuit: _circuit} =
         CircuitData::read(&mut circuit_file).unwrap();
 
     println!("* Reading zero-knowledge proof...");
-    let mut proof_file = File::open(args[2].clone())
+    let mut proof_file = File::open(proof)
         .expect("unable to load proof file");
     let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
 
     println!("* Reading public parameters...");
-    let mut pp_file = File::open(args[1].clone())
+    let mut pp_file = File::open(universal_params)
         .expect("unable to load public parameters file");
-    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+    let pp = if *unchecked {
+        UniversalParams::deserialize_unchecked(&mut pp_file)
+    } else {
+        UniversalParams::deserialize(&mut pp_file)
+    }.unwrap();
     
     // Verifier POV
     println!("* Verifying proof validity...");
@@ -245,18 +308,19 @@ fn verify_cmd(args: &[String]) {
 
 /* Main entry point for vamp-ir compiler, prover, and verifier. */
 fn main() {
-    let args: Vec<_> = std::env::args().collect();
-    if args.len() < 2 {
-        usage_cmd();
-    } else if args[1] == "setup" {
-        setup_cmd(&args[2..]);
-    } else if args[1] == "compile" {
-        compile_cmd(&args[2..]);
-    } else if args[1] == "prove" {
-        prove_cmd(&args[2..]);
-    } else if args[1] == "verify" {
-        verify_cmd(&args[2..]);
-    } else {
-        usage_cmd();
+    let cli = Cli::parse();
+    match &cli.command {
+        Commands::Setup(args) => {
+            setup_cmd(args);
+        },
+        Commands::Compile(args) => {
+            compile_cmd(args);
+        },
+        Commands::Prove(args) => {
+            prove_cmd(args);
+        },
+        Commands::Verify(args) => {
+            verify_cmd(args);
+        },
     }
 }

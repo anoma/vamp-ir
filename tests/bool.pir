@@ -1,8 +1,8 @@
 /* a must either be 0 or 1. Run as follows:
-   vamp-ir setup params.pp
-   vamp-ir compile tests/bool.pir params.pp circuit.plonk
-   vamp-ir prove circuit.plonk params.pp proof.plonk
-   vamp-ir verify circuit.plonk params.pp proof.plonk
+   vamp-ir setup -o params.pp
+   vamp-ir compile -u params.pp -s tests/bool.pir -o circuit.plonk
+   vamp-ir prove -u params.pp -c circuit.plonk -o proof.plonk
+   vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
 // defining a constant
 def myval = 0;

@@ -782,6 +782,6 @@ where
     }
 
     fn padded_circuit_size(&self) -> usize {
-        1 << 10
+        self.module.exprs.len().next_power_of_two()
     }
 }
