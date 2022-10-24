@@ -995,6 +995,7 @@ pub fn compile(mut module: Module) -> Module {
     let mut bindings = HashMap::new();
     let mut prog_types = HashMap::new();
     register_fresh_intrinsic(&mut globals, &mut bindings, &mut prog_types, &mut vg);
+    register_numeral_intrinsic(&mut globals, &mut bindings, &mut prog_types, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
     infer_module_types(&mut module, &globals, &mut prog_types, &mut vg);
     println!("** Inferring types...");
@@ -1171,15 +1172,18 @@ fn register_fresh_intrinsic(
     gen: &mut VarGen,
 ) {
     let fresh_func_id = gen.generate_id();
-    let fresh_arg = Type::Variable(Variable::new(gen.generate_id()));
+    let fresh_arg = Variable::new(gen.generate_id());
     // Register the range function in global namespace
     globals.insert("fresh".to_string(), fresh_func_id);
     // Describe the intrinsic's type, arity, and implementation
     let fresh_intrinsic = Intrinsic::new(
         1,
-        Type::Function(
-            Box::new(fresh_arg.clone()),
-            Box::new(fresh_arg),
+        Type::Forall(
+            fresh_arg.clone(),
+            Box::new(Type::Function(
+                Box::new(Type::Variable(fresh_arg.clone())),
+                Box::new(Type::Variable(fresh_arg)),
+            )),
         ),
         expand_fresh_intrinsic,
     );
@@ -1215,5 +1219,99 @@ fn expand_fresh_intrinsic(
         }
     } else {
         panic!("unexpected arguments to fresh: {:?}", args);
+    }
+}
+
+/* Register the numeral intrinsic in the compilation environment. */
+fn register_numeral_intrinsic(
+    globals: &mut HashMap<String, VariableId>,
+    bindings: &mut HashMap<VariableId, TExpr>,
+    types: &mut HashMap<VariableId, Type>,
+    gen: &mut VarGen,
+) {
+    let numeral_func_id = gen.generate_id();
+    let numeral_arg = Variable::new(gen.generate_id());
+    let numeral_func = Type::Function(
+        Box::new(Type::Variable(numeral_arg.clone())),
+        Box::new(Type::Variable(numeral_arg.clone())),
+    );
+    // Register the range function in global namespace
+    globals.insert("numeral".to_string(), numeral_func_id);
+    // Describe the intrinsic's type, arity, and implementation
+    let numeral_intrinsic = Intrinsic::new(
+        1,
+        Type::Forall(
+            numeral_arg,
+            Box::new(Type::Function(
+                Box::new(Type::Int),
+                Box::new(Type::Function(
+                    Box::new(numeral_func.clone()),
+                    Box::new(numeral_func)
+                )),
+            )),
+        ),
+        expand_numeral_intrinsic,
+    );
+    // Register the intrinsic descriptor with the global binding
+    types.insert(numeral_func_id, numeral_intrinsic.imp_typ.clone());
+    bindings.insert(numeral_func_id, Expr::Intrinsic(numeral_intrinsic).into());
+}
+
+/* numeral x returns the Church numeral corresponding to the given integer x. */
+fn expand_numeral_intrinsic(
+    args: &Vec<TExpr>,
+    bindings: &HashMap<VariableId, TExpr>,
+    prover_defs: &mut HashSet<VariableId>,
+    gen: &mut VarGen,
+) -> TExpr {
+    match &args[..] {
+        [TExpr { v: Expr::Constant(val), .. }] => {
+            let numeral_arg = Variable::new(gen.generate_id());
+            let numeral_func_var = Variable::new(gen.generate_id());
+            let numeral_func = TExpr {
+                v: Expr::Variable(numeral_func_var.clone()),
+                t: Some(Type::Function(
+                    Box::new(Type::Variable(numeral_arg.clone())),
+                    Box::new(Type::Variable(numeral_arg.clone())),
+                ))
+            };
+            let mut body = TExpr {
+                v: Expr::Variable(numeral_arg.clone()),
+                t: Some(Type::Variable(numeral_arg.clone()))
+            };
+            for _ in 0..*val {
+                body = TExpr {
+                    v: Expr::Application(
+                        Box::new(numeral_func.clone()),
+                        Box::new(body.clone()),
+                    ),
+                    t: body.t,
+                };
+            }
+            TExpr {
+                t: Some(Type::Function(
+                    Box::new(numeral_func.t.clone().unwrap()),
+                    Box::new(numeral_func.t.unwrap()),
+                )),
+                v: Expr::Function(Function(
+                    vec![
+                        Pattern::Variable(numeral_func_var),
+                        Pattern::Variable(numeral_arg),
+                    ],
+                    Box::new(body),
+                )),
+            }
+        },
+        [TExpr { v: Expr::Variable(Variable { id, .. }), .. }]
+            if bindings.contains_key(id) =>
+        {
+            expand_numeral_intrinsic(
+                &vec![bindings[id].clone()],
+                bindings,
+                prover_defs,
+                gen,
+            )
+        },
+        _ => panic!("unexpected arguments to fresh: {:?}", args),
     }
 }

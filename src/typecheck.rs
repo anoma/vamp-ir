@@ -158,7 +158,7 @@ fn type_pattern(
     types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
-    match (pat, typ) {
+    match (pat, typ.clone()) {
         (pat, Type::Variable(var)) if types.contains_key(&var.id) =>
             type_pattern(pat, types[&var.id].clone(), types, gen),
         (Pattern::Constant(_), typ) =>
@@ -181,6 +181,21 @@ fn type_pattern(
             ));
             type_pattern(
                 &Pattern::Product(pat1.clone(), pat2.clone()),
+                Type::Variable(var),
+                types,
+                gen,
+            );
+        },
+        (Pattern::Cons(pat1, pat2), Type::List(typ1)) => {
+            type_pattern(pat1, *typ1.clone(), types, gen);
+            type_pattern(pat2, typ.clone(), types, gen);
+        },
+        (Pattern::Cons(pat1, pat2), Type::Variable(var)) => {
+            types.insert(var.id, Type::List(
+                Box::new(Type::Variable(Variable::new(gen.generate_id()))),
+            ));
+            type_pattern(
+                &Pattern::Cons(pat1.clone(), pat2.clone()),
                 Type::Variable(var),
                 types,
                 gen,
