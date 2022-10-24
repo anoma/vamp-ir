@@ -31,7 +31,7 @@ fn refresh_expr_variables(
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             refresh_expr_variables(expr1, map, prover_defs, gen);
             refresh_expr_variables(expr2, map, prover_defs, gen);
         },
@@ -46,7 +46,7 @@ fn refresh_expr_variables(
         Expr::Negate(expr) => {
             refresh_expr_variables(expr, map, prover_defs, gen);
         },
-        Expr::Constant(_) | Expr::Unit => {},
+        Expr::Constant(_) | Expr::Unit | Expr::Nil => {},
         Expr::Variable(var) => {
             if let Some(id) = map.get(&var.id) {
                 var.id = *id;
@@ -91,7 +91,8 @@ fn match_pattern_expr(
             map.insert(var.id, expr.clone().into());
             Tribool::True
         },
-        (Pattern::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
+        (Pattern::Product(pat1, pat2), Expr::Product(expr1, expr2)) |
+        (Pattern::Cons(pat1, pat2), Expr::Cons(expr1, expr2))=> {
             let inner_res1 = match_pattern_expr(pat1, expr1, map, prover_defs, gen);
             let inner_res2 = match_pattern_expr(pat2, expr2, map, prover_defs, gen);
             std::cmp::min(inner_res1, inner_res2)
@@ -108,7 +109,20 @@ fn match_pattern_expr(
             map.insert(var.id, Expr::Product(inner_expr1, inner_expr2).into());
             match_pattern_expr(pat, expr, map, prover_defs, gen)
         },
-        (Pattern::Unit, Expr::Unit) => Tribool::True,
+        (Pattern::Cons(_, _), Expr::Variable(var)) => {
+            let new_var1 = Variable::new(gen.generate_id());
+            let new_var2 = Variable::new(gen.generate_id());
+            if prover_defs.contains(&var.id) {
+                prover_defs.insert(new_var1.id);
+                prover_defs.insert(new_var2.id);
+            }
+            let inner_expr1 = Box::new(Expr::Variable(new_var1).into());
+            let inner_expr2 = Box::new(Expr::Variable(new_var2).into());
+            map.insert(var.id, Expr::Cons(inner_expr1, inner_expr2).into());
+            match_pattern_expr(pat, expr, map, prover_defs, gen)
+        },
+        (Pattern::Unit, Expr::Unit) | (Pattern::Nil, Expr::Nil) =>
+            Tribool::True,
         (Pattern::Constant(a), Expr::Constant(b)) if a == b =>
             Tribool::True,
         (Pattern::Constant(a), Expr::Constant(b)) if a != b =>
@@ -135,7 +149,7 @@ fn refresh_pattern_variables(
             }
             var.id = map[&var.id];
         },
-        Pattern::Product(pat1, pat2) => {
+        Pattern::Product(pat1, pat2) | Pattern::Cons(pat1, pat2) => {
             refresh_pattern_variables(pat1, map, prover_defs, gen);
             refresh_pattern_variables(pat2, map, prover_defs, gen);
         },
@@ -146,7 +160,7 @@ fn refresh_pattern_variables(
             }
             var.id = map[&var.id];
         },
-        Pattern::Constant(_) | Pattern::Unit => {},
+        Pattern::Constant(_) | Pattern::Unit | Pattern::Nil => {},
     }
 }
 
@@ -165,7 +179,7 @@ fn number_pattern_variables(
                 map.insert(name.clone(), var.id);
             }
         },
-        Pattern::Product(pat1, pat2) => {
+        Pattern::Product(pat1, pat2) | Pattern::Cons(pat1, pat2) => {
             number_pattern_variables(pat1, map, gen);
             number_pattern_variables(pat2, map, gen);
         },
@@ -175,7 +189,7 @@ fn number_pattern_variables(
                 map.insert(name.clone(), var.id);
             }
         },
-        Pattern::Constant(_) | Pattern::Unit => {},
+        Pattern::Constant(_) | Pattern::Unit | Pattern::Nil => {},
     }
 }
 
@@ -197,14 +211,14 @@ fn number_expr_variables(
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             number_expr_variables(expr1, locals, globals, gen);
             number_expr_variables(expr2, locals, globals, gen);
         },
         Expr::Negate(expr) => {
             number_expr_variables(expr, locals, globals, gen);
         },
-        Expr::Constant(_) | Expr::Unit => {},
+        Expr::Constant(_) | Expr::Unit | Expr::Nil => {},
         Expr::Variable(var) => {
             if let Some(name) = &var.name {
                 if let Some(id) = locals.get(name) {
@@ -340,11 +354,17 @@ fn apply_functions(
                 Expr::Product(_, _) => {
                     panic!("cannot apply argument {} to tuple {}", expr2, expr1)
                 },
+                Expr::Cons(_, _) => {
+                    panic!("cannot apply argument {} to list {}", expr2, expr1)
+                },
                 Expr::Constant(_) => {
                     panic!("cannot apply argument {} to constant {}", expr2, expr1)
                 },
                 Expr::Unit => {
                     panic!("cannot apply argument {} to unit {}", expr2, expr1)
+                },
+                Expr::Nil => {
+                    panic!("cannot apply argument {} to nil {}", expr2, expr1)
                 },
             }
         },
@@ -364,11 +384,14 @@ fn apply_functions(
                 let res = match_pattern_expr(&pat, &val, &mut new_bindings, prover_defs, gen);
                 match res {
                     Tribool::True => {
-                        let mut normal = apply_functions(expr2, &new_bindings, prover_defs, gen);
-                        *expr = expr2.clone();
-                        new_bindings.retain(|k, _v| !bindings.contains_key(k) && !prover_defs.contains(k));
-                        copy_propagate_expr(&mut normal, &new_bindings);
-                        return normal
+                        *expr = TExpr {
+                            v: Expr::LetBinding(
+                                LetBinding(pat.clone(), matche.0.clone()),
+                                Box::new(expr2.clone())
+                            ),
+                            t: expr.t.clone()
+                        };
+                        return apply_functions(expr, bindings, prover_defs, gen);
                     },
                     Tribool::Indeterminate =>
                         panic!("cannot statically match {} against {}", val, pat),
@@ -391,6 +414,12 @@ fn apply_functions(
                 Box::new(apply_functions(expr2, &bindings, prover_defs, gen)),
             ).into()
         },
+        Expr::Cons(expr1, expr2) => {
+            Expr::Cons(
+                Box::new(apply_functions(expr1, &bindings, prover_defs, gen)),
+                Box::new(apply_functions(expr2, &bindings, prover_defs, gen)),
+            ).into()
+        },
         Expr::Infix(op, expr1, expr2) => {
             let expr1 = apply_functions(expr1, &bindings, prover_defs, gen);
             let expr2 = apply_functions(expr2, &bindings, prover_defs, gen);
@@ -399,7 +428,7 @@ fn apply_functions(
         Expr::Negate(expr1) => {
             Expr::Negate(Box::new(apply_functions(expr1, &bindings, prover_defs, gen))).into()
         },
-        t @ (Expr::Constant(_) | Expr::Unit) => t.clone().into(),
+        t @ (Expr::Constant(_) | Expr::Unit | Expr::Nil) => t.clone().into(),
         Expr::Variable(var) => match bindings.get(&var.id) {
             Some(val) if !prover_defs.contains(&var.id) => val.clone(),
             _ => expr.clone(),
@@ -455,11 +484,11 @@ pub fn collect_pattern_variables(
             map.insert(var.id, var.clone());
             collect_pattern_variables(pat, map);
         },
-        Pattern::Product(pat1, pat2) => {
+        Pattern::Product(pat1, pat2) | Pattern::Cons(pat1, pat2) => {
             collect_pattern_variables(pat1, map);
             collect_pattern_variables(pat2, map);
         },
-        Pattern::Constant(_) | Pattern::Unit => {}
+        Pattern::Constant(_) | Pattern::Unit | Pattern::Nil => {}
     }
 }
 
@@ -479,7 +508,7 @@ fn collect_expr_variables(
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             collect_expr_variables(expr1, map);
             collect_expr_variables(expr2, map);
         },
@@ -504,7 +533,7 @@ fn collect_expr_variables(
                 collect_expr_variables(expr2, map);
             }
         },
-        Expr::Constant(_) | Expr::Unit => {},
+        Expr::Constant(_) | Expr::Unit | Expr::Nil => {},
     }
 }
 
@@ -652,9 +681,15 @@ fn flatten_expression(
                 Box::new(flatten_expression(expr2, flattened)),
             ).into()
         },
+        Expr::Cons(expr1, expr2) => {
+            Expr::Cons(
+                Box::new(flatten_expression(expr1, flattened)),
+                Box::new(flatten_expression(expr2, flattened)),
+            ).into()
+        },
         Expr::Negate(expr1) =>
             Expr::Negate(Box::new(flatten_expression(expr1, flattened))).into(),
-        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit => expr.clone(),
+        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit | Expr::Nil => expr.clone(),
         Expr::LetBinding(binding, body) => {
             let val = flatten_expression(&*binding.1, flattened);
             flatten_binding(&binding.0, &val, flattened);
@@ -685,6 +720,95 @@ pub fn flatten_module(
     }
     for expr in &module.exprs {
         flatten_expression(expr, flattened);
+    }
+}
+
+/* Convert each lsit in the given pattern into a tuple. More precisely, each use
+ * of the pair constructor is replaced with cons, the list constructor, and each
+ * use of unit is replaced with nil, the empty list. */
+fn pattern_lists_to_tuples(pat: &mut Pattern) {
+    match pat {
+        Pattern::Nil => { *pat = Pattern::Unit },
+        Pattern::As(pat, _var) => {
+            pattern_lists_to_tuples(pat);
+        },
+        Pattern::Cons(pat1, pat2) => {
+            *pat = Pattern::Product(pat1.clone(), pat2.clone());
+            pattern_lists_to_tuples(pat);
+        },
+        Pattern::Product(pat1, pat2) => {
+            pattern_lists_to_tuples(pat1);
+            pattern_lists_to_tuples(pat2);
+        },
+        Pattern::Constant(_) | Pattern::Unit | Pattern::Variable(_) => {}
+    }
+}
+
+/* Convert each lsit in the given expression into a tuple. More precisely, each
+ * use of the pair constructor is replaced with cons, the list constructor, and
+ * each use of unit is replaced with nil, the empty list. */
+fn expr_lists_to_tuples(expr: &mut TExpr) {
+    match &mut expr.v {
+        Expr::Nil => { *expr = Expr::Unit.into() },
+        Expr::Sequence(exprs) |
+        Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+            for expr in exprs {
+                expr_lists_to_tuples(expr);
+            }
+        },
+        Expr::Cons(expr1, expr2) => {
+            *expr = Expr::Product(expr1.clone(), expr2.clone()).into();
+            expr_lists_to_tuples(expr);
+        },
+        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
+        Expr::Product(expr1, expr2) => {
+            expr_lists_to_tuples(expr1);
+            expr_lists_to_tuples(expr2);
+        },
+        Expr::Negate(expr1) => {
+            expr_lists_to_tuples(expr1);
+        },
+        Expr::Function(fun) => {
+            for param in &mut fun.0 {
+                pattern_lists_to_tuples(param);
+            }
+            expr_lists_to_tuples(&mut *fun.1);
+        },
+        Expr::LetBinding(binding, body) => {
+            expr_lists_to_tuples(&mut *binding.1);
+            pattern_lists_to_tuples(&mut binding.0);
+            expr_lists_to_tuples(body);
+        },
+        Expr::Match(matche) => {
+            expr_lists_to_tuples(&mut matche.0);
+            for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
+                pattern_lists_to_tuples(pat);
+                expr_lists_to_tuples(expr2);
+            }
+        },
+        Expr::Constant(_) | Expr::Unit | Expr::Variable(_) => {},
+    }
+}
+
+/* Convert each lsit in the given definition into a tuple. More precisely, each
+ * use of the pair constructor is replaced with cons, the list constructor, and
+ * each use of unit is replaced with nil, the empty list. */
+fn definition_lists_to_tuples(def: &mut Definition) {
+    pattern_lists_to_tuples(&mut def.0.0);
+    expr_lists_to_tuples(&mut def.0.1);
+}
+
+/* Convert each lsit in the given module into a tuple. More precisely, each use
+ * of the pair constructor is replaced with cons, the list constructor, and each
+ * use of unit is replaced with nil, the empty list. After inlining, this
+ * transformation allows the tuple structure inferencer to determine the exact
+ * structure of lists. */
+fn module_lists_to_tuples(module: &mut Module) {
+    for def in &mut module.defs {
+        definition_lists_to_tuples(def);
+    }
+    for expr in &mut module.exprs {
+        expr_lists_to_tuples(expr);
     }
 }
 
@@ -877,6 +1001,8 @@ pub fn compile(mut module: Module) -> Module {
     print_types(&module, &prog_types);
     let mut prover_defs = HashSet::new();
     apply_module_functions(&mut module, &mut bindings, &mut prover_defs, &mut vg);
+    // Now that inlining is complete, lists are equivalent to tuples
+    module_lists_to_tuples(&mut module);
     let mut types = HashMap::new();
     infer_module_types(&mut module, &globals, &mut types, &mut vg);
     // Expand all tuple variables
@@ -912,7 +1038,7 @@ pub fn copy_propagate_expr(
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             copy_propagate_expr(expr1, substitutions);
             copy_propagate_expr(expr2, substitutions);
         },
@@ -929,7 +1055,7 @@ pub fn copy_propagate_expr(
                 copy_propagate_expr(expr2, substitutions);
             }
         },
-        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit => {},
+        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit | Expr::Nil => {},
     }
 }
 

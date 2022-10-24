@@ -159,8 +159,10 @@ impl fmt::Display for LetBinding {
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Pattern {
     Unit,
+    Nil,
     As(Box<Pattern>, Variable),
     Product(Box<Pattern>, Box<Pattern>),
+    Cons(Box<Pattern>, Box<Pattern>),
     Variable(Variable),
     Constant(i32),
 }
@@ -196,10 +198,27 @@ impl Pattern {
     pub fn parse_pat2(pair: Pair<Rule>) -> Option<Self> {
         if pair.as_rule() != Rule::pattern2 { return None }
         let mut pairs = pair.into_inner();
+        let pair = pairs.next_back().expect("pattern should not be empty");
+        let mut pats =
+            Self::parse_pat3(pair).expect("expression should start with product");
+        while let Some(pair) = pairs.next_back() {
+            let rhs = Self::parse_pat3(pair)
+                .expect("expected RHS to be a product");
+            pats = Self::Cons(Box::new(rhs), Box::new(pats));
+        }
+        Some(pats)
+    }
+
+    pub fn parse_pat3(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::pattern3 { return None }
+        let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
         match pair.as_rule() {
             Rule::constant if pair.as_str().starts_with("(") => {
                 Some(Self::Unit)
+            },
+            Rule::constant if pair.as_str().starts_with("[") => {
+                Some(Self::Nil)
             },
             Rule::constant => {
                 let value = pair.as_str().parse().ok().expect("constant should be an integer");
@@ -217,6 +236,7 @@ impl Pattern {
     pub fn to_expr(&self) -> TExpr {
         match self {
             Self::Unit => Expr::Unit.into(),
+            Self::Nil => Expr::Nil.into(),
             Self::Constant(val) => Expr::Constant(*val).into(),
             Self::Variable(var) => Expr::Variable(var.clone()).into(),
             Self::As(pat, _name) => pat.to_expr(),
@@ -225,7 +245,13 @@ impl Pattern {
                     Box::new(pat1.to_expr()),
                     Box::new(pat2.to_expr()),
                 ).into()
-            }
+            },
+            Self::Cons(pat1, pat2) => {
+                Expr::Cons(
+                    Box::new(pat1.to_expr()),
+                    Box::new(pat2.to_expr()),
+                ).into()
+            },
         }
     }
 
@@ -256,9 +282,12 @@ impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unit => write!(f, "()")?,
+            Self::Nil => write!(f, "[]")?,
             Self::As(pat, name) => write!(f, "{} as {}", pat, name)?,
             Self::Product(pat1, pat2) =>
                 write!(f, "({}, {})", pat1, pat2)?,
+            Self::Cons(pat1, pat2) =>
+                write!(f, "({}: {})", pat1, pat2)?,
             Self::Variable(var) => write!(f, "{}", var)?,
             Self::Constant(val) => write!(f, "{}", val)?,
         }
@@ -275,8 +304,10 @@ pub struct TExpr {
 #[derive(Debug, Clone, Encode, Decode)]
 pub enum Expr {
     Unit,
+    Nil,
     Sequence(Vec<TExpr>),
     Product(Box<TExpr>, Box<TExpr>),
+    Cons(Box<TExpr>, Box<TExpr>),
     Infix(InfixOp, Box<TExpr>, Box<TExpr>),
     Negate(Box<TExpr>),
     Application(Box<TExpr>, Box<TExpr>),
@@ -296,6 +327,9 @@ impl TExpr {
         if string.starts_with("fun") {
             let pair = pairs.next().expect("expression should not be empty");
             Function::parse(pair).map(|x| Expr::Function(x).into())
+        } else if string.starts_with("match") {
+            let pair = pairs.next().expect("expression should not be empty");
+            Match::parse(pair).map(|x| Expr::Match(x).into())
         } else if string.starts_with("def") {
             let pair = pairs.next().expect("body expression should be prefixed by binding");
             let binding = LetBinding::parse(pair).expect("expression should start with binding");
@@ -359,17 +393,15 @@ impl TExpr {
     pub fn parse_expr4(pair: Pair<Rule>) -> Option<Self> {
         if pair.as_rule() != Rule::expr4 { return None }
         let mut pairs = pair.into_inner();
-        let pair = pairs.next().expect("expression should not be empty");
-        let mut expr =
+        let pair = pairs.next_back().expect("expression should not be empty");
+        let mut exprs =
             Self::parse_expr5(pair).expect("expression should start with product");
-        while let Some(pair) = pairs.next() {
-            let op = InfixOp::parse(pair).expect("expected arithmetic operator");
-            let rhs_pair = pairs.next().expect("expected RHS product");
-            let rhs = Self::parse_expr5(rhs_pair)
+        while let Some(pair) = pairs.next_back() {
+            let rhs = Self::parse_expr5(pair)
                 .expect("expected RHS to be a product");
-            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).into();
+            exprs = Expr::Cons(Box::new(rhs), Box::new(exprs)).into();
         }
-        Some(expr)
+        Some(exprs)
     }
 
     pub fn parse_expr5(pair: Pair<Rule>) -> Option<Self> {
@@ -391,15 +423,15 @@ impl TExpr {
     pub fn parse_expr6(pair: Pair<Rule>) -> Option<Self> {
         if pair.as_rule() != Rule::expr6 { return None }
         let mut pairs = pair.into_inner();
-        let pair = pairs.next_back().expect("expression should not be empty");
+        let pair = pairs.next().expect("expression should not be empty");
         let mut expr =
             Self::parse_expr7(pair).expect("expression should start with product");
-        while let Some(pair) = pairs.next_back() {
+        while let Some(pair) = pairs.next() {
             let op = InfixOp::parse(pair).expect("expected arithmetic operator");
-            let lhs_pair = pairs.next_back().expect("expected RHS product");
-            let lhs = Self::parse_expr7(lhs_pair)
+            let rhs_pair = pairs.next().expect("expected RHS product");
+            let rhs = Self::parse_expr7(rhs_pair)
                 .expect("expected RHS to be a product");
-            expr = Expr::Infix(op, Box::new(lhs), Box::new(expr)).into();
+            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).into();
         }
         Some(expr)
     }
@@ -411,6 +443,22 @@ impl TExpr {
         let mut expr =
             Self::parse_expr8(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next_back() {
+            let op = InfixOp::parse(pair).expect("expected arithmetic operator");
+            let lhs_pair = pairs.next_back().expect("expected RHS product");
+            let lhs = Self::parse_expr8(lhs_pair)
+                .expect("expected RHS to be a product");
+            expr = Expr::Infix(op, Box::new(lhs), Box::new(expr)).into();
+        }
+        Some(expr)
+    }
+
+    pub fn parse_expr8(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr8 { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next_back().expect("expression should not be empty");
+        let mut expr =
+            Self::parse_expr9(pair).expect("expression should start with product");
+        while let Some(pair) = pairs.next_back() {
             if pair.as_rule() == Rule::negate {
                 expr = Expr::Negate(Box::new(expr)).into();
             } else {
@@ -420,27 +468,29 @@ impl TExpr {
         Some(expr)
     }
 
-    pub fn parse_expr8(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr8 { return None }
+    pub fn parse_expr9(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr9 { return None }
         let mut pairs = pair.into_inner();
         let pair = pairs.next().expect("expression should not be empty");
         let mut expr =
-            Self::parse_expr9(pair).expect("expression should start with product");
+            Self::parse_expr10(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next() {
-            let rhs = Self::parse_expr9(pair)
+            let rhs = Self::parse_expr10(pair)
                 .expect("expected RHS to be a product");
             expr = Expr::Application(Box::new(expr), Box::new(rhs)).into();
         }
         Some(expr)
     }
 
-    pub fn parse_expr9(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr9 { return None }
+    pub fn parse_expr10(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::expr10 { return None }
         let string = pair.as_str();
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
         if pair.as_rule() == Rule::constant && string.starts_with("(") {
             Some(Expr::Unit.into())
+        } else if pair.as_rule() == Rule::constant && string.starts_with("[") {
+            Some(Expr::Nil.into())
         } else if pair.as_rule() == Rule::constant {
             let value = pair.as_str().parse().ok().expect("constant should be an integer");
             Some(Expr::Constant(value).into())
@@ -448,7 +498,7 @@ impl TExpr {
             let name = Variable::parse(pair).expect("expression should be value name");
             Some(Expr::Variable(name).into())
         } else if string.starts_with("(") || string.starts_with("fun") ||
-        string.starts_with("def") {
+        string.starts_with("def") || string.starts_with("match") {
             Self::parse(pair)
         } else {
             unreachable!("expression is of unknown form")
@@ -460,6 +510,7 @@ impl fmt::Display for TExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.v {
             Expr::Unit => write!(f, "()")?,
+            Expr::Nil => write!(f, "[]")?,
             Expr::Sequence(exprs) => {
                 if exprs.len() > 1 {
                     write!(f, "{{")?;
@@ -477,6 +528,8 @@ impl fmt::Display for TExpr {
             },
             Expr::Product(expr1, expr2) =>
                 write!(f, "({}, {})", expr1, expr2)?,
+            Expr::Cons(expr1, expr2) =>
+                write!(f, "({}: {})", expr1, expr2)?,
             Expr::Infix(op, expr1, expr2) =>
                 write!(f, "({}{}{})", expr1, op, expr2)?,
             Expr::Negate(expr) => write!(f, "-{}", expr)?,
@@ -510,6 +563,28 @@ impl From<Expr> for TExpr {
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Match(pub Box<TExpr>, pub Vec<Pattern>, pub Vec<TExpr>);
 
+impl Match {
+    pub fn parse(pair: Pair<Rule>) -> Option<Self> {
+        if pair.as_rule() != Rule::case { return None }
+        let mut pairs = pair.into_inner();
+        let pair = pairs.next().expect("match should not be empty");
+        let val = TExpr::parse(pair).expect("match should start with expression");
+        let mut pats = vec![];
+        let mut exprs = vec![];
+        while let Some(pair) = pairs.next() {
+            let pat =
+                Pattern::parse(pair).expect("all prefixes to function should be patterns");
+            let expr_pair =
+                pairs.next().expect("pattern should followed by expression");
+            let expr =
+                TExpr::parse(expr_pair).expect("pattern should be followed by expression");
+            pats.push(pat);
+            exprs.push(expr);
+        }
+        Some(Self(Box::new(val), pats, exprs))
+    }
+}
+
 impl fmt::Display for Match {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "match {} {{", self.0)?;
@@ -523,7 +598,7 @@ impl fmt::Display for Match {
                 writeln!(f, "  {} => {},", pat, expr2)?;
             }
         }
-        writeln!(f, "}}")?;
+        write!(f, "}}")?;
         Ok(())
     }
 }
