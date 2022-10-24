@@ -22,31 +22,17 @@ def next_range range a {
 
 // Inductively define range for each bit width
 
-def range0 x { x = 0; [] };
+def range0 0 { [] };
 
-def range1 = next_range range0;
-
-def range2 = next_range range1;
-
-def range3 = next_range range2;
-
-def range4 = next_range range3;
-
-def range5 = next_range range4;
-
-def range6 = next_range range5;
-
-def range7 = next_range range6;
-
-def range8 = next_range range7;
-
-def range9 = next_range range8;
+def range n { numeral n next_range range0 };
 
 // Pair up corresponding elements of each tuple
 
-def zip8 (a0:a1:a2:a3:a4:a5:a6:a7:ar) (b0:b1:b2:b3:b4:b5:b6:b7:br) {
-    ((a0,b0):(a1,b1):(a2,b2):(a3,b3):(a4,b4):(a5,b5):(a6,b6):(a7,b7):[])
-};
+def zip0 [] [] { [] };
+
+def zip_ind zip (ah:ar) (bh:br) { (ah,bh):(zip ar br) };
+
+def zip n { numeral n zip_ind zip0 };
 
 // Apply function to each element of tuple
 
@@ -63,7 +49,7 @@ def combine8 (a0:a1:a2:a3:a4:a5:a6:a7:ar) {
 // Apply given function to corresponding bit-pairs in bit representation
 
 def bitwise8 g a b {
-    def zipped = zip8 (range8 a) (range8 b);
+    def zipped = zip8 (range 8 a) (range 8 b);
     def new_bits = map g zipped;
     combine8 new_bits
 };
@@ -94,7 +80,7 @@ def and8 = bitwise8 bit_and;
 
 // Definition of bitwise not for 8 bit values
 
-def not8 y { combine8 (map (fun x { 1-x }) (range8 y)) };
+def not8 y { combine8 (map (fun x { 1-x }) (range 8 y)) };
 
 // Repeated function applications, useful for big-step rotations/shifts
 
@@ -117,56 +103,56 @@ def apply7 f x { f (apply6 f x) };
 // Arithmetic shift right for 8 bit values
 
 def ashr8 x {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range8 x;
+    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range 8 x;
     combine8 (a1:a2:a3:a4:a5:a6:a7:a7:[])
 };
 
 // Logical shift right for 8 bit values
 
 def lshr8 x {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range8 x;
+    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range 8 x;
     combine8 (a1:a2:a3:a4:a5:a6:a7:0:[])
 };
 
 // Shift left for 8 bit values
 
 def shl8 x {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range8 x;
+    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range 8 x;
     combine8 (0:a0:a1:a2:a3:a4:a5:a6:[])
 };
 
 // Rotate right for 8 bit values
 
 def ror8 x {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range8 x;
+    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range 8 x;
     combine8 (a1:a2:a3:a4:a5:a6:a7:a0:[])
 };
 
 // Rotate left for 8 bit values
 
 def rol8 x {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range8 x;
+    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range 8 x;
     combine8 (a7:a0:a1:a2:a3:a4:a5:a6:[])
 };
 
 // Add two 8-bit values modulo 8
 
 def add8 a b {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:a8:ar) = range9 (a+b);
+    def (a0:a1:a2:a3:a4:a5:a6:a7:a8:ar) = range 9 (a+b);
     combine8 (a0:a1:a2:a3:a4:a5:a6:a7:[])
 };
 
 // Subtract two 8-bit values modulo 8
 
 def sub8 a b {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:a8:ar) = range9 (a+256-b);
+    def (a0:a1:a2:a3:a4:a5:a6:a7:a8:ar) = range 9 (a+256-b);
     combine8 (a0:a1:a2:a3:a4:a5:a6:a7:[])
 };
 
 // Unsigned less than or equal to for 8 bits. 1 if true, 0 otherwise
 
 def ule8 a b {
-    def (c0:c1:c2:c3:c4:c5:c6:c7:c8:ar) = range9 (256+b-a);
+    def (c0:c1:c2:c3:c4:c5:c6:c7:c8:ar) = range 9 (256+b-a);
     c8
 };
 
@@ -177,7 +163,7 @@ def ult8 a b { ule8 a (b-1) };
 // Signed less than or equal to for 8 bits
 
 def slt8 a b {
-    def (c0:c1:c2:c3:c4:c5:c6:c7:c8:ar) = range9 (a+256-b);
+    def (c0:c1:c2:c3:c4:c5:c6:c7:c8:ar) = range 9 (a+256-b);
     c7
 };
 
@@ -234,4 +220,4 @@ def rem a b { snd (divrem a b) };
 
 (4,1) = divrem 9 2;
 
-range4 15;
+range 4 15;

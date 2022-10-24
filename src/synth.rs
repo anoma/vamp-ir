@@ -782,6 +782,10 @@ where
     }
 
     fn padded_circuit_size(&self) -> usize {
-        self.module.exprs.len().next_power_of_two()
+        // The with_expected_size function adds the following gates:
+        // 1 gate to constrain the zero variable to equal 0
+        // 3 gates to add blinging factors to the circuit polynomials
+        const BUILTIN_GATE_COUNT: usize = 4;
+        (self.module.exprs.len()+BUILTIN_GATE_COUNT).next_power_of_two()
     }
 }
