@@ -28,6 +28,7 @@ use plonk_core::proof_system::{ProverKey, VerifierKey, Proof};
 use plonk_core::proof_system::pi::PublicInputs;
 use bincode::error::{DecodeError, EncodeError};
 use ark_serialize::{Read, SerializationError};
+use std::time::{Instant};
 
 type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
 
@@ -120,12 +121,12 @@ fn setup_cmd(args: &[String]) {
     }
     // Generate CRS
     println!("* Setting up public parameters...");
-    let pp = PC::setup(1 << 18, None, &mut OsRng)
+    let pp = PC::setup(1 << 15, None, &mut OsRng)
         .map_err(to_pc_error::<BlsScalar, PC>)
         .expect("unable to setup polynomial commitment scheme public parameters");
     let mut pp_file = File::create(args[0].clone())
         .expect("unable to create public parameters file");
-    pp.serialize(&mut pp_file).unwrap();
+    pp.serialize_unchecked(&mut pp_file).unwrap();
     println!("* Public parameter setup success!");
 }
 
@@ -140,9 +141,14 @@ fn compile_cmd(args: &[String]) {
         return;
     }
     println!("* Reading public parameters...");
+    println!("** File opening...");
     let mut pp_file = File::open(args[1].clone())
         .expect("unable to load public parameters file");
-    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+    println!("** File reading...");
+    let start = Instant::now();
+    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize_unchecked(&mut pp_file).unwrap();
+    let duration = start.elapsed();
+    println!("Time elapsed in file reading is: {:?}", duration);
 
     println!("* Compiling constraints...");
     let unparsed_file = fs::read_to_string(args[0].clone()).expect("cannot read file");
@@ -182,7 +188,7 @@ fn prove_cmd(args: &[String]) {
     println!("* Reading public parameters...");
     let mut pp_file = File::open(args[1].clone())
         .expect("unable to load public parameters file");
-    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize_unchecked(&mut pp_file).unwrap();
     // Prover POV
     println!("* Soliciting circuit witnesses...");
     // Prompt for program inputs
@@ -224,7 +230,7 @@ fn verify_cmd(args: &[String]) {
     println!("* Reading public parameters...");
     let mut pp_file = File::open(args[1].clone())
         .expect("unable to load public parameters file");
-    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize(&mut pp_file).unwrap();
+    let pp = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams::deserialize_unchecked(&mut pp_file).unwrap();
     
     // Verifier POV
     println!("* Verifying proof validity...");
