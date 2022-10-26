@@ -201,6 +201,7 @@ fn type_pattern(
                 gen,
             );
         },
+        (Pattern::Unit, Type::Unit) | (Pattern::Nil, Type::List(_)) => {},
         (pat, typ) => panic!("unable to type pattern {} as {}", pat, typ),
     }
 }
@@ -806,11 +807,13 @@ fn unitize_pattern_functions(
                 Box::new(unitize_pattern_functions(*pat2, typ2, types)),
             )
         },
-        (pat @ Pattern::Variable(_), Type::Variable(_)) => pat,
-        (pat @ (Pattern::Constant(_) | Pattern::Variable(_)), Type::Int) => pat,
-        (pat @ (Pattern::Unit | Pattern::Variable(_)), Type::Unit) => pat,
-        (pat, typ) =>
-            panic!("pattern {} does not correspond to type {}", pat, typ),
+        (Pattern::Cons(pat1, pat2), typ2 @ Type::List(typ1)) => {
+            Pattern::Product(
+                Box::new(unitize_pattern_functions(*pat1, typ1, types)),
+                Box::new(unitize_pattern_functions(*pat2, typ2, types)),
+            )
+        },
+        (pat, _typ) => pat,
     }
 }
 
@@ -830,10 +833,11 @@ fn unitize_expr_functions(
         },
         Expr::Match(matche) => {
             unitize_expr_functions(&mut matche.0, types);
-            let pat_type = matche.0.t.as_ref().unwrap();
-            for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
-                *pat = unitize_pattern_functions(pat.clone(), pat_type, types);
-                unitize_expr_functions(expr2, types);
+            if let Some(pat_type) = matche.0.t.as_ref() {
+                for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
+                    *pat = unitize_pattern_functions(pat.clone(), pat_type, types);
+                    unitize_expr_functions(expr2, types);
+                }
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
@@ -842,8 +846,9 @@ fn unitize_expr_functions(
             unitize_expr_functions(expr2, types);
         },
         Expr::LetBinding(binding, body) => {
-            let binding_type = binding.1.t.as_ref().unwrap();
-            binding.0 = unitize_pattern_functions(binding.0.clone(), binding_type, types);
+            if let Some(binding_type) = binding.1.t.as_ref() {
+                binding.0 = unitize_pattern_functions(binding.0.clone(), binding_type, types);
+            }
             unitize_expr_functions(&mut *binding.1, types);
             unitize_expr_functions(body, types);
         },
@@ -865,8 +870,9 @@ fn unitize_def_functions(
     def: &mut Definition,
     types: &mut HashMap<VariableId, Type>,
 ) {
-    let binding_type = def.0.1.t.as_ref().unwrap();
-    def.0.0 = unitize_pattern_functions(def.0.0.clone(), binding_type, types);
+    if let Some(binding_type) = def.0.1.t.as_ref() {
+        def.0.0 = unitize_pattern_functions(def.0.0.clone(), binding_type, types);
+    }
     unitize_expr_functions(&mut *def.0.1, types);
 }
 

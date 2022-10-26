@@ -327,9 +327,6 @@ impl TExpr {
         if string.starts_with("fun") {
             let pair = pairs.next().expect("expression should not be empty");
             Function::parse(pair).map(|x| Expr::Function(x).into())
-        } else if string.starts_with("match") {
-            let pair = pairs.next().expect("expression should not be empty");
-            Match::parse(pair).map(|x| Expr::Match(x).into())
         } else if string.starts_with("def") {
             let pair = pairs.next().expect("body expression should be prefixed by binding");
             let binding = LetBinding::parse(pair).expect("expression should start with binding");
@@ -562,28 +559,6 @@ impl From<Expr> for TExpr {
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Match(pub Box<TExpr>, pub Vec<Pattern>, pub Vec<TExpr>);
-
-impl Match {
-    pub fn parse(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::case { return None }
-        let mut pairs = pair.into_inner();
-        let pair = pairs.next().expect("match should not be empty");
-        let val = TExpr::parse(pair).expect("match should start with expression");
-        let mut pats = vec![];
-        let mut exprs = vec![];
-        while let Some(pair) = pairs.next() {
-            let pat =
-                Pattern::parse(pair).expect("all prefixes to function should be patterns");
-            let expr_pair =
-                pairs.next().expect("pattern should followed by expression");
-            let expr =
-                TExpr::parse(expr_pair).expect("pattern should be followed by expression");
-            pats.push(pat);
-            exprs.push(expr);
-        }
-        Some(Self(Box::new(val), pats, exprs))
-    }
-}
 
 impl fmt::Display for Match {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

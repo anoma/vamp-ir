@@ -995,20 +995,23 @@ pub fn compile(mut module: Module) -> Module {
     let mut bindings = HashMap::new();
     let mut prog_types = HashMap::new();
     register_fresh_intrinsic(&mut globals, &mut bindings, &mut prog_types, &mut vg);
-    register_numeral_intrinsic(&mut globals, &mut bindings, &mut prog_types, &mut vg);
+    register_iter_intrinsic(&mut globals, &mut bindings, &mut prog_types, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
+    // Save this type environment for when we repeat type inference
+    let mut types = prog_types.clone();
     infer_module_types(&mut module, &globals, &mut prog_types, &mut vg);
     println!("** Inferring types...");
     print_types(&module, &prog_types);
     let mut prover_defs = HashSet::new();
     apply_module_functions(&mut module, &mut bindings, &mut prover_defs, &mut vg);
+    // Unitize all function expressions now that they are all now applied
+    unitize_module_functions(&mut module, &mut prog_types);
     // Now that inlining is complete, lists are equivalent to tuples
     module_lists_to_tuples(&mut module);
-    let mut types = HashMap::new();
     infer_module_types(&mut module, &globals, &mut types, &mut vg);
     // Expand all tuple variables
     expand_module_variables(&mut module, &mut types, &mut vg);
-    // Unitize all function expressions
+    // Unitize all remaining function expressions using type information
     unitize_module_functions(&mut module, &mut types);
     // Start generating arithmetic constraints
     let mut constraints = Module::default();
@@ -1222,43 +1225,43 @@ fn expand_fresh_intrinsic(
     }
 }
 
-/* Register the numeral intrinsic in the compilation environment. */
-fn register_numeral_intrinsic(
+/* Register the iter intrinsic in the compilation environment. */
+fn register_iter_intrinsic(
     globals: &mut HashMap<String, VariableId>,
     bindings: &mut HashMap<VariableId, TExpr>,
     types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
-    let numeral_func_id = gen.generate_id();
-    let numeral_arg = Variable::new(gen.generate_id());
-    let numeral_func = Type::Function(
-        Box::new(Type::Variable(numeral_arg.clone())),
-        Box::new(Type::Variable(numeral_arg.clone())),
+    let iter_func_id = gen.generate_id();
+    let iter_arg = Variable::new(gen.generate_id());
+    let iter_func = Type::Function(
+        Box::new(Type::Variable(iter_arg.clone())),
+        Box::new(Type::Variable(iter_arg.clone())),
     );
-    // Register the range function in global namespace
-    globals.insert("numeral".to_string(), numeral_func_id);
+    // Register the iter function in global namespace
+    globals.insert("iter".to_string(), iter_func_id);
     // Describe the intrinsic's type, arity, and implementation
-    let numeral_intrinsic = Intrinsic::new(
+    let iter_intrinsic = Intrinsic::new(
         1,
         Type::Forall(
-            numeral_arg,
+            iter_arg,
             Box::new(Type::Function(
                 Box::new(Type::Int),
                 Box::new(Type::Function(
-                    Box::new(numeral_func.clone()),
-                    Box::new(numeral_func)
+                    Box::new(iter_func.clone()),
+                    Box::new(iter_func)
                 )),
             )),
         ),
-        expand_numeral_intrinsic,
+        expand_iter_intrinsic,
     );
     // Register the intrinsic descriptor with the global binding
-    types.insert(numeral_func_id, numeral_intrinsic.imp_typ.clone());
-    bindings.insert(numeral_func_id, Expr::Intrinsic(numeral_intrinsic).into());
+    types.insert(iter_func_id, iter_intrinsic.imp_typ.clone());
+    bindings.insert(iter_func_id, Expr::Intrinsic(iter_intrinsic).into());
 }
 
-/* numeral x returns the Church numeral corresponding to the given integer x. */
-fn expand_numeral_intrinsic(
+/* iter x returns the Church numeral corresponding to the given integer x. */
+fn expand_iter_intrinsic(
     args: &Vec<TExpr>,
     bindings: &HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
@@ -1266,23 +1269,23 @@ fn expand_numeral_intrinsic(
 ) -> TExpr {
     match &args[..] {
         [TExpr { v: Expr::Constant(val), .. }] => {
-            let numeral_arg = Variable::new(gen.generate_id());
-            let numeral_func_var = Variable::new(gen.generate_id());
-            let numeral_func = TExpr {
-                v: Expr::Variable(numeral_func_var.clone()),
+            let iter_arg = Variable::new(gen.generate_id());
+            let iter_func_var = Variable::new(gen.generate_id());
+            let iter_func = TExpr {
+                v: Expr::Variable(iter_func_var.clone()),
                 t: Some(Type::Function(
-                    Box::new(Type::Variable(numeral_arg.clone())),
-                    Box::new(Type::Variable(numeral_arg.clone())),
+                    Box::new(Type::Variable(iter_arg.clone())),
+                    Box::new(Type::Variable(iter_arg.clone())),
                 ))
             };
             let mut body = TExpr {
-                v: Expr::Variable(numeral_arg.clone()),
-                t: Some(Type::Variable(numeral_arg.clone()))
+                v: Expr::Variable(iter_arg.clone()),
+                t: Some(Type::Variable(iter_arg.clone()))
             };
             for _ in 0..*val {
                 body = TExpr {
                     v: Expr::Application(
-                        Box::new(numeral_func.clone()),
+                        Box::new(iter_func.clone()),
                         Box::new(body.clone()),
                     ),
                     t: body.t,
@@ -1290,13 +1293,13 @@ fn expand_numeral_intrinsic(
             }
             TExpr {
                 t: Some(Type::Function(
-                    Box::new(numeral_func.t.clone().unwrap()),
-                    Box::new(numeral_func.t.unwrap()),
+                    Box::new(iter_func.t.clone().unwrap()),
+                    Box::new(iter_func.t.unwrap()),
                 )),
                 v: Expr::Function(Function(
                     vec![
-                        Pattern::Variable(numeral_func_var),
-                        Pattern::Variable(numeral_arg),
+                        Pattern::Variable(iter_func_var),
+                        Pattern::Variable(iter_arg),
                     ],
                     Box::new(body),
                 )),
@@ -1305,13 +1308,13 @@ fn expand_numeral_intrinsic(
         [TExpr { v: Expr::Variable(Variable { id, .. }), .. }]
             if bindings.contains_key(id) =>
         {
-            expand_numeral_intrinsic(
+            expand_iter_intrinsic(
                 &vec![bindings[id].clone()],
                 bindings,
                 prover_defs,
                 gen,
             )
         },
-        _ => panic!("unexpected arguments to fresh: {:?}", args),
+        _ => panic!("unexpected arguments to iter: {:?}", args),
     }
 }

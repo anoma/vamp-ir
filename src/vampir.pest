@@ -4,7 +4,7 @@ COMMENT = _{ "//" ~ (!"\n" ~ ANY)* | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 lowercaseIdent = @{ (ASCII_ALPHA_LOWER | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
-keyword = { "fun" | "def" | "match" }
+keyword = { "fun" | "def" }
 
 valueName = { !keyword ~ lowercaseIdent }
 
@@ -24,7 +24,7 @@ pattern3 = { valueName | constant | "(" ~ pattern ~ ")" }
 
 letBinding = { pattern ~ "=" ~ expr | valueName ~ pattern* ~ &"{" ~ expr }
 
-expr = { function | case | "def" ~ letBinding ~ ( ";" ~ expr )+ | expr1 }
+expr = { function | "def" ~ letBinding ~ ( ";" ~ expr )+ | expr1 }
 
 expr1 = { expr2 | "{" ~ expr2 ~ ( ";" ~ expr2 )* ~ "}" }
 
@@ -47,8 +47,6 @@ expr9 = { expr10+ }
 expr10 = { "(" ~ expr ~ ")" | valueName | constant | &("fun" | "def" | "match") ~ expr }
 
 function = { "fun" ~ pattern+ ~ &"{" ~ expr }
-
-case = { "match" ~ expr ~ "{" ~ pattern ~ &"{" ~ expr ~ ( ";" ~ pattern ~ &"{" ~ expr )* ~ "}" }
 
 negate = { "-" }
 
