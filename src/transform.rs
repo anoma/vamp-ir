@@ -872,12 +872,13 @@ pub fn compile(mut module: Module) -> Module {
     let mut prog_types = HashMap::new();
     register_fresh_intrinsic(&mut globals, &mut bindings, &mut prog_types, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
+    // Save this type environment for when we repeat type inference
+    let mut types = prog_types.clone();
     infer_module_types(&mut module, &globals, &mut prog_types, &mut vg);
     println!("** Inferring types...");
     print_types(&module, &prog_types);
     let mut prover_defs = HashSet::new();
     apply_module_functions(&mut module, &mut bindings, &mut prover_defs, &mut vg);
-    let mut types = HashMap::new();
     infer_module_types(&mut module, &globals, &mut types, &mut vg);
     // Expand all tuple variables
     expand_module_variables(&mut module, &mut types, &mut vg);
@@ -1045,15 +1046,18 @@ fn register_fresh_intrinsic(
     gen: &mut VarGen,
 ) {
     let fresh_func_id = gen.generate_id();
-    let fresh_arg = Type::Variable(Variable::new(gen.generate_id()));
+    let fresh_arg = Variable::new(gen.generate_id());
     // Register the range function in global namespace
     globals.insert("fresh".to_string(), fresh_func_id);
     // Describe the intrinsic's type, arity, and implementation
     let fresh_intrinsic = Intrinsic::new(
         1,
-        Type::Function(
-            Box::new(fresh_arg.clone()),
-            Box::new(fresh_arg),
+        Type::Forall(
+            fresh_arg.clone(),
+            Box::new(Type::Function(
+                Box::new(Type::Variable(fresh_arg.clone())),
+                Box::new(Type::Variable(fresh_arg)),
+            )),
         ),
         expand_fresh_intrinsic,
     );
