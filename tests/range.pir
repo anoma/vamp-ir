@@ -23,3 +23,7 @@ def range5 a {
 };
 
 def (0, 1, ar) = range5 x;
+
+// Test that the fresh function can also be applied to other types
+
+fresh (5, 3);
