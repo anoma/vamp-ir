@@ -3,7 +3,7 @@ use std::fmt;
 use std::fmt::Write;
 use crate::typecheck::Type;
 use crate::pest::Parser;
-use bincode::{Encode, Decode};
+use bincode::{Encode, Decode, error::{EncodeError, DecodeError}};
 use std::collections::{HashMap, HashSet};
 use crate::transform::VarGen;
 #[derive(Parser)]
@@ -49,6 +49,22 @@ impl Module {
             }
         }
         unreachable!("EOI should have been encountered")
+    }
+    pub fn read<R>(mut reader: R) -> Result<Self, DecodeError>
+    where
+        R: std::io::Read,
+    {
+        let module: Module =
+            bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
+        Ok(module)
+    }
+
+    pub fn write<W>(&self, mut writer: W) -> Result<(), EncodeError>
+    where
+        W: std::io::Write,
+    {
+        bincode::encode_into_std_write(&self, &mut writer, bincode::config::standard())?;
+        Ok(())
     }
 }
 

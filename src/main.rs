@@ -42,8 +42,10 @@ struct Cli {
 enum Commands {
     /// Sets up the public parameters required for proving
     Setup(Setup),
-    /// Compiles a given source file to a circuit
+    /// Compiles a given source file to a universal circuit
     Compile(Compile),
+    /// Synthesizes a circuit into a backend-specific format
+    Synth(Synth),
     /// Proves knowledge of witnesses satisfying a circuit
     Prove(Prove),
     /// Verifies that a proof is a correct one
@@ -65,6 +67,16 @@ struct Setup {
 
 #[derive(Args)]
 struct Compile {
+    /// Path to source file to be compiled
+    #[arg(short, long)]
+    source: PathBuf,
+    /// Path to which circuit is written
+    #[arg(short, long)]
+    output: PathBuf,
+}
+
+#[derive(Args)]
+struct Synth {
     /// Path to public parameters
     #[arg(short, long)]
     universal_params: PathBuf,
@@ -211,34 +223,56 @@ fn setup_cmd(Setup { max_degree, output, unchecked }: &Setup) {
     println!("* Public parameter setup success!");
 }
 
+
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
  */
-fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile) {
-    println!("* Reading public parameters...");
-    let mut pp_file = File::open(universal_params)
-        .expect("unable to load public parameters file");
-    let pp = if *unchecked {
-        UniversalParams::deserialize_unchecked(&mut pp_file)
-    } else {
-        UniversalParams::deserialize(&mut pp_file)
-    }.unwrap();
-
+fn compile_cmd(Compile { source, output }: &Compile) {
     println!("* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
     let module_3ac = compile(module);
 
-    println!("* Synthesizing arithmetic circuit...");
-    let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
-    // Compile the circuit
-    let (pk_p, vk) = circuit.compile::<PC>(&pp)
-        .expect("unable to compile circuit");
-    println!("* Serializing circuit to storage...");
-    let mut circuit_file = File::create(output)
-        .expect("unable to create circuit file");
-    CircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
+    let mut circuit_file = File::create(output).expect("unable to create circuit file");
+    module_3ac.write(&mut circuit_file).unwrap();
 
-    println!("* Constraint compilation success!");
+    println!("* Circuit synthesis success!");
+}
+
+fn synth_cmd(
+    Synth {
+        universal_params,
+        source,
+        output,
+        unchecked,
+    }: &Synth,
+) {
+    println!("* Reading public parameters...");
+    let mut pp_file = File::open(universal_params).expect("unable to load public parameters file");
+    let pp = if *unchecked {
+        UniversalParams::deserialize_unchecked(&mut pp_file)
+    } else {
+        UniversalParams::deserialize(&mut pp_file)
+    }
+    .unwrap();
+
+    println!("* Reading arithmetic circuit...");
+    let circuit_file = File::open(source).expect("unable to load arithmetic circuit file");
+    let module_3ac = Module::read(circuit_file).expect("unable to read arithmetic circuit file");
+
+    println!("* Synthesizing arithmetic circuit...");
+    let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac);
+
+    // Compile the circuit
+    let (pk_p, vk) = circuit
+        .compile::<PC>(&pp)
+        .expect("unable to compile circuit");
+    println!("* Serializing synthesized circuit to storage...");
+    let mut synth_file = File::create(output).expect("unable to create synthesized circuit file");
+    CircuitData { pk_p, vk, circuit }
+        .write(&mut synth_file)
+        .unwrap();
+
+    println!("* Circuit synthesis success!");
 }
 
 /* Implements the subcommand that creates a proof from interactively entered
@@ -329,6 +363,9 @@ fn main() {
         },
         Commands::Compile(args) => {
             compile_cmd(args);
+        },
+        Commands::Synth(args) => {
+            synth_cmd(args);
         },
         Commands::Prove(args) => {
             prove_cmd(args);
