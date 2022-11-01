@@ -5,9 +5,11 @@ use ark_ec::TEModelParameters;
 use plonk_core::circuit::Circuit;
 use plonk_core::constraint_system::StandardComposer;
 use plonk_core::error::Error;
+use plonk_core::proof_system::pi::PublicInputs;
 use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
 use num_bigint::BigUint;
+use crate::ast::Variable;
 
 struct PrimeFieldBincode<T>(T) where T: PrimeField;
 
@@ -162,6 +164,28 @@ where
             *value = evaluate_expr(&var_expr, &mut definitions, &mut field_assigns);
         }
     }
+
+    /* Annotate the given public inputs with the variable names contained in
+     * this module. This function assumes that the public variables in this
+     * module and the public inputs in the argument occur in the same order. */
+    pub fn annotate_public_inputs(
+        &self,
+        intended_pi_pos: &Vec<usize>,
+        pi: &PublicInputs<F>
+    ) -> HashMap<VariableId, (Variable, F)> {
+        // First map public input positions to values
+        let mut pi_map = BTreeMap::new();
+        for (pos, val) in pi.get_pos().zip(pi.get_vals()) {
+            pi_map.insert(*pos, *val);
+        }
+        // Next, annotate the public inputs with this module's variables
+        let mut annotated = HashMap::new();
+        for (var, pos) in self.module.pubs.iter().zip(intended_pi_pos) {
+            let val = pi_map.get(&pos).copied().unwrap_or(F::zero());
+            annotated.insert(var.id, (var.clone(), val));
+        }
+        annotated
+    }
 }
 
 impl<F, P> Circuit<F, P> for PlonkModule<F, P>
@@ -180,6 +204,15 @@ where
             inputs.insert(var, composer.add_input(*field_elt));
         }
         let zero = composer.zero_var();
+        // It is assumed that the generated PublicInputs will share the same
+        // order as this module's public variables
+        for var in &self.module.pubs {
+            composer.arithmetic_gate(|gate| {
+                gate.witness(inputs[&var.id], zero, Some(zero))
+                    .add(-F::one(), F::zero())
+                    .pi(self.variable_map[&var.id])
+            });
+        }
         for expr in &self.module.exprs {
             if let Expr::Infix(InfixOp::Equal, lhs, rhs) = &expr.v {
                 match (&lhs.v, &rhs.v) {
@@ -786,6 +819,9 @@ where
         // 1 gate to constrain the zero variable to equal 0
         // 3 gates to add blinging factors to the circuit polynomials
         const BUILTIN_GATE_COUNT: usize = 4;
-        (self.module.exprs.len()+BUILTIN_GATE_COUNT).next_power_of_two()
+        (self.module.exprs.len() +
+         self.module.pubs.len() +
+         BUILTIN_GATE_COUNT
+        ).next_power_of_two()
     }
 }

@@ -12,6 +12,7 @@ pub struct VampirParser;
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct Module {
+    pub pubs: Vec<Variable>,
     pub defs: Vec<Definition>,
     pub exprs: Vec<TExpr>,
 }
@@ -21,6 +22,7 @@ impl Module {
         let mut pairs = VampirParser::parse(Rule::moduleItems, &unparsed_file)?;
         let mut defs = vec![];
         let mut exprs = vec![];
+        let mut pubs = vec![];
         while let Some(pair) = pairs.next() {
             match pair.as_rule() {
                 Rule::expr => {
@@ -31,7 +33,15 @@ impl Module {
                     let definition = Definition::parse(pair).expect("expected definition");
                     defs.push(definition);
                 },
+                Rule::declaration => {
+                    let mut pairs = pair.into_inner();
+                    while let Some(pair) = pairs.next() {
+                        let var = Variable::parse(pair).expect("expected variable");
+                        pubs.push(var);
+                    }
+                },
                 Rule::EOI => return Ok(Self {
+                    pubs,
                     defs,
                     exprs,
                 }),
@@ -44,12 +54,18 @@ impl Module {
 
 impl Default for Module {
     fn default() -> Self {
-        Self { defs: vec![], exprs: vec![] }
+        Self { defs: vec![], exprs: vec![], pubs: vec![] }
     }
 }
 
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut prefix = "pub";
+        for var in &self.pubs {
+            write!(f, "{} {}", prefix, var)?;
+            prefix = ",";
+        }
+        writeln!(f, ";")?;
         for def in &self.defs {
             writeln!(f, "{};", def)?;
         }
@@ -75,30 +91,7 @@ impl Definition {
 
 impl fmt::Display for Definition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Expr::Function(Function(params, body)) = &self.0.1.v {
-            write!(f, "def {}", self.0.0)?;
-            for param in params {
-                write!(f, " {}", param)?;
-            }
-            let mut body_str = String::new();
-            write!(body_str, "{}", body)?;
-            if body_str.contains("\n") {
-                body_str = body_str.replace("\n", "\n    ");
-                write!(f, " =\n    {}", body_str)?
-            } else {
-                write!(f, " = {}", body_str)?
-            }
-        } else {
-            let mut val_str = String::new();
-            write!(val_str, "{}", self.0.1)?;
-            if val_str.contains("\n") {
-                val_str = val_str.replace("\n", "\n    ");
-                write!(f, "def {} =\n    {}", self.0.0, val_str)?
-            } else {
-                write!(f, "def {} = {}", self.0.0, val_str)?
-            }
-        }
-        Ok(())
+        write!(f, "def {}", self.0)
     }
 }
 
@@ -136,21 +129,30 @@ impl LetBinding {
 impl fmt::Display for LetBinding {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.1.v {
-            Expr::Function(fun) => {
+            Expr::Function(Function(params, body)) => {
                 write!(f, "{}", self.0)?;
-                for pat in &fun.0 {
+                for pat in params {
                     write!(f, " {}", pat)?;
                 }
                 write!(f, " =")?;
-                let mut body = String::new();
-                write!(body, "{}", fun.1)?;
-                if body.contains("\n") {
-                    write!(f, "\n    {}", body.replace("\n", "\n    "))?;
+                let mut body_str = String::new();
+                write!(body_str, "{}", body)?;
+                if body_str.contains("\n") {
+                    write!(f, "\n    {}", body_str.replace("\n", "\n    "))?;
                 } else {
                     write!(f, " {}", body)?;
                 }
             },
-            _ => write!(f, "{} = {}", self.0, self.1)?,
+            _ => {
+                let mut val_str = String::new();
+                write!(val_str, "{}", self.1)?;
+                if val_str.contains("\n") {
+                    let val_str = val_str.replace("\n", "\n    ");
+                    write!(f, "{} =\n    {}", self.0, val_str)?;
+                } else {
+                    write!(f, "{} = {}", self.0, val_str)?;
+                }
+            },
         };
         Ok(())
     }

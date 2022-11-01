@@ -9,7 +9,7 @@ def myval = 0;
 // constraint expression
 myval = 0;
 // defining a function
-def bool x { x*(x-1) = 0 };
+def bool x = { x*(x-1) = 0 };
 // calling a function
 bool 1;
 // solicit a user input

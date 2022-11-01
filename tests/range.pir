@@ -6,13 +6,15 @@
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
 
+pub x;
+
 // Ensure that the given argument is 1 or 0, and returns it
 
-def bool x { x*(x-1) = 0; x };
+def bool x = { x*(x-1) = 0; x };
 
 // Extract the 8 bits from a number argument
 
-def range5 a {
+def range5 a = {
     def a0 = bool (fresh ((a\1) % 2));
     def a1 = bool (fresh ((a\2) % 2));
     def a2 = bool (fresh ((a\4) % 2));

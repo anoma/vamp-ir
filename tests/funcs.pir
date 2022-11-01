@@ -6,7 +6,7 @@
    */
 // defining a two parameter function.
 // function body contains two constraints.
-def myeq a b { a = b; b = a };
+def myeq a b = { a = b; b = a };
 // solicit equal user inputs
 myeq b c;
 // currying example

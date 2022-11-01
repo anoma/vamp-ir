@@ -4,7 +4,7 @@ COMMENT = _{ "//" ~ (!"\n" ~ ANY)* | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
 
 ident = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 
-keyword = { "fun" | "def" }
+keyword = { "fun" | "def" | "pub" }
 
 valueName = { !keyword ~ ident }
 
@@ -20,9 +20,9 @@ pattern1 = { pattern2 ~ ( "," ~ pattern2 )* }
 
 pattern2 = { valueName | constant | "(" ~ pattern ~ ")" }
 
-letBinding = { pattern ~ "=" ~ expr | valueName ~ pattern* ~ &"{" ~ expr }
+letBinding = { pattern ~ "=" ~ expr | valueName ~ pattern* ~ "=" ~ expr }
 
-expr = { function | "def" ~ letBinding ~ ( ";" ~ expr )+ | expr1 }
+expr = { function | "def" ~ letBinding ~ ( ";" ~ expr )+ | !("def" | "fun") ~ expr1 }
 
 expr1 = { expr2 | "{" ~ expr2 ~ ( ";" ~ expr2 )* ~ "}" }
 
@@ -48,5 +48,6 @@ negate = { "-" }
 
 definition = { "def" ~ letBinding }
 
-moduleItems = _{ SOI ~ ( ( definition | expr ) ~ ";" )+ ~ EOI }
+declaration = { "pub" ~ valueName ~ ( ", " ~ valueName)* }
 
+moduleItems = _{ SOI ~ ( declaration ~ ";" )* ~ ( ( definition | expr ) ~ ";" )+ ~ EOI }
