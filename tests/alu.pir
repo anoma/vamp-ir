@@ -232,3 +232,5 @@ def rem a b = snd (divrem a b);
 (4,1) = divrem 9 2;
 
 range4 15;
+
+def D = 10;
