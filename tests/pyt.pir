@@ -5,7 +5,7 @@
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
    */
 // computation + BIDMAS
-def pyt a b { a^2 + b^2 };
+def pyt a b = a^2 + b^2;
 // constrain computation
 pyt x y = 25;
 // let bindings
