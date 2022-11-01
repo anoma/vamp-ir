@@ -20,9 +20,9 @@ pattern1 = { pattern2 ~ ( "," ~ pattern2 )* }
 
 pattern2 = { valueName | constant | "(" ~ pattern ~ ")" }
 
-letBinding = { pattern ~ "=" ~ expr | valueName ~ pattern* ~ &"{" ~ expr }
+letBinding = { pattern ~ "=" ~ expr | valueName ~ pattern* ~ "=" ~ expr }
 
-expr = { function | "def" ~ letBinding ~ ( ";" ~ expr )+ | expr1 }
+expr = { function | "def" ~ letBinding ~ ( ";" ~ expr )+ | !("def" | "fun") ~ expr1 }
 
 expr1 = { expr2 | "{" ~ expr2 ~ ( ";" ~ expr2 )* ~ "}" }
 
