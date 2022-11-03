@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, print_types, Type};
 use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function, Match};
+use std::hash::Hash;
 
 /* A structure for generating unique variable IDs. */
 pub struct VarGen(VariableId);
@@ -75,25 +76,26 @@ enum Tribool { False, Indeterminate, True }
 fn match_pattern_expr(
     pat: &Pattern,
     expr: &TExpr,
-    map: &mut HashMap<VariableId, TExpr>,
+    env: &mut HashMap<VariableId, TExpr>,
+    ext: &mut HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) -> Tribool {
     match (pat, &expr.v) {
-        (pat, Expr::Variable(var)) if map.contains_key(&var.id) =>
-            match_pattern_expr(pat, &map[&var.id].clone(), map, prover_defs, gen),
+        (pat, Expr::Variable(var)) if env.contains_key(&var.id) =>
+            match_pattern_expr(pat, &env[&var.id].clone(), env, ext, prover_defs, gen),
         (Pattern::As(pat, var), _) => {
-            let res = match_pattern_expr(pat, expr, map, prover_defs, gen);
-            map.insert(var.id, expr.clone().into());
+            let res = match_pattern_expr(pat, expr, env, ext, prover_defs, gen);
+            ext.insert(var.id, expr.clone().into());
             res
         },
         (Pattern::Variable(var), expr) => {
-            map.insert(var.id, expr.clone().into());
+            ext.insert(var.id, expr.clone().into());
             Tribool::True
         },
         (Pattern::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
-            let inner_res1 = match_pattern_expr(pat1, expr1, map, prover_defs, gen);
-            let inner_res2 = match_pattern_expr(pat2, expr2, map, prover_defs, gen);
+            let inner_res1 = match_pattern_expr(pat1, expr1, env, ext, prover_defs, gen);
+            let inner_res2 = match_pattern_expr(pat2, expr2, env, ext, prover_defs, gen);
             std::cmp::min(inner_res1, inner_res2)
         },
         (Pattern::Product(_, _), Expr::Variable(var)) => {
@@ -105,8 +107,8 @@ fn match_pattern_expr(
             }
             let inner_expr1 = Box::new(Expr::Variable(new_var1).into());
             let inner_expr2 = Box::new(Expr::Variable(new_var2).into());
-            map.insert(var.id, Expr::Product(inner_expr1, inner_expr2).into());
-            match_pattern_expr(pat, expr, map, prover_defs, gen)
+            env.insert(var.id, Expr::Product(inner_expr1, inner_expr2).into());
+            match_pattern_expr(pat, expr, env, ext, prover_defs, gen)
         },
         (Pattern::Unit, Expr::Unit) => Tribool::True,
         (Pattern::Constant(a), Expr::Constant(b)) if a == b =>
@@ -285,12 +287,29 @@ pub fn number_module_variables(
     }
 }
 
+/* For each Some value in the extension, exchange it with the corresponding
+ * value in map. If ext does not contain the corresponding key, then replace the
+ * original value with None. For each None value in the extension, move the
+ * corresponding key from map into the extension, leaving no entry behind. */
+fn exchange_map<U, V>(map: &mut HashMap<U, V>, ext: &mut HashMap<U, Option<V>>)
+where U: Eq + Hash + Clone {
+    for (k, evo) in ext {
+        let mut evor = None;
+        std::mem::swap(&mut evor, evo);
+        if let Some(ev) = evor {
+            *evo = map.insert(k.clone(), ev);
+        } else {
+            *evo = map.remove(&k);
+        }
+    }
+}
+
 /* Replace each function application occuring in the expression with a let
  * binding containing an inlined body. Returns a normal form of the expression.
  */
 fn apply_functions(
     expr: &mut TExpr,
-    bindings: &HashMap<VariableId, TExpr>,
+    bindings: &mut HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) -> TExpr {
@@ -365,25 +384,31 @@ fn apply_functions(
         },
         Expr::LetBinding(binding, body) => {
             let val = apply_functions(&mut *binding.1, bindings, prover_defs, gen);
-            let mut new_bindings = bindings.clone();
-            match_pattern_expr(&binding.0, &val, &mut new_bindings, prover_defs, gen);
-            let mut normal = apply_functions(body, &new_bindings, prover_defs, gen);
-            new_bindings.retain(|k, _v| !bindings.contains_key(k) && !prover_defs.contains(k));
+            let mut new_bindings = HashMap::new();
+            match_pattern_expr(&binding.0, &val, bindings, &mut new_bindings, prover_defs, gen);
+            let mut new_bindings = new_bindings.into_iter().map(|(k, v)| (k, Some(v))).collect();
+            exchange_map(bindings, &mut new_bindings);
+            let mut normal = apply_functions(body, bindings, prover_defs, gen);
+            exchange_map(bindings, &mut new_bindings);
+            new_bindings.retain(|k, _v| !prover_defs.contains(k));
+            let new_bindings = new_bindings.into_iter().map(|(k, v)| (k, v.unwrap())).collect();
             copy_propagate_expr(&mut normal, &new_bindings);
             normal
         },
         Expr::Match(matche) => {
             let val = apply_functions(&mut matche.0, bindings, prover_defs, gen);
             for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
-                let mut new_bindings = bindings.clone();
-                let res = match_pattern_expr(&pat, &val, &mut new_bindings, prover_defs, gen);
+                let res = match_pattern_expr(&pat, &val, bindings, &mut HashMap::new(), prover_defs, gen);
                 match res {
                     Tribool::True => {
-                        let mut normal = apply_functions(expr2, &new_bindings, prover_defs, gen);
-                        *expr = expr2.clone();
-                        new_bindings.retain(|k, _v| !bindings.contains_key(k) && !prover_defs.contains(k));
-                        copy_propagate_expr(&mut normal, &new_bindings);
-                        return normal
+                        *expr = TExpr {
+                            v: Expr::LetBinding(
+                                LetBinding(pat.clone(), matche.0.clone()),
+                                Box::new(expr2.clone())
+                            ),
+                            t: expr.t.clone()
+                        };
+                        return apply_functions(expr, bindings, prover_defs, gen);
                     },
                     Tribool::Indeterminate =>
                         panic!("cannot statically match {} against {}", val, pat),
@@ -396,23 +421,23 @@ fn apply_functions(
         Expr::Sequence(seq) => {
             let mut val = None;
             for expr in seq {
-                val = Some(apply_functions(expr, &bindings, prover_defs, gen));
+                val = Some(apply_functions(expr, bindings, prover_defs, gen));
             }
             val.expect("encountered empty sequence")
         },
         Expr::Product(expr1, expr2) => {
             Expr::Product(
-                Box::new(apply_functions(expr1, &bindings, prover_defs, gen)),
-                Box::new(apply_functions(expr2, &bindings, prover_defs, gen)),
+                Box::new(apply_functions(expr1, bindings, prover_defs, gen)),
+                Box::new(apply_functions(expr2, bindings, prover_defs, gen)),
             ).into()
         },
         Expr::Infix(op, expr1, expr2) => {
-            let expr1 = apply_functions(expr1, &bindings, prover_defs, gen);
-            let expr2 = apply_functions(expr2, &bindings, prover_defs, gen);
+            let expr1 = apply_functions(expr1, bindings, prover_defs, gen);
+            let expr2 = apply_functions(expr2, bindings, prover_defs, gen);
             Expr::Infix(op.clone(), Box::new(expr1), Box::new(expr2)).into()
         },
         Expr::Negate(expr1) => {
-            Expr::Negate(Box::new(apply_functions(expr1, &bindings, prover_defs, gen))).into()
+            Expr::Negate(Box::new(apply_functions(expr1, bindings, prover_defs, gen))).into()
         },
         t @ (Expr::Constant(_) | Expr::Unit) => t.clone().into(),
         Expr::Variable(var) => match bindings.get(&var.id) {
@@ -422,7 +447,7 @@ fn apply_functions(
         Expr::Function(fun) => Expr::Function(fun.clone()).into(),
         Expr::Intrinsic(intr) => {
             for arg in &mut intr.args {
-                *arg = apply_functions(arg, &bindings, prover_defs, gen);
+                *arg = apply_functions(arg, bindings, prover_defs, gen);
             }
             Expr::Intrinsic(intr.clone()).into()
         },
@@ -438,7 +463,9 @@ fn apply_def_functions(
     gen: &mut VarGen,
 ) {
     let val = apply_functions(&mut def.0.1, bindings, prover_defs, gen);
-    match_pattern_expr(&def.0.0, &val, bindings, prover_defs, gen);
+    let mut ext = HashMap::new();
+    match_pattern_expr(&def.0.0, &val, bindings, &mut ext, prover_defs, gen);
+    bindings.extend(ext);
 }
 
 /* Replace each function application occuring in the module with a let
