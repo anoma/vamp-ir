@@ -1,6 +1,7 @@
 mod ast;
 mod transform;
-mod synth;
+mod plonk_synth;
+mod halo_synth;
 mod typecheck;
 extern crate pest;
 #[macro_use]
@@ -18,7 +19,7 @@ use plonk::error::to_pc_error;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use plonk_core::prelude::VerifierData;
-use crate::synth::{PlonkModule, PrimeFieldOps, make_constant};
+use crate::plonk_synth::{PlonkModule, PrimeFieldOps, make_constant};
 use plonk_core::circuit::Circuit;
 use ark_ff::PrimeField;
 use std::fs::File;
