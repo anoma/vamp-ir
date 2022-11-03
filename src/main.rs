@@ -223,7 +223,6 @@ fn setup_cmd(Setup { max_degree, output, unchecked }: &Setup) {
     println!("* Public parameter setup success!");
 }
 
-
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
  */
 fn compile_cmd(Compile { source, output }: &Compile) {
