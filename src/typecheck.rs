@@ -307,18 +307,13 @@ fn instantiate_type_vars(
  * the derived type schemes. */
 fn infer_binding_types(
     def: &LetBinding,
-    env: &mut Vec<Type>,
+    env_ftvs: &mut HashMap<VariableId, Variable>,
     types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
     let expr1_var = expr_type_var(&*def.1);
-    infer_expr_types(&*def.1, env, types, gen);
+    infer_expr_types(&*def.1, env_ftvs, types, gen);
     type_pattern(&def.0, expr1_var.clone(), types, gen);
-    // Collect all free variables occuring in the environment
-    let mut env_ftvs = HashMap::new();
-    for env_typ in env.iter() {
-        collect_free_type_vars(&expand_type(env_typ, types), &mut env_ftvs);
-    }
     // Compute the set of free variables occuring in RHS' TYPE that
     // do not occur in the type environment
     let mut quant_vars = HashMap::new();
@@ -338,7 +333,8 @@ fn infer_binding_types(
         }
         // Add this type schema to the type environment in which the let
         // body is type-checked
-        env.push(quant_expr.clone());
+        let quant_expr = quant_expr.clone();
+        collect_free_type_vars(&expand_type(&quant_expr, types), env_ftvs);
     }
 }
 
@@ -347,7 +343,7 @@ fn infer_binding_types(
  * context. */
 fn infer_expr_types(
     expr: &TExpr,
-    env: &Vec<Type>,
+    env: &HashMap<VariableId, Variable>,
     types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
@@ -447,7 +443,7 @@ fn infer_expr_types(
             let mut env = env.clone();
             for param in params.iter().rev() {
                 let param_var = pattern_type(param);
-                env.push(param_var.clone());
+                collect_free_type_vars(&expand_type(&param_var, types), &mut env);
                 func_var = Type::Function(Box::new(param_var), Box::new(func_var));
             }
             // a1: t1, ..., aN: tN |- b: u
@@ -507,7 +503,7 @@ fn infer_expr_types(
  */
 fn infer_def_types(
     def: &Definition,
-    env: &mut Vec<Type>,
+    env: &mut HashMap<VariableId, Variable>,
     types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
@@ -522,12 +518,12 @@ pub fn infer_module_types(
     gen: &mut VarGen,
 ) {
     allocate_module_types(annotated, gen);
-    let mut env = Vec::new();
+    let mut env = HashMap::new();
     // Initialize the type environment with the types of global variables
     for (name, id) in globals {
         let mut var = Variable::new(*id);
         var.name = Some(name.clone());
-        env.push(Type::Variable(var));
+        env.insert(*id, var);
     }
     for def in &mut annotated.defs {
         infer_def_types(def, &mut env, types, gen);
