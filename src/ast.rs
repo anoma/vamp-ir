@@ -290,6 +290,28 @@ pub enum Expr {
     Match(Match),
 }
 
+impl Expr {
+    pub fn type_expr(self, t: Option<Type>) -> TExpr {
+        let t = t.or_else(|| match &self {
+            Expr::Unit => Some(Type::Unit),
+            Expr::Sequence(exprs) => exprs.last().unwrap().t.clone(),
+            Expr::Product(expr1, expr2) =>
+                expr1.t.clone().zip(expr2.t.clone()).map(|(a,b)| Type::Product(Box::new(a), Box::new(b))),
+            Expr::Infix(InfixOp::Equal, _, _) => Some(Type::Unit),
+            Expr::Infix(_, _, _) => Some(Type::Int),
+            Expr::Negate(_) => Some(Type::Int),
+            Expr::Application(_, _) => None,
+            Expr::Constant(_) => Some(Type::Int),
+            Expr::Variable(_) => None,
+            Expr::Function(_) => None,
+            Expr::Intrinsic(_) => None,
+            Expr::LetBinding(_, expr) => expr.t.clone(),
+            Expr::Match(_) => None,
+        });
+        TExpr { v: self, t }
+    }
+}
+
 impl TExpr {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
         if pair.as_rule() != Rule::expr { return None }
