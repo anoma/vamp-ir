@@ -679,42 +679,42 @@ fn flatten_equals(
 
 /* Flatten the given expression down into the set of constraints it defines. */
 fn flatten_expression(
-    expr: &TExpr,
+    expr: TExpr,
     flattened: &mut Module,
 ) -> TExpr {
-    match &expr.v {
+    match expr.v {
         Expr::Sequence(seq) => {
             let mut val = None;
             for expr in seq {
                 val = Some(flatten_expression(expr, flattened));
             }
-            val.expect("encountered empty sequence").clone()
+            val.expect("encountered empty sequence")
         },
         Expr::Infix(InfixOp::Equal, expr1, expr2) => {
-            let expr1 = flatten_expression(expr1, flattened);
-            let expr2 = flatten_expression(expr2, flattened);
+            let expr1 = flatten_expression(*expr1, flattened);
+            let expr2 = flatten_expression(*expr2, flattened);
             flatten_equals(&expr1, &expr2, flattened);
-            Expr::Unit.type_expr(expr.t.clone())
+            Expr::Unit.type_expr(expr.t)
         },
         Expr::Infix(op, expr1, expr2) => {
-            let expr1 = flatten_expression(expr1, flattened);
-            let expr2 = flatten_expression(expr2, flattened);
-            Expr::Infix(*op, Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone())
+            let expr1 = flatten_expression(*expr1, flattened);
+            let expr2 = flatten_expression(*expr2, flattened);
+            Expr::Infix(op, Box::new(expr1), Box::new(expr2)).type_expr(expr.t)
         },
         Expr::Product(expr1, expr2) => {
             Expr::Product(
-                Box::new(flatten_expression(expr1, flattened)),
-                Box::new(flatten_expression(expr2, flattened)),
-            ).type_expr(expr.t.clone())
+                Box::new(flatten_expression(*expr1, flattened)),
+                Box::new(flatten_expression(*expr2, flattened)),
+            ).type_expr(expr.t)
         },
         Expr::Negate(expr1) =>
-            Expr::Negate(Box::new(flatten_expression(expr1, flattened)))
-            .type_expr(expr.t.clone()),
-        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit => expr.clone(),
+            Expr::Negate(Box::new(flatten_expression(*expr1, flattened)))
+            .type_expr(expr.t),
+        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit => expr,
         Expr::LetBinding(binding, body) => {
-            let val = flatten_expression(&*binding.1, flattened);
+            let val = flatten_expression(*binding.1, flattened);
             flatten_binding(&binding.0, &val, flattened);
-            flatten_expression(body, flattened)
+            flatten_expression(*body, flattened)
         }
         Expr::Function(_) | Expr::Application(_, _) | Expr::Intrinsic(_) |
         Expr::Match(_) =>
@@ -724,25 +724,25 @@ fn flatten_expression(
 
 /* Flatten the given definition down into the set of constraints it defines. */
 fn flatten_definition(
-    def: &Definition,
+    def: Definition,
     flattened: &mut Module,
 ) {
-    let val = flatten_expression(&*def.0.1, flattened);
+    let val = flatten_expression(*def.0.1, flattened);
     flatten_binding(&def.0.0, &val, flattened);
 }
 
 /* Flatten the given module down into the set of constraints it defines. */
 pub fn flatten_module(
-    module: &Module,
+    mut module: Module,
     flattened: &mut Module,
 ) {
-    flattened.pubs.extend(module.pubs.clone());
-    for def in &module.defs {
+    for def in module.defs {
         flatten_definition(def, flattened);
     }
-    for expr in &module.exprs {
+    for expr in module.exprs {
         flatten_expression(expr, flattened);
     }
+    flattened.pubs.append(&mut module.pubs);
 }
 
 /* Make an equality expression to constrain the values that satify the circuit.
@@ -956,7 +956,7 @@ pub fn compile(mut module: Module) -> Module {
     unitize_module_functions(&mut module, &mut prog_types);
     // Start generating arithmetic constraints
     let mut constraints = Module::default();
-    flatten_module(&module, &mut constraints);
+    flatten_module(module, &mut constraints);
     let mut module_3ac = Module::default();
     flatten_module_to_3ac(&constraints, &prover_defs, &mut module_3ac, &mut vg);
     // Start doing basic optimizations
