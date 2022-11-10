@@ -768,30 +768,27 @@ pub fn expand_module_variables(
     }
 }
 
-/* Returns the given type with all function inner types are replaced by units.
+/* Replace all the function types occurring in this type expression with units.
  */
 fn unitize_type_functions(
-    typ: Type,
+    typ: &mut Type,
     types: &mut HashMap<VariableId, Type>,
-) -> Type {
-    match &typ {
+) {
+    match typ {
         Type::Variable(var) if types.contains_key(&var.id) => {
-            let res = unitize_type_functions(types[&var.id].clone(), types);
-            types.insert(var.id, res);
-            typ
+            // Temporarily checkout the current type expression to avoid having
+            // multiple borrows.
+            let mut curr = types.remove(&var.id).unwrap();
+            unitize_type_functions(&mut curr, types);
+            types.insert(var.id, curr);
         }
-        Type::Variable(_) | Type::Int | Type::Unit => typ,
-        Type::Function(_, _) => Type::Unit,
+        Type::Variable(_) | Type::Int | Type::Unit => {},
+        Type::Function(_, _) => *typ = Type::Unit,
         Type::Product(typ1, typ2) => {
-            Type::Product(
-                Box::new(unitize_type_functions(*typ1.clone(), types)),
-                Box::new(unitize_type_functions(*typ2.clone(), types)),
-            )
+            unitize_type_functions(&mut *typ1, types);
+            unitize_type_functions(&mut *typ2, types);
         },
-        Type::Forall(var, b) => Type::Forall(
-            var.clone(),
-            Box::new(unitize_type_functions(*b.clone(), types)),
-        ),
+        Type::Forall(_, b) => unitize_type_functions(b, types),
     }
 }
 
@@ -868,7 +865,7 @@ fn unitize_expr_functions(
         },
     }
     // Scrub functions from this expression's type
-    expr.t = expr.t.clone().map(|x| unitize_type_functions(x, types));
+    unitize_type_functions(expr.t.as_mut().unwrap(), types);
 }
 
 /* Replace all functions occuring in the given definition with 0-tuples. */
