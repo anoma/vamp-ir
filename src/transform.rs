@@ -1042,21 +1042,19 @@ pub fn copy_propagate(module: &mut Module, prover_defs: &HashSet<VariableId>) {
 /* Eliminate equalities that are obviously true from the constraint set. This
  * will reduce the number of gates in the circuit. */
 pub fn eliminate_dead_equalities(module: &mut Module) {
-    let mut new_exprs = vec![];
-    for expr in &mut module.exprs {
+    module.exprs.retain(|expr| {
         match &expr.v {
             Expr::Infix(InfixOp::Equal, expr1, expr2) if
                 matches!((&expr1.v, &expr2.v), (Expr::Constant(c1), Expr::Constant(c2)) if
-                         c1 == c2) => {},
+                         c1 == c2) => false,
             Expr::Infix(InfixOp::Equal, expr1, expr2) if
                 matches!((&expr1.v, &expr2.v), (Expr::Variable(v1), Expr::Variable(v2)) if
-                         v1.id == v2.id) => {},
+                         v1.id == v2.id) => false,
             _ => {
-                new_exprs.push(expr.clone());
+                true
             },
         }
-    }
-    module.exprs = new_exprs;
+    });
 }
 
 /* Eliminate those definitions that are not directly or indirectly used in the
@@ -1095,17 +1093,13 @@ pub fn eliminate_dead_definitions(module: &mut Module) {
     }
     // Now eliminate those definitions that are not reachable from the
     // constraint set
-    let mut new_defs = Vec::new();
-    for def in &module.defs {
+    module.defs.retain(|def| {
         if let Pattern::Variable(v1) = &def.0.0 {
-            if explored.contains(&v1.id) {
-                new_defs.push(def.clone());
-            }
+            explored.contains(&v1.id)
         } else {
             panic!("only variable patterns should be present at this stage");
         }
-    }
-    module.defs = new_defs;
+    });
 }
 
 /* Register the fresh intrinsic in the compilation environment. */
