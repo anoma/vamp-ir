@@ -441,7 +441,7 @@ fn apply_functions(
         Expr::Negate(expr1) => {
             Expr::Negate(Box::new(apply_functions(expr1, bindings, types, type_env, prover_defs, gen))).type_expr(expr.t.clone())
         },
-        t @ (Expr::Constant(_) | Expr::Unit) => t.clone().type_expr(expr.t.clone()),
+        Expr::Constant(_) | Expr::Unit => expr.clone(),
         Expr::Variable(var) => match bindings.get(&var.id) {
             Some(val) if !prover_defs.contains(&var.id) => {
                 let mut val = val.clone();
@@ -457,7 +457,7 @@ fn apply_functions(
             for arg in &mut intr.args {
                 *arg = apply_functions(arg, bindings, types, type_env, prover_defs, gen);
             }
-            Expr::Intrinsic(intr.clone()).type_expr(expr.t.clone())
+            expr.clone()
         },
     }
 }
