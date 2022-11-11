@@ -76,7 +76,7 @@ impl fmt::Display for Module {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub struct Definition(pub LetBinding);
 
 impl Definition {
@@ -95,7 +95,7 @@ impl fmt::Display for Definition {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub struct LetBinding(pub Pattern, pub Box<TExpr>);
 
 impl LetBinding {
@@ -158,7 +158,7 @@ impl fmt::Display for LetBinding {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub enum Pattern {
     Unit,
     As(Box<Pattern>, Variable),
@@ -268,13 +268,13 @@ impl fmt::Display for Pattern {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub struct TExpr {
     pub v: Expr,
     pub t: Option<Type>,
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub enum Expr {
     Unit,
     Sequence(Vec<TExpr>),
@@ -509,7 +509,7 @@ impl From<Expr> for TExpr {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub struct Match(pub Box<TExpr>, pub Vec<Pattern>, pub Vec<TExpr>);
 
 impl fmt::Display for Match {
@@ -530,7 +530,7 @@ impl fmt::Display for Match {
     }
 }
 
-#[derive(Debug, Clone, Copy, Encode, Decode)]
+#[derive(Debug, Clone, Copy, Encode, Decode, PartialEq)]
 pub enum InfixOp {
     Divide,
     Multiply,
@@ -603,7 +603,13 @@ impl fmt::Display for Variable {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+impl PartialEq for Variable {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+#[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub struct Function(pub Vec<Pattern>, pub Box<TExpr>);
 
 impl Function {
@@ -655,6 +661,15 @@ pub struct Intrinsic {
     pub imp_typ: Type,
     imp: IntrinsicImp,
     pub args: Vec<TExpr>,
+}
+
+impl PartialEq for Intrinsic {
+    fn eq(&self, other: &Self) -> bool {
+        self.arity == other.arity &&
+        self.imp_typ == other.imp_typ &&
+        self.imp as usize == other.imp as usize &&
+        self.args == other.args
+    }
 }
 
 impl bincode::Encode for Intrinsic {

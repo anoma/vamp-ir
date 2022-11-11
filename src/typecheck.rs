@@ -90,7 +90,7 @@ pub fn allocate_module_types(
 }
 
 /* A representation of expression types. */
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq)]
 pub enum Type {
     Unit,
     Int,
