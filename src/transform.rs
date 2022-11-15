@@ -912,6 +912,17 @@ pub fn compile(mut module: Module) -> Module {
     copy_propagate(&mut module_3ac, &prover_defs);
     eliminate_dead_equalities(&mut module_3ac);
     eliminate_dead_definitions(&mut module_3ac);
+    eliminate_variables(&mut module_3ac);
+    println!("variables eliminated\n{}", module_3ac);
+    println!("vectorized\n{}", vectorize(module_3ac.clone()).iter().map(|v| format!("0 = {}", 
+        v.iter().map(|u| format!("{}", u)).collect::<Vec<String>>().join(" + ")
+    )).collect::<Vec<String>>().join("\n"));
+    // println!("distribution applied\n{}", module_3ac);
+    // reduce_arithmetic(&mut module_3ac);
+    // println!("reduce arithmetic\n{}", module_3ac);
+    // eliminate_identities(&mut module_3ac);
+    // println!("identities eliminated\n{}", module_3ac);
+    
     module_3ac
 }
 
@@ -1296,3 +1307,55 @@ fn expand_fresh_intrinsic(
         panic!("unexpected arguments to fresh: {:?}", args);
     }
 }
+
+
+pub fn vectorize(module: Module) -> Vec<Vec<TExpr>> {
+    module.exprs.into_iter().map(|e| vectorize_over_addition(&e)).collect()
+}
+
+pub fn vectorize_over_addition(expr: &TExpr) -> Vec<TExpr> {
+    match &expr.v {
+        Expr::Infix(InfixOp::Add, expr1, expr2) => 
+            [vectorize_over_addition(&expr1), vectorize_over_addition(&expr2)].concat(),
+        Expr::Infix(InfixOp::Subtract, expr1, expr2) => 
+            [vectorize_over_addition(&expr1), 
+            vectorize_over_addition(&expr2).iter().map(|e| 
+                Expr::Infix(InfixOp::Multiply, Box::new(Expr::Constant(-1).into()), Box::new(e.clone())).into()
+            ).collect()].concat(),
+        Expr::Infix(InfixOp::Multiply, expr1, expr2) => 
+            vectorize_over_addition(&expr2).iter().flat_map(|e2| 
+                vectorize_over_addition(&expr1).iter().map(|e1|
+                    Expr::Infix(InfixOp::Multiply, Box::new(e1.clone()), Box::new(e2.clone())).into()
+                ).collect::<Vec<TExpr>>()
+            ).collect(),
+        Expr::Infix(InfixOp::Equal, expr1, expr2) =>
+            vectorize_over_addition(&Expr::Infix(InfixOp::Subtract, expr2.clone(), expr1.clone()).into()),
+        Expr::Variable(_) | Expr::Constant(_) => vec![expr.clone()],
+        _ => panic!("only +,-,*,= should be present at this point"),
+    }
+}
+
+// // a*x1^n1*x2^n2... represented as (a, vec![(x1, n1), (x2, n2), ...])
+// #[derive(Debug, Clone)]
+// pub struct Term(TExpr);
+
+// impl Add for Term {
+//     fn add(self, other: Self) -> PolynomialExpanded {
+//         PolynomialExpanded(vec![self, other])
+//     }
+// }
+
+// impl Mul for Term {
+//     fn mul(self, other: Self) -> Term {
+//         Term {
+//             scalar: self.scalar * other.scalar,
+//             monomials: [self.monomials, other.monomials].concat(),
+//         }
+//     }
+// }
+
+// impl From<Term> for PolynomialExpanded {
+//     fn from(t: Term) -> PolynomialExpanded {
+//         PolynomialExpanded(vec![t])
+//     } 
+// }
