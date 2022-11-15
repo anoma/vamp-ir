@@ -915,6 +915,191 @@ pub fn compile(mut module: Module) -> Module {
     module_3ac
 }
 
+pub fn reduce_arithmetic_expr(expr: TExpr) -> TExpr {
+    let internal = match &expr.v {
+        Expr::Infix(InfixOp::Multiply, expr1, expr2) => 
+            match (&expr1.v, &expr2.v) {
+                (Expr::Constant(1), Expr::Variable(var)) |
+                (Expr::Variable(var), Expr::Constant(1)) =>
+                    Expr::Variable(var.clone()).into(),
+                (Expr::Constant(val1), Expr::Constant(val2)) =>
+                    Expr::Constant(val1*val2).into(),
+                _ => Expr::Infix(
+                    InfixOp::Multiply, 
+                    Box::new(reduce_arithmetic_expr(*expr1.clone())), 
+                    Box::new(reduce_arithmetic_expr(*expr2.clone()))
+                ).into(),
+            },
+        Expr::Infix(op, expr1, expr2) => 
+            match (&expr1.v, &expr2.v) {
+                (Expr::Constant(val1), Expr::Constant(val2)) => 
+                    match op {
+                        InfixOp::Add => Expr::Constant(val1+val2).into(),
+                        InfixOp::Subtract => Expr::Constant(val1-val2).into(),
+                        InfixOp::Equal => expr.clone(),
+                        _ => panic!("only +,-,* operations should be present at this point"),
+                    },
+                (Expr::Constant(_), Expr::Variable(_)) | (Expr::Variable(_), Expr::Constant(_))
+                | (Expr::Variable(_), Expr::Variable(_)) => expr,
+                _ => Expr::Infix(
+                        *op, 
+                        Box::new(reduce_arithmetic_expr(*expr1.clone())), 
+                        Box::new(reduce_arithmetic_expr(*expr2.clone()))
+                    ).into(),
+            }
+        _ => expr,
+    };
+    match &internal.v {
+        Expr::Infix(op, expr1, expr2) => 
+            match (&expr1.v, &expr2.v) {
+                (Expr::Constant(val1), Expr::Constant(val2)) => 
+                    match op {
+                        InfixOp::Add => Expr::Constant(val1+val2).into(),
+                        InfixOp::Subtract => Expr::Constant(val1-val2).into(),
+                        InfixOp::Multiply => Expr::Constant(val1*val2).into(),
+                        InfixOp::Equal => internal.clone(),
+                        _ => panic!("only +,-,* operations should be present at this point"),
+                    },
+                _ => internal.clone(),
+                },
+        _ => internal.clone(),
+    }
+}
+
+pub fn reduce_arithmetic(module: &mut Module) {
+    for eq in &mut module.exprs {
+        *eq = reduce_arithmetic_expr(eq.clone());
+    }
+}
+
+pub fn eliminate_variables(module: &mut Module) {
+    // construct HashMap of substitutions
+    let mut subs = HashMap::<VariableId, TExpr>::new();
+    
+    // substitution map is constructed only from constraints whose left side is a variable
+    for expr in &module.exprs {
+        match &expr.v {
+            Expr::Infix(InfixOp::Equal, expr1, expr2) => {
+                match &expr1.v {
+                    Expr::Variable(var) => {
+                        if !module.pubs.contains(var) {subs.insert(var.id, *expr2.clone());}
+                    },
+                    _ => {},
+                };
+            },
+            _ => {},
+        }
+    };
+
+    // perform the substitutions
+    for expr in &mut module.exprs {
+        copy_propagate_expr(expr, &subs);
+    }
+}
+
+pub fn eliminate_identities(module: &mut Module) {
+    let mut new_exprs = vec![];
+    for eq in &module.exprs {
+        match &eq.v {
+            Expr::Infix(InfixOp::Equal, left, right) => if left != right {new_exprs.push(eq.clone())},
+            _ => panic!("only equations should be present at this point"),   
+        }  
+    }
+    module.exprs = new_exprs;
+}
+
+pub fn distribute(module: &mut Module) {
+    for eq in &mut module.exprs {
+        distribute_expr(eq);
+    }
+}
+
+pub fn distribute_expr(expr: &mut TExpr) {
+    match &mut expr.v {
+        Expr::Infix(op, expr1, expr2) => 
+            match (op, &expr1.v, &expr2.v) {
+                (InfixOp::Multiply, _, Expr::Infix(InfixOp::Add, expr3, expr4)) =>
+                    expr.v = Expr::Infix(
+                        InfixOp::Add,
+                        Box::new(
+                            Expr::Infix(
+                                InfixOp::Multiply, 
+                                expr1.clone(), 
+                                expr3.clone()
+                            ).into()
+                        ),
+                        Box::new(
+                            Expr::Infix(
+                                InfixOp::Multiply, 
+                                expr1.clone(), 
+                                expr4.clone()
+                            ).into()
+                        ),
+                    ).into(),
+                (InfixOp::Multiply, Expr::Infix(InfixOp::Add, expr3, expr4), _) =>
+                    expr.v = Expr::Infix(
+                        InfixOp::Add,
+                        Box::new(
+                            Expr::Infix(
+                                InfixOp::Multiply, 
+                                expr2.clone(), 
+                                expr3.clone()
+                            ).into()
+                        ),
+                        Box::new(
+                            Expr::Infix(
+                                InfixOp::Multiply, 
+                                expr2.clone(), 
+                                expr4.clone()
+                            ).into()
+                        ),
+                    ).into(),
+                (InfixOp::Multiply, _, Expr::Infix(InfixOp::Subtract, expr3, expr4)) =>
+                    expr.v = Expr::Infix(
+                        InfixOp::Subtract,
+                        Box::new(
+                            Expr::Infix(
+                                InfixOp::Multiply, 
+                                expr1.clone(), 
+                                expr3.clone()
+                            ).into()
+                        ),
+                        Box::new(
+                            Expr::Infix(
+                                InfixOp::Multiply, 
+                                expr1.clone(), 
+                                expr4.clone()
+                            ).into()
+                        ),
+                    ).into(),
+                (InfixOp::Multiply, Expr::Infix(InfixOp::Subtract, expr3, expr4), _) =>
+                    expr.v = Expr::Infix(
+                        InfixOp::Subtract,
+                        Box::new(
+                            Expr::Infix(
+                                InfixOp::Multiply, 
+                                expr2.clone(), 
+                                expr3.clone()
+                            ).into()
+                        ),
+                        Box::new(
+                            Expr::Infix(
+                                InfixOp::Multiply, 
+                                expr2.clone(), 
+                                expr4.clone()
+                            ).into()
+                        ),
+                    ).into(),
+                _ => {
+                    distribute_expr(expr1);
+                    distribute_expr(expr2);
+                },
+            },
+        Expr::Constant(_) | Expr::Variable(_) => {},
+        _ => panic!("only algebraic expressions allowed at this point"),
+    }
+}
+
 /* Apply all the substitutions in the given map to the given expression. */
 pub fn copy_propagate_expr(
     expr: &mut TExpr,
