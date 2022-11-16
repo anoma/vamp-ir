@@ -114,7 +114,11 @@ impl LetBinding {
                         .expect("expected RHS to be a product");
                     pats.push(rhs);
                 }
-                let expr = Box::new(Expr::Function(Function(pats, Box::new(expr))).into());
+                let expr = Box::new(Expr::Function(Function {
+                    params: pats,
+                    body: Box::new(expr),
+                    env: HashMap::new(),
+                }).into());
                 Some(Self(Pattern::Variable(name), expr))
             },
             Rule::pattern => {
@@ -129,7 +133,7 @@ impl LetBinding {
 impl fmt::Display for LetBinding {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.1.v {
-            Expr::Function(Function(params, body)) => {
+            Expr::Function(Function { params, body, .. }) => {
                 write!(f, "{}", self.0)?;
                 for pat in params {
                     write!(f, " {}", pat)?;
@@ -626,7 +630,11 @@ impl fmt::Display for Variable {
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub struct Function(pub Vec<Pattern>, pub Box<TExpr>);
+pub struct Function {
+    pub params: Vec<Pattern>,
+    pub body: Box<TExpr>,
+    pub env: HashMap<VariableId, TExpr>,
+}
 
 impl Function {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
@@ -640,19 +648,19 @@ impl Function {
                 Pattern::parse(pair).expect("all prefixes to function should be patterns");
             params.push(param);
         }
-        Some(Self(params, Box::new(body)))
+        Some(Self { params, body: Box::new(body), env: HashMap::default() })
     }
 }
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "fun {}", self.0[0])?;
-        for pat in &self.0[1..] {
+        write!(f, "fun {}", self.params[0])?;
+        for pat in &self.params[1..] {
             write!(f, " {}", pat)?;
         }
 
         let mut body = String::new();
-        write!(body, "{}", self.1)?;
+        write!(body, "{}", self.body)?;
         if body.contains("\n") {
             body = body.replace("\n", "\n    ");
             write!(f, " ->\n    {}", body)?
@@ -665,7 +673,7 @@ impl fmt::Display for Function {
 
 /* The underlying function that expands an intrinsic call. */
 type IntrinsicImp = fn(
-    &Vec<TExpr>,
+    &Vec<Pattern>,
     &HashMap<VariableId, TExpr>,
     &mut HashSet<VariableId>,
     &mut VarGen
@@ -673,10 +681,12 @@ type IntrinsicImp = fn(
 
 #[derive(Clone)]
 pub struct Intrinsic {
-    arity: usize,
+    pub pos: usize,
     pub imp_typ: Type,
     imp: IntrinsicImp,
-    pub args: Vec<TExpr>,
+    pub params: Vec<Pattern>,
+    pub provers: HashSet<VariableId>,
+    pub env: HashMap<VariableId, TExpr>,
 }
 
 impl bincode::Encode for Intrinsic {
@@ -699,9 +709,9 @@ impl bincode::Decode for Intrinsic {
 impl fmt::Debug for Intrinsic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Intrinsic")
-            .field("arity", &self.arity)
-            .field("args", &self.args)
-            .field("apply", &(self.imp as fn(_, _, _, _) -> _))
+            .field("pos", &self.pos)
+            .field("params", &self.params)
+            .field("imp", &(self.imp as fn(_, _, _, _) -> _))
             .finish()
     }
 }
@@ -709,7 +719,7 @@ impl fmt::Debug for Intrinsic {
 impl fmt::Display for Intrinsic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:p}", self.imp as fn(_, _, _, _) -> _)?;
-        for arg in &self.args {
+        for arg in &self.params {
             write!(f, " {}", arg)?;
         }
         Ok(())
@@ -717,24 +727,23 @@ impl fmt::Display for Intrinsic {
 }
 
 impl Intrinsic {
-    pub fn new(arity: usize, imp_typ: Type, imp: IntrinsicImp) -> Self {
-        Self { arity, imp, imp_typ, args: vec![] }
+    pub fn new(params: Vec<Pattern>, imp: IntrinsicImp, imp_typ: Type) -> Self {
+        Self {
+            imp,
+            imp_typ,
+            params,
+            pos: 0,
+            provers: HashSet::new(),
+            env: HashMap::new(),
+        }
     }
-    
-    pub fn apply(
-        mut self,
-        arg: TExpr,
+
+    pub fn execute(
+        &self,
         bindings: &HashMap<VariableId, TExpr>,
         prover_defs: &mut HashSet<VariableId>,
         gen: &mut VarGen
     ) -> TExpr {
-        self.args.push(arg);
-        if self.args.len() < self.arity {
-            Expr::Intrinsic(self).into()
-        } else if self.args.len() == self.arity {
-            (self.imp)(&self.args, bindings, prover_defs, gen)
-        } else {
-            panic!("too many arguments applied to intrinsic function")
-        }
+        (self.imp)(&self.params, bindings, prover_defs, gen)
     }
 }

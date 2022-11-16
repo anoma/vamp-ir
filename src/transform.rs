@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
-use crate::typecheck::{infer_module_types, expand_module_variables, unitize_module_functions, print_types, refresh_expr_types, type_pattern, unify_types, Type};
-use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function, Match};
+use crate::typecheck::{infer_module_types, print_types, type_pattern, unitize_module_functions, expand_pattern_variables, expand_type, Type};
+use crate::ast::{Module, Definition, TExpr, Pattern, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function};
 use std::hash::Hash;
 
 /* A structure for generating unique variable IDs. */
@@ -26,7 +26,18 @@ fn refresh_expr_variables(
     gen: &mut VarGen,
 ) {
     match &mut expr.v {
-        Expr::Sequence(exprs) | Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+        Expr::Intrinsic(Intrinsic { params, provers, .. }) => {
+            let mut map = map.clone();
+            for param in params.iter_mut() {
+                refresh_pattern_variables(param, &mut map, prover_defs, gen);
+            }
+            for (src, dest) in map {
+                if provers.contains(&src) {
+                    prover_defs.insert(dest);
+                }
+            }
+        },
+        Expr::Sequence(exprs) => {
             for expr in exprs {
                 refresh_expr_variables(expr, map, prover_defs, gen);
             }
@@ -55,10 +66,10 @@ fn refresh_expr_variables(
         },
         Expr::Function(fun) => {
             let mut map = map.clone();
-            for param in &mut fun.0 {
+            for param in &mut fun.params {
                 refresh_pattern_variables(param, &mut map, prover_defs, gen);
             }
-            refresh_expr_variables(&mut fun.1, &map, prover_defs, gen);
+            refresh_expr_variables(&mut fun.body, &map, prover_defs, gen);
         },
         Expr::LetBinding(binding, expr) => {
             refresh_expr_variables(&mut binding.1, map, prover_defs, gen);
@@ -215,10 +226,15 @@ fn number_expr_variables(
     gen: &mut VarGen,
 ) {
     match &mut expr.v {
-        Expr::Sequence(exprs) |
-        Expr::Intrinsic(Intrinsic { args: exprs, ..}) => {
+        Expr::Sequence(exprs) => {
             for expr in exprs {
                 number_expr_variables(expr, locals, globals, gen);
+            }
+        },
+        Expr::Intrinsic(Intrinsic { params, ..}) => {
+            let mut locals = locals.clone();
+            for param in params {
+                number_pattern_variables(param, &mut locals, gen);
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
@@ -235,10 +251,10 @@ fn number_expr_variables(
         },
         Expr::Function(fun) => {
             let mut locals = locals.clone();
-            for param in &mut fun.0 {
+            for param in &mut fun.params {
                 number_pattern_variables(param, &mut locals, gen);
             }
-            number_expr_variables(&mut fun.1, &mut locals, globals, gen);
+            number_expr_variables(&mut fun.body, &mut locals, globals, gen);
         },
         Expr::LetBinding(binding, expr) => {
             let mut locals = locals.clone();
@@ -306,191 +322,215 @@ where U: Eq + Hash + Clone {
     }
 }
 
-/* Replace each function application occuring in the expression with a let
- * binding containing an inlined body. Returns a normal form of the expression.
- */
-fn apply_functions(
-    expr: &mut TExpr,
+/* Evaluate the given binding emitting constraints as necessary. Returns the new
+ * bindings created by this program fragment. */
+fn evaluate_binding(
+    binding: &LetBinding,
+    flattened: &mut Module,
     bindings: &mut HashMap<VariableId, TExpr>,
     types: &mut HashMap<VariableId, Type>,
-    type_env: &HashMap<VariableId, VariableId>,
+    prover_defs: &mut HashSet<VariableId>,
+    gen: &mut VarGen,
+) -> HashMap<VariableId, TExpr> {
+    let val = evaluate(&*binding.1, flattened, bindings, types, prover_defs, gen);
+    let mut new_binding = Definition(LetBinding(binding.0.clone(), Box::new(val.clone())));
+    let mut pat_exps = HashMap::new();
+    let val_type = expand_type(val.t.as_ref().unwrap(), types);
+    expand_pattern_variables(&mut new_binding.0.0, &val_type, &mut pat_exps, gen);
+    flattened.defs.push(new_binding);
+    let mut new_bindings = HashMap::new();
+    for (var, pat) in pat_exps {
+        new_bindings.insert(var, pat.to_expr());
+    }
+    match_pattern_expr(&binding.0, &val, bindings, &mut new_bindings, prover_defs, gen);
+    new_bindings
+}
+
+/* Evaluate the given expression emitting constraints as necessary. Returns the
+ * value that the given expression evaluates to. */
+fn evaluate(
+    expr: &TExpr,
+    flattened: &mut Module,
+    bindings: &mut HashMap<VariableId, TExpr>,
+    types: &mut HashMap<VariableId, Type>,
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) -> TExpr {
-    match &mut expr.v {
+    match &expr.v {
         Expr::Application(expr1, expr2) => {
-            match &mut expr1.v {
-                Expr::Application(_, _) | Expr::Match(_) => {
-                    apply_functions(expr1, bindings, types, type_env, prover_defs, gen);
-                    apply_functions(expr, bindings, types, type_env, prover_defs, gen)
-                },
+            let mut expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
+            refresh_expr_variables(&mut expr1, &HashMap::new(), prover_defs, gen);
+            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, gen);
+            match &expr1.v {
                 Expr::Intrinsic(intr) => {
-                    let expr2_norm = apply_functions(expr2, bindings, types, type_env, prover_defs, gen);
-                    *expr = intr.clone()
-                        .apply(expr2_norm, bindings, prover_defs, gen)
-                        .v
-                        .type_expr(expr.t.clone());
-                    apply_functions(expr, bindings, types, type_env, prover_defs, gen)
+                    let mut intr = intr.clone();
+                    let param1 = intr.params[intr.pos].clone();
+                    intr.pos += 1;
+                    let mut env = intr.env.clone().into_iter().map(|(k, v)| (k, Some(v))).collect();
+                    let new_body = Expr::Intrinsic(intr).type_expr(expr.t.clone());
+                    let new_bind = LetBinding(param1, Box::new(expr2));
+                    type_pattern(
+                        &new_bind.0,
+                        new_bind.1.t.clone().expect("type inference must already be done"),
+                        types,
+                        gen,
+                    );
+                    let expr = Expr::LetBinding(
+                        new_bind,
+                        Box::new(new_body)).type_expr(expr.t.clone()
+                    );
+                    exchange_map(bindings, &mut env);
+                    let val = evaluate(&expr, flattened, bindings, types, prover_defs, gen);
+                    exchange_map(bindings, &mut env);
+                    val
                 },
-                Expr::Variable(_) => {
-                    let val = apply_functions(expr1, bindings, types, type_env, prover_defs, gen);
-                    match val.v {
-                        Expr::Variable(var) => panic!("encountered unbound variable {}", var),
-                        _ => {
-                            *expr = Expr::Application(Box::new(val), expr2.clone()).type_expr(expr.t.clone());
-                            apply_functions(expr, bindings, types, type_env, prover_defs, gen)
-                        },
-                    }
+                Expr::Function(fun) if fun.params.is_empty() => {
+                    unreachable!("functions should have at least one parameter");
                 },
                 Expr::Function(fun) => {
-                    if fun.0.is_empty() {
-                        unreachable!("functions should have at least one parameter");
-                    }
-                    let arg1 = fun.0.remove(0);
-                    let new_body = if fun.0.is_empty() { *fun.1.clone() } else { expr1.v.clone().type_expr(expr.t.clone()) };
-                    let new_bind = LetBinding(arg1, expr2.clone());
-                    type_pattern(&new_bind.0, new_bind.1.t.clone().expect("type inference must already be done"), types, gen);
-                    *expr = Expr::LetBinding(new_bind, Box::new(new_body.clone())).type_expr(expr.t.clone());
-                    apply_functions(expr, bindings, types, type_env, prover_defs, gen)
-                },
-                Expr::Sequence(seq) => {
-                    if let Some(val) = seq.last_mut() {
-                        *val = Expr::Application(Box::new(val.clone()), expr2.clone()).type_expr(expr.t.clone());
-                        *expr = expr1.v.clone().type_expr(expr.t.clone());
-                        apply_functions(expr, bindings, types, type_env, prover_defs, gen)
+                    let mut fun = fun.clone();
+                    let param1 = fun.params.remove(0);
+                    let mut env = HashMap::new();
+                    let new_body = if fun.params.is_empty() {
+                        env = fun.env.into_iter().map(|(k, v)| (k, Some(v))).collect();
+                        *fun.body
                     } else {
-                        unreachable!("encountered an empty sequence")
-                    }
+                        Expr::Function(fun).type_expr(expr.t.clone())
+                    };
+                    let new_bind = LetBinding(param1, Box::new(expr2));
+                    type_pattern(
+                        &new_bind.0,
+                        new_bind.1.t.clone().expect("type inference must already be done"),
+                        types,
+                        gen,
+                    );
+                    let expr = Expr::LetBinding(
+                        new_bind,
+                        Box::new(new_body)).type_expr(expr.t.clone()
+                    );
+                    exchange_map(bindings, &mut env);
+                    let val = evaluate(&expr, flattened, bindings, types, prover_defs, gen);
+                    exchange_map(bindings, &mut env);
+                    val
                 },
-                Expr::LetBinding(_, body) => {
-                    *body = Box::new(Expr::Application(body.clone(), expr2.clone()).type_expr(expr.t.clone()));
-                    *expr = expr1.v.clone().type_expr(expr.t.clone());
-                    apply_functions(expr, bindings, types, type_env, prover_defs, gen)
-                },
-                Expr::Infix(_, _, _) => {
-                    panic!("cannot apply argument {} to infix {}", expr2, expr1)
-                },
-                Expr::Negate(_) => {
-                    panic!("cannot apply argument {} to negation {}", expr2, expr1)
-                },
-                Expr::Product(_, _) => {
-                    panic!("cannot apply argument {} to tuple {}", expr2, expr1)
-                },
-                Expr::Constant(_) => {
-                    panic!("cannot apply argument {} to constant {}", expr2, expr1)
-                },
-                Expr::Unit => {
-                    panic!("cannot apply argument {} to unit {}", expr2, expr1)
+                _ => {
+                    panic!("cannot apply argument {} to {}", expr2, expr1)
                 },
             }
         },
         Expr::LetBinding(binding, body) => {
-            let val = apply_functions(&mut *binding.1, bindings, types, type_env, prover_defs, gen);
-            let mut new_bindings = HashMap::new();
-            match_pattern_expr(&binding.0, &val, bindings, &mut new_bindings, prover_defs, gen);
+            let new_bindings =
+                evaluate_binding(binding, flattened, bindings, types, prover_defs, gen);
             let mut new_bindings = new_bindings.into_iter().map(|(k, v)| (k, Some(v))).collect();
             exchange_map(bindings, &mut new_bindings);
-            let mut normal = apply_functions(body, bindings, types, &type_env, prover_defs, gen);
+            let mut val = evaluate(&body, flattened, bindings, types, prover_defs, gen);
             exchange_map(bindings, &mut new_bindings);
-            new_bindings.retain(|k, _v| !prover_defs.contains(k));
-            let new_bindings = new_bindings.into_iter().map(|(k, v)| (k, v.unwrap())).collect();
-            copy_propagate_expr(&mut normal, &new_bindings);
-            normal
+            if let Expr::Function(Function { env, .. }) = &mut val.v {
+                for (var, val) in new_bindings {
+                    env.entry(var)
+                        .or_insert(val.expect("all new bindings must be filled at this point"));
+                }
+            }
+            val
         },
+        Expr::Sequence(seq) => {
+            let mut val = None;
+            for expr in seq {
+                val = Some(evaluate(expr, flattened, bindings, types, prover_defs, gen));
+            }
+            val.expect("encountered empty sequence")
+        },
+        Expr::Product(expr1, expr2) => {
+            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
+            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, gen);
+            Expr::Product(Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone())
+        },
+        Expr::Infix(InfixOp::Equal, expr1, expr2) => {
+            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
+            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, gen);
+            flatten_equals(&expr1, &expr2, flattened);
+            Expr::Unit.type_expr(Some(Type::Unit))
+        },
+        Expr::Infix(op, expr1, expr2) => {
+            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
+            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, gen);
+            Expr::Infix(op.clone(), Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone())
+        },
+        Expr::Negate(expr1) => {
+            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
+            Expr::Negate(Box::new(expr1)).type_expr(expr.t.clone())
+        },
+        Expr::Constant(_) | Expr::Unit => expr.clone(),
+        Expr::Variable(var) => match bindings.get(&var.id) {
+            Some(val) if !prover_defs.contains(&var.id) =>
+                evaluate(&val.clone(), flattened, bindings, types, prover_defs, gen),
+            _ => expr.clone(),
+        },
+        Expr::Function(_) => expr.clone(),
+        Expr::Intrinsic(intr @ Intrinsic { pos, params, .. }) if *pos == params.len() => {
+            intr.execute(bindings, prover_defs, gen)
+        },
+        Expr::Intrinsic(_) => expr.clone(),
         Expr::Match(matche) => {
-            let val = apply_functions(&mut matche.0, bindings, types, type_env, prover_defs, gen);
-            for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
-                let res = match_pattern_expr(&pat, &val, bindings, &mut HashMap::new(), prover_defs, gen);
+            let val = evaluate(&matche.0, flattened, bindings, types, prover_defs, gen);
+            for (pat, expr2) in matche.1.iter().zip(matche.2.iter()) {
+                let res = match_pattern_expr(
+                    &pat,
+                    &val,
+                    bindings,
+                    &mut HashMap::new(),
+                    prover_defs,
+                    gen,
+                );
                 match res {
                     Tribool::True => {
-                        *expr = TExpr {
+                        let expr = TExpr {
                             v: Expr::LetBinding(
                                 LetBinding(pat.clone(), matche.0.clone()),
-                                Box::new(expr2.clone())
+                                Box::new(expr2.clone()),
                             ),
                             t: expr.t.clone()
                         };
-                        return apply_functions(expr, bindings, types, type_env, prover_defs, gen);
+                        return evaluate(&expr, flattened, bindings, types, prover_defs, gen);
                     },
                     Tribool::Indeterminate =>
                         panic!("cannot statically match {} against {}", val, pat),
                     Tribool::False => continue,
                 }
             }
-            let expr = Expr::Match(Match(matche.0.clone(), matche.1.clone(), matche.2.clone())).type_expr(expr.t.clone());
             panic!("cannot match {} to any pattern in {}", matche.0, expr);
-        },
-        Expr::Sequence(seq) => {
-            let mut val = None;
-            for expr in seq {
-                val = Some(apply_functions(expr, bindings, types, type_env, prover_defs, gen));
-            }
-            val.expect("encountered empty sequence")
-        },
-        Expr::Product(expr1, expr2) => {
-            Expr::Product(
-                Box::new(apply_functions(expr1, bindings, types, type_env, prover_defs, gen)),
-                Box::new(apply_functions(expr2, bindings, types, type_env, prover_defs, gen)),
-            ).type_expr(expr.t.clone())
-        },
-        Expr::Infix(op, expr1, expr2) => {
-            let expr1 = apply_functions(expr1, bindings, types, type_env, prover_defs, gen);
-            let expr2 = apply_functions(expr2, bindings, types, type_env, prover_defs, gen);
-            Expr::Infix(op.clone(), Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone())
-        },
-        Expr::Negate(expr1) => {
-            Expr::Negate(Box::new(apply_functions(expr1, bindings, types, type_env, prover_defs, gen))).type_expr(expr.t.clone())
-        },
-        Expr::Constant(_) | Expr::Unit => expr.clone(),
-        Expr::Variable(var) => match bindings.get(&var.id) {
-            Some(val) if !prover_defs.contains(&var.id) => {
-                let mut val = val.clone();
-                refresh_expr_types(&mut val, types, &mut type_env.clone(), gen);
-                refresh_expr_variables(&mut val, &HashMap::new(), prover_defs, gen);
-                unify_types(val.t.as_ref().unwrap(), expr.t.as_ref().unwrap(), types);
-                val
-            },
-            _ => expr.clone(),
-        },
-        Expr::Function(_) => expr.clone(),
-        Expr::Intrinsic(intr) => {
-            for arg in &mut intr.args {
-                *arg = apply_functions(arg, bindings, types, type_env, prover_defs, gen);
-            }
-            expr.clone()
         },
     }
 }
 
-/* Replace each function application occuring in the definition with a let
- * binding containing an inlined body. */
-fn apply_def_functions(
-    def: &mut Definition,
+/* Evaluate the given definition emitting the implied constraints. The binding
+ * environment is modified as necessary. */
+fn evaluate_def(
+    def: &Definition,
+    flattened: &mut Module,
     bindings: &mut HashMap<VariableId, TExpr>,
     types: &mut HashMap<VariableId, Type>,
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) {
-    let val = apply_functions(&mut def.0.1, bindings, types, &mut HashMap::new(), prover_defs, gen);
-    let mut ext = HashMap::new();
-    match_pattern_expr(&def.0.0, &val, bindings, &mut ext, prover_defs, gen);
+    let ext = evaluate_binding(&def.0, flattened, bindings, types, prover_defs, gen);
     bindings.extend(ext);
 }
 
-/* Replace each function application occuring in the module with a let
- * binding containing an inlined body. */
-pub fn apply_module_functions(
-    module: &mut Module,
+/* Evaluate the given module emitting the constraints that it implies. */
+pub fn evaluate_module(
+    module: &Module,
+    flattened: &mut Module,
     bindings: &mut HashMap<VariableId, TExpr>,
     types: &mut HashMap<VariableId, Type>,
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) {
-    for def in &mut module.defs {
-        apply_def_functions(def, bindings, types, prover_defs, gen);
+    for def in &module.defs {
+        evaluate_def(def, flattened, bindings, types, prover_defs, gen);
     }
-    for expr in &mut module.exprs {
-        apply_functions(expr, bindings, types, &mut HashMap::new(), prover_defs, gen);
+    for expr in &module.exprs {
+        evaluate(expr, flattened, bindings, types, prover_defs, gen);
     }
 }
 
@@ -524,10 +564,14 @@ fn collect_expr_variables(
         Expr::Variable(var) => {
             map.insert(var.id, var.clone());
         },
-        Expr::Sequence(exprs) |
-        Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+        Expr::Sequence(exprs) => {
             for expr in exprs {
                 collect_expr_variables(expr, map);
+            }
+        },
+        Expr::Intrinsic(Intrinsic { params, .. }) => {
+            for param in params {
+                collect_pattern_variables(param, map);
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
@@ -539,10 +583,10 @@ fn collect_expr_variables(
             collect_expr_variables(expr1, map);
         },
         Expr::Function(fun) => {
-            for param in &fun.0 {
+            for param in &fun.params {
                 collect_pattern_variables(param, map);
             }
-            collect_expr_variables(&*fun.1, map);
+            collect_expr_variables(&*fun.body, map);
         },
         Expr::LetBinding(binding, body) => {
             collect_expr_variables(&*binding.1, map);
@@ -718,7 +762,7 @@ fn flatten_expression(
         }
         Expr::Function(_) | Expr::Application(_, _) | Expr::Intrinsic(_) |
         Expr::Match(_) =>
-            unreachable!("functions and matches must already by inlined and eliminated"),
+            unreachable!("functions and matches must already be inlined and eliminated"),
     }
 }
 
@@ -949,16 +993,24 @@ pub fn compile(mut module: Module) -> Module {
     println!("** Inferring types...");
     print_types(&module, &prog_types);
     let mut prover_defs = HashSet::new();
-    apply_module_functions(&mut module, &mut bindings, &mut prog_types, &mut prover_defs, &mut vg);
-    // Expand all tuple variables
-    expand_module_variables(&mut module, &mut prog_types, &mut vg);
-    // Unitize all function expressions
-    unitize_module_functions(&mut module, &mut prog_types);
-    // Start generating arithmetic constraints
     let mut constraints = Module::default();
-    flatten_module(module, &mut constraints);
+    evaluate_module(
+        &module,
+        &mut constraints,
+        &mut bindings,
+        &mut prog_types,
+        &mut prover_defs,
+        &mut vg,
+    );
+    // Expand all tuple variables
+    //expand_module_variables(&mut module, &mut prog_types, &mut vg);
+    // Unitize all function expressions
+    unitize_module_functions(&mut constraints, &mut prog_types);
+    // Start generating arithmetic constraints
+    let mut module_flat = Module::default();
+    flatten_module(constraints, &mut module_flat);
     let mut module_3ac = Module::default();
-    flatten_module_to_3ac(&constraints, &prover_defs, &mut module_3ac, &mut vg);
+    flatten_module_to_3ac(&module_flat, &prover_defs, &mut module_3ac, &mut vg);
     // Start doing basic optimizations
     copy_propagate(&mut module_3ac, &prover_defs);
     eliminate_dead_equalities(&mut module_3ac);
@@ -976,8 +1028,7 @@ pub fn copy_propagate_expr(
             *expr = substitutions[&v2.id].clone();
             copy_propagate_expr(expr, substitutions);
         },
-        Expr::Sequence(exprs) |
-        Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+        Expr::Sequence(exprs)  => {
             for expr in exprs {
                 copy_propagate_expr(expr, substitutions);
             }
@@ -987,7 +1038,7 @@ pub fn copy_propagate_expr(
             copy_propagate_expr(expr1, substitutions);
             copy_propagate_expr(expr2, substitutions);
         },
-        Expr::Negate(expr1) | Expr::Function(Function(_, expr1)) => {
+        Expr::Negate(expr1) | Expr::Function(Function { body: expr1, .. }) => {
             copy_propagate_expr(expr1, substitutions);
         },
         Expr::LetBinding(binding, expr2) => {
@@ -1000,7 +1051,8 @@ pub fn copy_propagate_expr(
                 copy_propagate_expr(expr2, substitutions);
             }
         },
-        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit => {},
+        Expr::Intrinsic(_) | Expr::Constant(_) | Expr::Variable(_) |
+        Expr::Unit => {},
     }
 }
 
@@ -1110,18 +1162,22 @@ fn register_fresh_intrinsic(
     gen: &mut VarGen,
 ) {
     let fresh_func_id = gen.generate_id();
-    let fresh_arg = Type::Variable(Variable::new(gen.generate_id()));
+    let fresh_arg_id = gen.generate_id();
+    let fresh_arg = Variable::new(fresh_arg_id);
+    let fresh_arg_pat = Pattern::Variable(fresh_arg.clone());
+    let fresh_arg_type = Type::Variable(fresh_arg);
     // Register the range function in global namespace
     globals.insert("fresh".to_string(), fresh_func_id);
     // Describe the intrinsic's type, arity, and implementation
-    let fresh_intrinsic = Intrinsic::new(
-        1,
-        Type::Function(
-            Box::new(fresh_arg.clone()),
-            Box::new(fresh_arg),
-        ),
+    let mut fresh_intrinsic = Intrinsic::new(
+        vec![fresh_arg_pat],
         expand_fresh_intrinsic,
+        Type::Function(
+            Box::new(fresh_arg_type.clone()),
+            Box::new(fresh_arg_type),
+        ),
     );
+    fresh_intrinsic.provers.insert(fresh_arg_id);
     // Register the intrinsic descriptor with the global binding
     types.insert(fresh_func_id, fresh_intrinsic.imp_typ.clone());
     bindings.insert(
@@ -1134,15 +1190,16 @@ fn register_fresh_intrinsic(
 /* fresh x returns a fresh unconstrained variable whose prover definition equals
  * the supplied expression. */
 fn expand_fresh_intrinsic(
-    args: &Vec<TExpr>,
-    _bindings: &HashMap<VariableId, TExpr>,
+    params: &Vec<Pattern>,
+    bindings: &HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) -> TExpr {
-    if let [val] = &args[..] {
+    if let [Pattern::Variable(param)] = &params[..] {
         // Make a new prover definition that is equal to the argument
         let fresh_arg = Variable::new(gen.generate_id());
         prover_defs.insert(fresh_arg.id);
+        let val = bindings[&param.id].clone();
         TExpr {
             t: val.t.clone(),
             v: Expr::LetBinding(
@@ -1157,6 +1214,6 @@ fn expand_fresh_intrinsic(
             ),
         }
     } else {
-        panic!("unexpected arguments to fresh: {:?}", args);
+        panic!("unexpected parameters for fresh: {:?}", params);
     }
 }
