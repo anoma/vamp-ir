@@ -38,7 +38,7 @@ fn allocate_expr_types(
     expr.t = Some(Type::Variable(Variable::new(new_var)));
     
     match &mut expr.v {
-        Expr::Sequence(exprs) | Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+        Expr::Sequence(exprs) => {
             for expr in exprs {
                 allocate_expr_types(expr, gen);
             }
@@ -52,7 +52,7 @@ fn allocate_expr_types(
             allocate_expr_types(expr1, gen);
         },
         Expr::Function(fun) => {
-            allocate_expr_types(&mut *fun.1, gen);
+            allocate_expr_types(&mut *fun.body, gen);
         },
         Expr::LetBinding(binding, body) => {
             allocate_expr_types(&mut *binding.1, gen);
@@ -64,7 +64,8 @@ fn allocate_expr_types(
                 allocate_expr_types(expr2, gen);
             }
         },
-        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit => {},
+        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit |
+        Expr::Intrinsic(_) => {},
     }
 }
 
@@ -233,7 +234,7 @@ pub fn unify_types(
 }
 
 /* Fully expand the variables in the given type. */
-fn expand_type(
+pub fn expand_type(
     typ: &Type,
     types: &HashMap<VariableId, Type>,
 ) -> Type {
@@ -349,7 +350,7 @@ pub fn refresh_expr_types(
     refresh_type_vars(&mut expanded, type_env, gen);
     expr.t = Some(expanded);
     match &mut expr.v {
-        Expr::Sequence(exprs) | Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+        Expr::Sequence(exprs) => {
             for expr in exprs {
                 refresh_expr_types(expr, types, type_env, gen);
             }
@@ -368,9 +369,10 @@ pub fn refresh_expr_types(
         Expr::Negate(expr) => {
             refresh_expr_types(expr, types, type_env, gen);
         },
-        Expr::Constant(_) | Expr::Unit | Expr::Variable(_) => {},
+        Expr::Constant(_) | Expr::Unit | Expr::Variable(_) |
+        Expr::Intrinsic(_) => {},
         Expr::Function(fun) => {
-            refresh_expr_types(&mut fun.1, types, type_env, gen);
+            refresh_expr_types(&mut fun.body, types, type_env, gen);
         },
         Expr::LetBinding(binding, expr) => {
             refresh_expr_types(&mut binding.1, types, type_env, gen);
@@ -514,7 +516,7 @@ fn infer_expr_types(
             infer_expr_types(expr1, env, types, gen);
             infer_expr_types(expr2, env, types, gen);
         },
-        Expr::Function(Function(params, expr1)) => {
+        Expr::Function(Function { params, body: expr1, .. }) => {
             let expr_var = expr_type_var(expr);
             let expr1_var = expr_type_var(expr1);
             let mut func_var = expr1_var.clone();
@@ -542,18 +544,15 @@ fn infer_expr_types(
                 infer_expr_types(expr2, &env, types, gen);
             }
         },
-        Expr::Intrinsic(Intrinsic { args, imp_typ, ..}) => {
+        Expr::Intrinsic(Intrinsic { params, imp_typ, ..}) => {
             let expr_var = expr_type_var(expr);
             let mut func_var = expr_var.clone();
-            for arg in args.iter().rev() {
-                let arg_var = expr_type_var(arg);
-                func_var = Type::Function(Box::new(arg_var.clone()), Box::new(func_var));
+            for param in params.iter().rev() {
+                let param_var = pattern_type(param);
+                func_var = Type::Function(Box::new(param_var), Box::new(func_var));
             }
             // b: t, a b: u |- a: t -> u
             unify_types(&func_var, &imp_typ, types);
-            for arg in args {
-                infer_expr_types(arg, &env, types, gen);
-            }
         },
         Expr::LetBinding(def, expr2) => {
             let expr_var = expr_type_var(expr);
@@ -612,7 +611,7 @@ pub fn infer_module_types(
 }
 
 /* Expand tuple pattern variables into tuple patterns. */
-fn expand_pattern_variables(
+pub fn expand_pattern_variables(
     pat: &mut Pattern,
     typ: &Type,
     map: &mut HashMap<VariableId, Pattern>,
@@ -675,7 +674,7 @@ fn expand_variables(
             expand_pattern_variables(&mut binding.0, &typ, map, gen);
             expand_variables(body, map, types, gen);
         },
-        Expr::Sequence(exprs) | Expr::Intrinsic(Intrinsic { args: exprs, .. }) => {
+        Expr::Sequence(exprs) => {
             for expr in exprs {
                 expand_variables(expr, map, types, gen);
             }
@@ -735,9 +734,10 @@ fn expand_variables(
             }
         },
         Expr::Function(fun) => {
-            expand_variables(&mut fun.1, map, types, gen);
+            expand_variables(&mut fun.body, map, types, gen);
         },
-        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit => {},
+        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit |
+        Expr::Intrinsic(_) => {},
     }
 }
 
