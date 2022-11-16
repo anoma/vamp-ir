@@ -682,7 +682,6 @@ type IntrinsicImp = fn(
 #[derive(Clone)]
 pub struct Intrinsic {
     pub pos: usize,
-    pub imp_typ: Type,
     imp: IntrinsicImp,
     pub params: Vec<Pattern>,
     pub provers: HashSet<VariableId>,
@@ -727,10 +726,9 @@ impl fmt::Display for Intrinsic {
 }
 
 impl Intrinsic {
-    pub fn new(params: Vec<Pattern>, imp: IntrinsicImp, imp_typ: Type) -> Self {
+    pub fn new(params: Vec<Pattern>, imp: IntrinsicImp) -> Self {
         Self {
             imp,
-            imp_typ,
             params,
             pos: 0,
             provers: HashSet::new(),

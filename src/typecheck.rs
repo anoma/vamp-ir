@@ -544,15 +544,14 @@ fn infer_expr_types(
                 infer_expr_types(expr2, &env, types, gen);
             }
         },
-        Expr::Intrinsic(Intrinsic { params, imp_typ, ..}) => {
+        Expr::Intrinsic(Intrinsic { params, ..}) => {
             let expr_var = expr_type_var(expr);
-            let mut func_var = expr_var.clone();
+            let mut func_var = Type::Variable(Variable::new(gen.generate_id()));
             for param in params.iter().rev() {
                 let param_var = pattern_type(param);
                 func_var = Type::Function(Box::new(param_var), Box::new(func_var));
             }
-            // b: t, a b: u |- a: t -> u
-            unify_types(&func_var, &imp_typ, types);
+            unify_types(&func_var, &expr_var, types);
         },
         Expr::LetBinding(def, expr2) => {
             let expr_var = expr_type_var(expr);

@@ -1168,22 +1168,23 @@ fn register_fresh_intrinsic(
     let fresh_arg_type = Type::Variable(fresh_arg);
     // Register the range function in global namespace
     globals.insert("fresh".to_string(), fresh_func_id);
-    // Describe the intrinsic's type, arity, and implementation
+    // Describe the intrinsic's parameters and implementation
     let mut fresh_intrinsic = Intrinsic::new(
         vec![fresh_arg_pat],
         expand_fresh_intrinsic,
-        Type::Function(
-            Box::new(fresh_arg_type.clone()),
-            Box::new(fresh_arg_type),
-        ),
+    );
+    // Describe the intrinsic's type
+    let imp_typ = Type::Function(
+        Box::new(fresh_arg_type.clone()),
+        Box::new(fresh_arg_type),
     );
     fresh_intrinsic.provers.insert(fresh_arg_id);
     // Register the intrinsic descriptor with the global binding
-    types.insert(fresh_func_id, fresh_intrinsic.imp_typ.clone());
+    types.insert(fresh_func_id, imp_typ.clone());
     bindings.insert(
         fresh_func_id,
         Expr::Intrinsic(fresh_intrinsic.clone())
-            .type_expr(Some(fresh_intrinsic.imp_typ))
+            .type_expr(Some(imp_typ))
     );
 }
 
