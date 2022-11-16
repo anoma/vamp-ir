@@ -1,4 +1,4 @@
-use crate::ast::{Module, VariableId, TExpr, InfixOp, Pattern, Expr};
+use crate::ast::{Module, VariableId, TExpr, InfixOp, Pat, Expr};
 use crate::transform::collect_module_variables;
 use ark_ff::PrimeField;
 use ark_ec::TEModelParameters;
@@ -154,7 +154,7 @@ where
         // Get the definitions necessary to populate auxiliary variables
         let mut definitions = HashMap::new();
         for def in &self.module.defs {
-            if let Pattern::Variable(var) = &def.0.0 {
+            if let Pat::Variable(var) = &def.0.0.v {
                 definitions.insert(var.id, *def.0.1.clone());
             }
         }

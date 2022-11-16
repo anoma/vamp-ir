@@ -6,7 +6,7 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 use std::fs;
-use crate::ast::{Module, VariableId, Pattern};
+use crate::ast::{Module, VariableId, Pat};
 use crate::transform::{compile, collect_module_variables};
 use ark_bls12_381::{Bls12_381, Fr as BlsScalar};
 use ark_ed_on_bls12_381::EdwardsParameters as JubJubParameters;
@@ -161,7 +161,7 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
     collect_module_variables(&annotated, &mut input_variables);
     // Defined variables should not be requested from user
     for def in &annotated.defs {
-        if let Pattern::Variable(var) = &def.0.0 {
+        if let Pat::Variable(var) = &def.0.0.v {
             input_variables.remove(&var.id);
         }
     }
