@@ -689,10 +689,10 @@ pub fn expand_pattern_variables(
                 .map(|x| x.to_owned() + ".1");
             let mut var2 = Pat::Variable(new_var2).type_pat(Some(*typ2.clone()));
             expand_pattern_variables(&mut var2, map, types, gen);
-            
-            let new_pat = Pat::Product(Box::new(var1), Box::new(var2)).type_pat(pat.t.clone());
-            map.insert(var.id, new_pat.clone());
-            *pat = new_pat;
+
+            let curr_id = var.id;
+            pat.v = Pat::Product(Box::new(var1), Box::new(var2));
+            map.insert(curr_id, pat.clone());
         },
         (Pat::Variable(var), Type::Unit) => {
             map.insert(var.id, Pat::Unit.type_pat(Some(Type::Unit)));
