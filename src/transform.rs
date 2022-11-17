@@ -364,18 +364,14 @@ fn evaluate(
                     let mut intr = intr.clone();
                     let param1 = intr.params[intr.pos].clone();
                     intr.pos += 1;
-                    let mut env = intr.env.clone().into_iter().map(|(k, v)| (k, Some(v))).collect();
-                    let new_body = Expr::Intrinsic(intr).type_expr(expr.t.clone());
                     let new_bind = LetBinding(param1, Box::new(*expr2.clone()));
                     let mut inserts = Some(HashSet::new());
                     unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), types, &mut inserts);
-                    let expr = Expr::LetBinding(
-                        new_bind,
-                        Box::new(new_body)).type_expr(expr.t.clone()
-                    );
-                    exchange_map(bindings, &mut env);
-                    let mut val = evaluate(&expr, flattened, bindings, types, prover_defs, gen);
-                    exchange_map(bindings, &mut env);
+
+                    // Setup the environment in which to evaluate body
+                    intr.env.extend(evaluate_binding(&new_bind, flattened, bindings, types, prover_defs, gen));
+                    let new_body = Expr::Intrinsic(intr).type_expr(expr.t.clone());
+                    let mut val = evaluate(&new_body, flattened, bindings, types, prover_defs, gen);
                     refresh_expr_types(&mut val, &types, &HashMap::new(), gen);
                     for bind in inserts.unwrap() { types.remove(&bind); }
                     val
@@ -386,23 +382,14 @@ fn evaluate(
                 Expr::Function(fun) => {
                     let mut fun = fun.clone();
                     let param1 = fun.params.remove(0);
-                    let mut env = HashMap::new();
-                    let new_body = if fun.params.is_empty() {
-                        env = fun.env.into_iter().map(|(k, v)| (k, Some(v))).collect();
-                        *fun.body
-                    } else {
-                        Expr::Function(fun).type_expr(expr.t.clone())
-                    };
                     let new_bind = LetBinding(param1, Box::new(*expr2.clone()));
                     let mut inserts = Some(HashSet::new());
                     unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), types, &mut inserts);
-                    let expr = Expr::LetBinding(
-                        new_bind,
-                        Box::new(new_body)).type_expr(expr.t.clone()
-                    );
-                    exchange_map(bindings, &mut env);
-                    let mut val = evaluate(&expr, flattened, bindings, types, prover_defs, gen);
-                    exchange_map(bindings, &mut env);
+
+                    // Setup the environment in which to evaluate body
+                    fun.env.extend(evaluate_binding(&new_bind, flattened, bindings, types, prover_defs, gen));
+                    let new_body = Expr::Function(fun).type_expr(expr.t.clone());
+                    let mut val = evaluate(&new_body, flattened, bindings, types, prover_defs, gen);
                     refresh_expr_types(&mut val, &types, &HashMap::new(), gen);
                     for bind in inserts.unwrap() { types.remove(&bind); }
                     val
@@ -417,14 +404,8 @@ fn evaluate(
                 evaluate_binding(binding, flattened, bindings, types, prover_defs, gen);
             let mut new_bindings = new_bindings.into_iter().map(|(k, v)| (k, Some(v))).collect();
             exchange_map(bindings, &mut new_bindings);
-            let mut val = evaluate(&body, flattened, bindings, types, prover_defs, gen);
+            let val = evaluate(&body, flattened, bindings, types, prover_defs, gen);
             exchange_map(bindings, &mut new_bindings);
-            if let Expr::Function(Function { env, .. }) = &mut val.v {
-                for (var, val) in new_bindings {
-                    env.entry(var)
-                        .or_insert(val.expect("all new bindings must be filled at this point"));
-                }
-            }
             val
         },
         Expr::Sequence(seq) => {
@@ -472,12 +453,31 @@ fn evaluate(
             },
             _ => expr.clone(),
         },
-        Expr::Function(_) => expr.clone(),
-        Expr::Intrinsic(intr @ Intrinsic { pos, params, .. }) if *pos == params.len() => {
-            let expr1 = intr.execute(bindings, prover_defs, gen);
-            evaluate(&expr1, flattened, bindings, types, prover_defs, gen)
+        Expr::Function(Function { params, body, env, .. }) if params.len() == 0 => {
+            let mut ext = env.clone().into_iter().map(|(k, v)| (k, Some(v))).collect();
+            exchange_map(bindings, &mut ext);
+            let val = evaluate(body, flattened, bindings, types, prover_defs, gen);
+            exchange_map(bindings, &mut ext);
+            val
         },
-        Expr::Intrinsic(_) => expr.clone(),
+        Expr::Function(fun) => {
+            let mut fun = fun.clone();
+            //fun.env = bindings.clone();
+            Expr::Function(fun).type_expr(expr.t.clone())
+        },
+        Expr::Intrinsic(intr @ Intrinsic { pos, params, env, .. }) if *pos == params.len() => {
+            let mut ext = env.clone().into_iter().map(|(k, v)| (k, Some(v))).collect();
+            exchange_map(bindings, &mut ext);
+            let expr1 = intr.execute(bindings, prover_defs, gen);
+            let val = evaluate(&expr1, flattened, bindings, types, prover_defs, gen);
+            exchange_map(bindings, &mut ext);
+            val
+        },
+        Expr::Intrinsic(intr) => {
+            let mut intr = intr.clone();
+            //fun.env = bindings.clone();
+            Expr::Intrinsic(intr).type_expr(expr.t.clone())
+        },
         Expr::Match(matche) => {
             let val = evaluate(&matche.0, flattened, bindings, types, prover_defs, gen);
             for (pat, expr2) in matche.1.iter().zip(matche.2.iter()) {
