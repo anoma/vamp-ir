@@ -29,6 +29,26 @@ fn collect_free_type_vars(
     }
 }
 
+/* Generate a unique type variables for each pattern. */
+fn allocate_pat_types(
+    pat: &mut TPat,
+    gen: &mut VarGen,
+) {
+    let new_var = gen.generate_id();
+    pat.t = Some(Type::Variable(Variable::new(new_var)));
+    
+    match &mut pat.v {
+        Pat::Product(pat1, pat2) => {
+            allocate_pat_types(pat1, gen);
+            allocate_pat_types(pat2, gen);
+        },
+        Pat::As(pat1, _) => {
+            allocate_pat_types(pat1, gen);
+        },
+        Pat::Constant(_) | Pat::Variable(_) | Pat::Unit => {},
+    }
+}
+
 /* Generate a unique type variables for each expression. */
 fn allocate_expr_types(
     expr: &mut TExpr,
@@ -52,14 +72,21 @@ fn allocate_expr_types(
             allocate_expr_types(expr1, gen);
         },
         Expr::Function(fun) => {
+            for param in &mut fun.params {
+                allocate_pat_types(param, gen);
+            }
             allocate_expr_types(&mut *fun.body, gen);
         },
         Expr::LetBinding(binding, body) => {
+            allocate_pat_types(&mut binding.0, gen);
             allocate_expr_types(&mut *binding.1, gen);
             allocate_expr_types(body, gen);
         },
         Expr::Match(matche) => {
             allocate_expr_types(&mut matche.0, gen);
+            for pat1 in &mut matche.1 {
+                allocate_pat_types(pat1, gen);
+            }
             for expr2 in &mut matche.2 {
                 allocate_expr_types(expr2, gen);
             }
@@ -74,6 +101,7 @@ fn allocate_def_types(
     def: &mut Definition,
     gen: &mut VarGen,
 ) {
+    allocate_pat_types(&mut def.0.0, gen);
     allocate_expr_types(&mut *def.0.1, gen);
 }
 
@@ -339,6 +367,7 @@ fn infer_binding_types(
     let expr1_var = expr_type_var(&*def.1);
     infer_expr_types(&*def.1, env_ftvs, vars, types, gen);
     infer_pat_types(&def.0, vars, types, gen);
+    unify_types(pat_type_var(&def.0), expr_type_var(&def.1), types);
     // Compute the set of free variables occuring in RHS' TYPE that
     // do not occur in the type environment
     let mut quant_vars = HashMap::new();
@@ -351,7 +380,7 @@ fn infer_binding_types(
     let mut pat_vars = HashMap::new();
     collect_pattern_variables(&def.0, &mut pat_vars);
     for pat_var in pat_vars.keys() {
-        let quant_expr = types.get_mut(&pat_var).unwrap();
+        let quant_expr = vars.get_mut(&pat_var).unwrap();
         // Quantify every free variable unique to the RHS' type
         for qvar in quant_vars.values() {
             *quant_expr = Type::Forall(qvar.clone(), Box::new(quant_expr.clone()));
@@ -397,7 +426,7 @@ pub fn infer_pat_types(
             let pat_var = pat_type_var(pat);
             // a1: t1 |- a1 as _: t1
             unify_types(&pat_var, &pat1_var, types);
-            infer_pat_types(&pat, vars, types, gen);
+            infer_pat_types(&pat1, vars, types, gen);
             // Map the pattern name to its type
             vars.insert(name.id, pat_var.clone());
         },
@@ -606,9 +635,14 @@ pub fn infer_module_types(
     let mut env = HashMap::new();
     // Initialize the type environment with the types of global variables
     for (name, id) in globals {
-        let mut var = Variable::new(*id);
-        var.name = Some(name.clone());
-        env.insert(*id, var);
+        if !vars.contains_key(id) {
+            let mut var = Variable::new(gen.generate_id());
+            var.name = Some(name.clone());
+            vars.insert(*id, Type::Variable(var));
+        }
+    }
+    for typ in vars.values() {
+        collect_free_type_vars(typ, &mut env);
     }
     for def in &mut annotated.defs {
         infer_def_types(def, &mut env, vars, types, gen);
