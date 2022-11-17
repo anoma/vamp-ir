@@ -457,8 +457,7 @@ fn evaluate(
         },
         Expr::Constant(_) | Expr::Unit => expr.clone(),
         Expr::Variable(var) => match bindings.get(&var.id) {
-            Some(val) if !prover_defs.contains(&var.id) =>
-                evaluate(&val.clone(), flattened, bindings, types, prover_defs, gen),
+            Some(val) if !prover_defs.contains(&var.id) => val.clone(),
             _ if !prover_defs.contains(&var.id) => {
                 let mut pat_exps = HashMap::new();
                 let mut expanded = expr.clone();
