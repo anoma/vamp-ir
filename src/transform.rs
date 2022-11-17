@@ -368,16 +368,17 @@ fn evaluate(
                     let mut env = intr.env.clone().into_iter().map(|(k, v)| (k, Some(v))).collect();
                     let new_body = Expr::Intrinsic(intr).type_expr(expr.t.clone());
                     let new_bind = LetBinding(param1, Box::new(expr2));
-                    let mut types = types.clone();
-                    unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), &mut types);
+                    let mut inserts = Some(HashSet::new());
+                    unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), types, &mut inserts);
                     let expr = Expr::LetBinding(
                         new_bind,
                         Box::new(new_body)).type_expr(expr.t.clone()
                     );
                     exchange_map(bindings, &mut env);
-                    let mut val = evaluate(&expr, flattened, bindings, &mut types, prover_defs, gen);
+                    let mut val = evaluate(&expr, flattened, bindings, types, prover_defs, gen);
                     exchange_map(bindings, &mut env);
                     refresh_expr_types(&mut val, &types, &HashMap::new(), gen);
+                    for bind in inserts.unwrap() { types.remove(&bind); }
                     val
                 },
                 Expr::Function(fun) if fun.params.is_empty() => {
@@ -394,16 +395,17 @@ fn evaluate(
                         Expr::Function(fun).type_expr(expr.t.clone())
                     };
                     let new_bind = LetBinding(param1, Box::new(expr2));
-                    let mut types = types.clone();
-                    unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), &mut types);
+                    let mut inserts = Some(HashSet::new());
+                    unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), types, &mut inserts);
                     let expr = Expr::LetBinding(
                         new_bind,
                         Box::new(new_body)).type_expr(expr.t.clone()
                     );
                     exchange_map(bindings, &mut env);
-                    let mut val = evaluate(&expr, flattened, bindings, &mut types, prover_defs, gen);
+                    let mut val = evaluate(&expr, flattened, bindings, types, prover_defs, gen);
                     exchange_map(bindings, &mut env);
                     refresh_expr_types(&mut val, &types, &HashMap::new(), gen);
+                    for bind in inserts.unwrap() { types.remove(&bind); }
                     val
                 },
                 _ => {
