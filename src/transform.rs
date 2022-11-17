@@ -359,7 +359,6 @@ fn evaluate(
         Expr::Application(expr1, expr2) => {
             let mut expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
             refresh_expr_variables(&mut expr1, &HashMap::new(), prover_defs, gen);
-            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, gen);
             match &expr1.v {
                 Expr::Intrinsic(intr) => {
                     let mut intr = intr.clone();
@@ -367,7 +366,7 @@ fn evaluate(
                     intr.pos += 1;
                     let mut env = intr.env.clone().into_iter().map(|(k, v)| (k, Some(v))).collect();
                     let new_body = Expr::Intrinsic(intr).type_expr(expr.t.clone());
-                    let new_bind = LetBinding(param1, Box::new(expr2));
+                    let new_bind = LetBinding(param1, Box::new(*expr2.clone()));
                     let mut inserts = Some(HashSet::new());
                     unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), types, &mut inserts);
                     let expr = Expr::LetBinding(
@@ -394,7 +393,7 @@ fn evaluate(
                     } else {
                         Expr::Function(fun).type_expr(expr.t.clone())
                     };
-                    let new_bind = LetBinding(param1, Box::new(expr2));
+                    let new_bind = LetBinding(param1, Box::new(*expr2.clone()));
                     let mut inserts = Some(HashSet::new());
                     unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), types, &mut inserts);
                     let expr = Expr::LetBinding(
@@ -449,7 +448,11 @@ fn evaluate(
         Expr::Infix(op, expr1, expr2) => {
             let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
             let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, gen);
-            Expr::Infix(op.clone(), Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone())
+            let val = Expr::Infix(op.clone(), Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone());
+            let var = Variable::new(gen.generate_id());
+            let binding = Definition(LetBinding(Pat::Variable(var.clone()).type_pat(expr.t.clone()), Box::new(val)));
+            flattened.defs.push(binding);
+            Expr::Variable(var).type_expr(expr.t.clone())
         },
         Expr::Negate(expr1) => {
             let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
@@ -471,7 +474,8 @@ fn evaluate(
         },
         Expr::Function(_) => expr.clone(),
         Expr::Intrinsic(intr @ Intrinsic { pos, params, .. }) if *pos == params.len() => {
-            intr.execute(bindings, prover_defs, gen)
+            let expr1 = intr.execute(bindings, prover_defs, gen);
+            evaluate(&expr1, flattened, bindings, types, prover_defs, gen)
         },
         Expr::Intrinsic(_) => expr.clone(),
         Expr::Match(matche) => {
@@ -1006,8 +1010,6 @@ pub fn compile(mut module: Module) -> Module {
         &mut prover_defs,
         &mut vg,
     );
-    // Expand all tuple variables
-    //expand_module_variables(&mut module, &mut prog_types, &mut vg);
     // Unitize all function expressions
     unitize_module_functions(&mut constraints, &mut prog_types);
     // Start generating arithmetic constraints
