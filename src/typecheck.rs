@@ -144,7 +144,7 @@ impl Display for Type {
 }
 
 /* Get or generate the type variable associated with a given expression. */
-fn expr_type_var(expr: &TExpr) -> &Type {
+pub fn expr_type_var(expr: &TExpr) -> &Type {
     expr.t.as_ref().unwrap()
 }
 
@@ -311,15 +311,15 @@ fn refresh_type_vars(
  * already bound in the type environment. */
 pub fn refresh_expr_types(
     expr: &mut TExpr,
-    types: &mut HashMap<VariableId, Type>,
-    type_env: &mut HashMap<VariableId, VariableId>,
+    types: &HashMap<VariableId, Type>,
+    type_env: &HashMap<VariableId, VariableId>,
     gen: &mut VarGen,
 ) {
     let mut expanded = expand_type(
         expr.t.as_ref().expect("type inference must already be done"),
         types,
     );
-    refresh_type_vars(&mut expanded, type_env, gen);
+    //refresh_type_vars(&mut expanded, type_env, gen);
     expr.t = Some(expanded);
     match &mut expr.v {
         Expr::Sequence(exprs) => {
@@ -393,7 +393,7 @@ fn infer_binding_types(
 }
 
 /* Get or generate the type variable associated with a given pattern. */
-fn pat_type_var(pat: &TPat) -> &Type {
+pub fn pat_type_var(pat: &TPat) -> &Type {
     pat.t.as_ref().unwrap()
 }
 
@@ -704,7 +704,7 @@ pub fn expand_pattern_variables(
 }
 
 /* Expand tuple expression variables into tuple expressions. */
-fn expand_variables(
+pub fn expand_variables(
     expr: &mut TExpr,
     map: &mut HashMap<VariableId, TPat>,
     types: &HashMap<VariableId, Type>,

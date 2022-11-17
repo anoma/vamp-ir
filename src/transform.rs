@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use crate::typecheck::{infer_module_types, print_types, infer_pat_types, unitize_module_functions, expand_pattern_variables, expand_type, Type};
+use crate::typecheck::{infer_module_types, print_types, expand_type, unitize_module_functions, expand_pattern_variables, expand_variables, unify_types, pat_type_var, expr_type_var, refresh_expr_types, Type};
 use crate::ast::{Module, Definition, TExpr, Pat, TPat, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function};
 use std::hash::Hash;
 
@@ -368,19 +368,16 @@ fn evaluate(
                     let mut env = intr.env.clone().into_iter().map(|(k, v)| (k, Some(v))).collect();
                     let new_body = Expr::Intrinsic(intr).type_expr(expr.t.clone());
                     let new_bind = LetBinding(param1, Box::new(expr2));
-                    /*infer_pat_types(
-                        &new_bind.0,
-                        new_bind.1.t.clone().expect("type inference must already be done"),
-                        types,
-                        gen,
-                    );*/
+                    let mut types = types.clone();
+                    unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), &mut types);
                     let expr = Expr::LetBinding(
                         new_bind,
                         Box::new(new_body)).type_expr(expr.t.clone()
                     );
                     exchange_map(bindings, &mut env);
-                    let val = evaluate(&expr, flattened, bindings, types, prover_defs, gen);
+                    let mut val = evaluate(&expr, flattened, bindings, &mut types, prover_defs, gen);
                     exchange_map(bindings, &mut env);
+                    refresh_expr_types(&mut val, &types, &HashMap::new(), gen);
                     val
                 },
                 Expr::Function(fun) if fun.params.is_empty() => {
@@ -397,19 +394,16 @@ fn evaluate(
                         Expr::Function(fun).type_expr(expr.t.clone())
                     };
                     let new_bind = LetBinding(param1, Box::new(expr2));
-                    /*infer_pat_types(
-                        &new_bind.0,
-                        new_bind.1.t.clone().expect("type inference must already be done"),
-                        types,
-                        gen,
-                    );*/
+                    let mut types = types.clone();
+                    unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), &mut types);
                     let expr = Expr::LetBinding(
                         new_bind,
                         Box::new(new_body)).type_expr(expr.t.clone()
                     );
                     exchange_map(bindings, &mut env);
-                    let val = evaluate(&expr, flattened, bindings, types, prover_defs, gen);
+                    let mut val = evaluate(&expr, flattened, bindings, &mut types, prover_defs, gen);
                     exchange_map(bindings, &mut env);
+                    refresh_expr_types(&mut val, &types, &HashMap::new(), gen);
                     val
                 },
                 _ => {
@@ -463,6 +457,15 @@ fn evaluate(
         Expr::Variable(var) => match bindings.get(&var.id) {
             Some(val) if !prover_defs.contains(&var.id) =>
                 evaluate(&val.clone(), flattened, bindings, types, prover_defs, gen),
+            _ if !prover_defs.contains(&var.id) => {
+                let mut pat_exps = HashMap::new();
+                let mut expanded = expr.clone();
+                expand_variables(&mut expanded, &mut pat_exps, types, gen);
+                for (var, pat) in pat_exps {
+                    bindings.insert(var, pat.to_expr());
+                }
+                expanded
+            },
             _ => expr.clone(),
         },
         Expr::Function(_) => expr.clone(),
