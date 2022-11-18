@@ -279,81 +279,54 @@ fn instantiate_type_vars(
     }
 }
 
-/* Replace the type variables in the given type expression according to the
- * given mapping creating new mappings as necessary. */
-fn refresh_type_vars(
-    typ: &mut Type,
-    map: &mut HashMap<VariableId, VariableId>,
-    gen: &mut VarGen
-) {
-    match typ {
-        Type::Int | Type::Unit => {},
-        Type::Variable(var) => {
-            if let Some(target) = map.get(&var.id) {
-                var.id = *target;
-            } else {
-                map.insert(var.id, gen.generate_id());
-                var.id = map[&var.id];
-            }
-        },
-        Type::Function(a, b) | Type::Product(a, b) => {
-            refresh_type_vars(a, map, gen);
-            refresh_type_vars(b, map, gen);
-        },
-        Type::Forall(var, b) => {
-            let old = map.insert(var.id, var.id);
-            refresh_type_vars(b, map, gen);
-            if let Some(old) = old {
-                map.insert(var.id, old);
-            } else {
-                map.remove(&var.id);
-            }
-        },
-    }
-}
-
 /* Refresh all type variables occuring in the given expression that are not
  * already bound in the type environment. */
-pub fn refresh_expr_types(
+pub fn expand_expr_types(
     expr: &mut TExpr,
     types: &HashMap<VariableId, Type>,
     type_env: &HashMap<VariableId, VariableId>,
     gen: &mut VarGen,
 ) {
-    let mut expanded = expand_type(
+    let expanded = expand_type(
         expr.t.as_ref().expect("type inference must already be done"),
         types,
     );
-    //refresh_type_vars(&mut expanded, type_env, gen);
     expr.t = Some(expanded);
     match &mut expr.v {
         Expr::Sequence(exprs) => {
             for expr in exprs {
-                refresh_expr_types(expr, types, type_env, gen);
+                expand_expr_types(expr, types, type_env, gen);
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
         Expr::Product(expr1, expr2) => {
-            refresh_expr_types(expr1, types, type_env, gen);
-            refresh_expr_types(expr2, types, type_env, gen);
+            expand_expr_types(expr1, types, type_env, gen);
+            expand_expr_types(expr2, types, type_env, gen);
         },
         Expr::Match(matche) => {
-            refresh_expr_types(&mut matche.0, types, type_env, gen);
+            expand_expr_types(&mut matche.0, types, type_env, gen);
             for (_, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
-                refresh_expr_types(expr2, types, type_env, gen);
+                expand_expr_types(expr2, types, type_env, gen);
             }
         },
         Expr::Negate(expr) => {
-            refresh_expr_types(expr, types, type_env, gen);
+            expand_expr_types(expr, types, type_env, gen);
         },
-        Expr::Constant(_) | Expr::Unit | Expr::Variable(_) |
-        Expr::Intrinsic(_) => {},
-        Expr::Function(fun) => {
-            refresh_expr_types(&mut fun.body, types, type_env, gen);
+        Expr::Constant(_) | Expr::Unit | Expr::Variable(_) => {},
+        Expr::Intrinsic(Intrinsic { env, .. }) => {
+            for val in env.values_mut() {
+                expand_expr_types(val, types, type_env, gen);
+            }
+        },
+        Expr::Function(Function { body, env, .. }) => {
+            expand_expr_types(body, types, type_env, gen);
+            for val in env.values_mut() {
+                expand_expr_types(val, types, type_env, gen);
+            }
         },
         Expr::LetBinding(binding, expr) => {
-            refresh_expr_types(&mut binding.1, types, type_env, gen);
-            refresh_expr_types(expr, types, type_env, gen);
+            expand_expr_types(&mut binding.1, types, type_env, gen);
+            expand_expr_types(expr, types, type_env, gen);
         },
     }
 }
