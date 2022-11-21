@@ -338,7 +338,7 @@ fn evaluate_binding(
     let mut new_binding = Definition(LetBinding(binding.0.clone(), Box::new(val.clone())));
     let mut pat_exps = HashMap::new();
     expand_pattern_variables(&mut new_binding.0.0, &mut pat_exps, types, gen);
-    flattened.defs.push(new_binding);
+    flatten_binding(&new_binding.0.0, &new_binding.0.1, flattened);
     let mut new_bindings = HashMap::new();
     for (var, pat) in pat_exps {
         new_bindings.insert(var, pat.to_expr());
@@ -723,7 +723,7 @@ fn flatten_binding(
     match (&pat.v, &expr.v) {
         (Pat::Variable(_),
          Expr::Variable(_) | Expr::Constant(_) |
-         Expr::Infix(_, _, _) | Expr::Negate(_)) => {
+         Expr::Infix(_, _, _) | Expr::Negate(_) | Expr::Function(_)) => {
             flattened.defs.push(Definition(LetBinding(
                 pat.clone(),
                 Box::new(expr.clone()),
@@ -988,6 +988,7 @@ pub fn flatten_module_to_3ac(
             Pat::Variable(var) if !prover_defs.contains(&var.id) =>
                 flatten_def_to_3ac(def, flattened, gen),
             Pat::Variable(_) => { flattened.defs.push(def.clone()); },
+            Pat::Unit => {},
             _ => unreachable!("encountered unexpected pattern: {}", def.0.0)
         }
     }
@@ -1036,6 +1037,61 @@ pub fn flatten_module_to_3ac(
     }
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Copy, Clone, Debug)]
+enum Usage { Never, Witness, Constraint }
+
+/* Classify definitions according to whether they define a constraint (i.e
+ * corresponds to a gate in the circuit), are a witness (i.e. only used by the
+ * prover to generate witnesses), or are unused. */
+pub fn classify_defs(module: &Module, prover_defs: &mut HashSet<VariableId>) {
+    let mut classifier = HashMap::new();
+    // Start by assuming that all variables occuring in constraint expressions
+    // have constraint definitions.
+    for expr in &module.exprs {
+        let mut constraint_vars = HashMap::new();
+        collect_expr_variables(expr, &mut constraint_vars);
+        for var in constraint_vars.keys() {
+            classifier.insert(*var, Usage::Constraint);
+        }
+    }
+    for def in module.defs.iter().rev() {
+        if let Pat::Variable(var) = &def.0.0.v {
+            // Override the usage of this variable to witness if it is actually
+            // used and occurs in prover_defs
+            let val = classifier.entry(var.id).or_insert(Usage::Never);
+            if *val != Usage::Never && prover_defs.contains(&var.id) {
+                classifier.insert(var.id, Usage::Witness);
+            }
+            
+            if classifier[&var.id] == Usage::Witness {
+                // If this is a witness definition, then every variable on the
+                // right-hand-side at least has a witness definition
+                let mut vars = HashMap::new();
+                collect_expr_variables(&def.0.1, &mut vars);
+                for prover_var in vars.keys() {
+                    let val = *classifier.entry(*prover_var).or_insert(Usage::Never);
+                    classifier.insert(*prover_var, std::cmp::max(val, Usage::Witness));
+                }
+            } else if classifier[&var.id] == Usage::Constraint {
+                // If this is a constraint definition, then every variable on
+                // the right-hand-side at least has a constraint definition
+                let mut vars = HashMap::new();
+                collect_expr_variables(&def.0.1, &mut vars);
+                for constraint_var in vars {
+                    let val = *classifier.entry(constraint_var.0).or_insert(Usage::Never);
+                    classifier.insert(constraint_var.0, std::cmp::max(val, Usage::Constraint));
+                }
+            }
+        }
+    }
+    // Update prover_defs with our classification
+    for (var, usage) in classifier {
+        if usage == Usage::Witness {
+            prover_defs.insert(var);
+        }
+    }
+}
+
 /* Compile the given module down into three-address codes. */
 pub fn compile(mut module: Module) -> Module {
     let mut vg = VarGen::new();
@@ -1050,6 +1106,7 @@ pub fn compile(mut module: Module) -> Module {
     print_types(&module, &prog_types);
     let mut prover_defs = HashSet::new();
     let mut constraints = Module::default();
+    // Start generating arithmetic constraints
     evaluate_module(
         &module,
         &mut constraints,
@@ -1060,11 +1117,10 @@ pub fn compile(mut module: Module) -> Module {
     );
     // Unitize all function expressions
     unitize_module_functions(&mut constraints, &mut prog_types);
-    // Start generating arithmetic constraints
-    let mut module_flat = Module::default();
-    flatten_module(constraints, &mut module_flat);
+    // Classify each definition that occurs in the constraints
+    classify_defs(&mut constraints, &mut prover_defs);
     let mut module_3ac = Module::default();
-    flatten_module_to_3ac(&module_flat, &prover_defs, &mut module_3ac, &mut vg);
+    flatten_module_to_3ac(&constraints, &prover_defs, &mut module_3ac, &mut vg);
     // Start doing basic optimizations
     copy_propagate(&mut module_3ac, &prover_defs);
     eliminate_dead_equalities(&mut module_3ac);
@@ -1224,7 +1280,7 @@ fn register_fresh_intrinsic(
     // Register the range function in global namespace
     globals.insert("fresh".to_string(), fresh_func_id);
     // Describe the intrinsic's parameters and implementation
-    let mut fresh_intrinsic = Intrinsic::new(
+    let fresh_intrinsic = Intrinsic::new(
         vec![fresh_arg_pat],
         expand_fresh_intrinsic,
     );
@@ -1233,7 +1289,6 @@ fn register_fresh_intrinsic(
         Box::new(fresh_arg_type.clone()),
         Box::new(fresh_arg_type),
     );
-    fresh_intrinsic.provers.insert(fresh_arg_id);
     // Register the intrinsic descriptor with the global binding
     global_types.insert(fresh_func_id, imp_typ.clone());
     bindings.insert(
@@ -1247,29 +1302,14 @@ fn register_fresh_intrinsic(
  * the supplied expression. */
 fn expand_fresh_intrinsic(
     params: &Vec<TPat>,
-    bindings: &HashMap<VariableId, TExpr>,
+    _bindings: &HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
-    gen: &mut VarGen,
+    _gen: &mut VarGen,
 ) -> TExpr {
     match &params[..] {
-        [param] if matches!(param.v, Pat::Variable(param) if {
-            // Make a new prover definition that is equal to the argument
-            let fresh_arg = Variable::new(gen.generate_id());
-            prover_defs.insert(fresh_arg.id);
-            let val = bindings[&param.id].clone();
-            return TExpr {
-                t: val.t.clone(),
-                v: Expr::LetBinding(
-                    LetBinding(
-                        Pat::Variable(fresh_arg.clone()).type_pat(val.t.clone()),
-                        Box::new(val.clone()),
-                    ),
-                    Box::new(TExpr {
-                        t: val.t.clone(),
-                        v: Expr::Variable(fresh_arg)
-                    })
-                ),
-            }
+        [param] if matches!(param.v, Pat::Variable(param_var) if {
+            prover_defs.insert(param_var.id);
+            return param.to_expr();
         }) => unreachable!(),
         _ => panic!("unexpected parameters for fresh: {:?}", params),
     }
