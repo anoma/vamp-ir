@@ -26,15 +26,10 @@ fn refresh_expr_variables(
     gen: &mut VarGen,
 ) {
     match &mut expr.v {
-        Expr::Intrinsic(Intrinsic { params, provers, .. }) => {
+        Expr::Intrinsic(Intrinsic { params, .. }) => {
             let mut map = map.clone();
             for param in params.iter_mut() {
                 refresh_pattern_variables(param, &mut map, prover_defs, gen);
-            }
-            for (src, dest) in map {
-                if provers.contains(&src) {
-                    prover_defs.insert(dest);
-                }
             }
         },
         Expr::Sequence(exprs) => {

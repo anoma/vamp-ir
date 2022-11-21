@@ -689,7 +689,6 @@ pub struct Intrinsic {
     pub pos: usize,
     imp: IntrinsicImp,
     pub params: Vec<TPat>,
-    pub provers: HashSet<VariableId>,
     pub env: HashMap<VariableId, TExpr>,
 }
 
@@ -736,7 +735,6 @@ impl Intrinsic {
             imp,
             params,
             pos: 0,
-            provers: HashSet::new(),
             env: HashMap::new(),
         }
     }
