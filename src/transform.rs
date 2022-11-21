@@ -1166,7 +1166,7 @@ fn register_fresh_intrinsic(
     let fresh_arg_id = gen.generate_id();
     let fresh_arg = Variable::new(fresh_arg_id);
     let fresh_arg_type = Type::Variable(fresh_arg.clone());
-    let fresh_arg_pat = Pat::Variable(fresh_arg).type_pat(Some(fresh_arg_type.clone()));
+    let fresh_arg_pat = Pat::Variable(fresh_arg.clone()).type_pat(Some(fresh_arg_type.clone()));
     // Register the range function in global namespace
     globals.insert("fresh".to_string(), fresh_func_id);
     // Describe the intrinsic's parameters and implementation
@@ -1180,7 +1180,14 @@ fn register_fresh_intrinsic(
         Box::new(fresh_arg_type),
     );
     // Register the intrinsic descriptor with the global binding
-    global_types.insert(fresh_func_id, imp_typ.clone());
+    global_types.insert(
+        fresh_func_id,
+        Type::Forall(
+            fresh_arg,
+            Box::new(imp_typ.clone()),
+        ),
+    );
+    // Register this as a binding to contextualize evaluation
     bindings.insert(
         fresh_func_id,
         Expr::Intrinsic(fresh_intrinsic.clone())
