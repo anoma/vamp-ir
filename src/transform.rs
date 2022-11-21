@@ -771,74 +771,6 @@ fn flatten_equals(
     }
 }
 
-/* Flatten the given expression down into the set of constraints it defines. */
-fn flatten_expression(
-    expr: TExpr,
-    flattened: &mut Module,
-) -> TExpr {
-    match expr.v {
-        Expr::Sequence(seq) => {
-            let mut val = None;
-            for expr in seq {
-                val = Some(flatten_expression(expr, flattened));
-            }
-            val.expect("encountered empty sequence")
-        },
-        Expr::Infix(InfixOp::Equal, expr1, expr2) => {
-            let expr1 = flatten_expression(*expr1, flattened);
-            let expr2 = flatten_expression(*expr2, flattened);
-            flatten_equals(&expr1, &expr2, flattened);
-            Expr::Unit.type_expr(expr.t)
-        },
-        Expr::Infix(op, expr1, expr2) => {
-            let expr1 = flatten_expression(*expr1, flattened);
-            let expr2 = flatten_expression(*expr2, flattened);
-            Expr::Infix(op, Box::new(expr1), Box::new(expr2)).type_expr(expr.t)
-        },
-        Expr::Product(expr1, expr2) => {
-            Expr::Product(
-                Box::new(flatten_expression(*expr1, flattened)),
-                Box::new(flatten_expression(*expr2, flattened)),
-            ).type_expr(expr.t)
-        },
-        Expr::Negate(expr1) =>
-            Expr::Negate(Box::new(flatten_expression(*expr1, flattened)))
-            .type_expr(expr.t),
-        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit => expr,
-        Expr::LetBinding(binding, body) => {
-            let val = flatten_expression(*binding.1, flattened);
-            flatten_binding(&binding.0, &val, flattened);
-            flatten_expression(*body, flattened)
-        }
-        Expr::Function(_) | Expr::Application(_, _) | Expr::Intrinsic(_) |
-        Expr::Match(_) =>
-            unreachable!("functions and matches must already be inlined and eliminated"),
-    }
-}
-
-/* Flatten the given definition down into the set of constraints it defines. */
-fn flatten_definition(
-    def: Definition,
-    flattened: &mut Module,
-) {
-    let val = flatten_expression(*def.0.1, flattened);
-    flatten_binding(&def.0.0, &val, flattened);
-}
-
-/* Flatten the given module down into the set of constraints it defines. */
-pub fn flatten_module(
-    mut module: Module,
-    flattened: &mut Module,
-) {
-    for def in module.defs {
-        flatten_definition(def, flattened);
-    }
-    for expr in module.exprs {
-        flatten_expression(expr, flattened);
-    }
-    flattened.pubs.append(&mut module.pubs);
-}
-
 /* Make an equality expression to constrain the values that satify the circuit.
  * Simultaneously also make a variable definition to enable provers to generate
  * the necessary auxiliary variables. */
@@ -1038,7 +970,7 @@ enum Usage { Never, Witness, Constraint }
 /* Classify definitions according to whether they define a constraint (i.e
  * corresponds to a gate in the circuit), are a witness (i.e. only used by the
  * prover to generate witnesses), or are unused. */
-pub fn classify_defs(module: &Module, prover_defs: &mut HashSet<VariableId>) {
+pub fn classify_defs(module: &mut Module, prover_defs: &mut HashSet<VariableId>) {
     let mut classifier = HashMap::new();
     // Start by assuming that all variables occuring in constraint expressions
     // have constraint definitions.
@@ -1080,11 +1012,21 @@ pub fn classify_defs(module: &Module, prover_defs: &mut HashSet<VariableId>) {
         }
     }
     // Update prover_defs with our classification
-    for (var, usage) in classifier {
-        if usage == Usage::Witness {
-            prover_defs.insert(var);
+    for (var, usage) in &classifier {
+        if *usage == Usage::Witness {
+            prover_defs.insert(*var);
         }
     }
+    // Now eliminate those definitions that are never used
+    module.defs.retain(|def| {
+        if let Pat::Variable(v1) = &def.0.0.v {
+            classifier[&v1.id] != Usage::Never
+        } else if let Pat::Unit = &def.0.0.v {
+            false
+        } else {
+            panic!("only variable patterns should be present at this stage");
+        }
+    });
 }
 
 /* Compile the given module down into three-address codes. */
@@ -1119,7 +1061,6 @@ pub fn compile(mut module: Module) -> Module {
     // Start doing basic optimizations
     copy_propagate(&mut module_3ac, &prover_defs);
     eliminate_dead_equalities(&mut module_3ac);
-    eliminate_dead_definitions(&mut module_3ac);
     module_3ac
 }
 
@@ -1210,51 +1151,6 @@ pub fn eliminate_dead_equalities(module: &mut Module) {
             _ => {
                 true
             },
-        }
-    });
-}
-
-/* Eliminate those definitions that are not directly or indirectly used in the
- * moudle constraints. Achieve this by doing a breadth first search for
- * variables starting with those used in the module constraints. */
-pub fn eliminate_dead_definitions(module: &mut Module) {
-    // To ease the lookup of definitions by the variables they define
-    let mut defs = HashMap::new();
-    for def in &module.defs {
-        if let Pat::Variable(v1) = &def.0.0.v {
-            defs.insert(v1.id, &def.0.1);
-        } else {
-            panic!("only variable patterns should be present at this stage");
-        }
-    }
-    // The current set of variables being searched
-    let mut active_vars = HashMap::new();
-    for expr in &mut module.exprs {
-        collect_expr_variables(expr, &mut active_vars);
-    }
-    let mut explored = HashSet::new();
-    let mut next_vars = HashMap::new();
-    // Find the set of all the variables reachable from the current active set
-    while active_vars.len() > 0 {
-        // Collect the set of variables depended upon by the current active set
-        for (var, _) in active_vars.drain() {
-            if !explored.contains(&var) {
-                explored.insert(var);
-                if let Some(expr) = defs.get(&var) {
-                    collect_expr_variables(expr, &mut next_vars);
-                }
-            }
-        }
-        active_vars = next_vars;
-        next_vars = HashMap::new();
-    }
-    // Now eliminate those definitions that are not reachable from the
-    // constraint set
-    module.defs.retain(|def| {
-        if let Pat::Variable(v1) = &def.0.0.v {
-            explored.contains(&v1.id)
-        } else {
-            panic!("only variable patterns should be present at this stage");
         }
     });
 }
