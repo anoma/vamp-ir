@@ -760,32 +760,6 @@ pub fn expand_variables(
     }
 }
 
-/* Expand tuple variables occuring in given definition into tuples. */
-fn expand_def_variables(
-    def: &mut Definition,
-    map: &mut HashMap<VariableId, TPat>,
-    types: &mut HashMap<VariableId, Type>,
-    gen: &mut VarGen,
-) {
-    expand_variables(&mut *def.0.1, map, types, gen);
-    expand_pattern_variables(&mut def.0.0, map, types, gen);
-}
-
-/* Expand tuple variables occuring in given module into tuples. */
-pub fn expand_module_variables(
-    module: &mut Module,
-    types: &mut HashMap<VariableId, Type>,
-    gen: &mut VarGen,
-) {
-    let mut pattern_map = HashMap::new();
-    for def in &mut module.defs {
-        expand_def_variables(def, &mut pattern_map, types, gen);
-    }
-    for expr in &mut module.exprs {
-        expand_variables(expr, &mut pattern_map, types, gen);
-    }
-}
-
 /* Replace all the function types occurring in this type expression with units.
  */
 fn unitize_type_functions(
