@@ -1094,7 +1094,7 @@ pub fn compile(mut module: Module) -> Module {
     let mut bindings = HashMap::new();
     let mut prog_types = HashMap::new();
     let mut global_types = HashMap::new();
-    register_fresh_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut prog_types, &mut vg);
+    register_fresh_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
     infer_module_types(&mut module, &globals, &mut global_types, &mut prog_types, &mut vg);
     println!("** Inferring types...");
@@ -1264,7 +1264,6 @@ fn register_fresh_intrinsic(
     globals: &mut HashMap<String, VariableId>,
     global_types: &mut HashMap<VariableId, Type>,
     bindings: &mut HashMap<VariableId, TExpr>,
-    _types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
     let fresh_func_id = gen.generate_id();
