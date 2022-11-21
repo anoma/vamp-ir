@@ -160,7 +160,7 @@ where
         }
         // Start deriving witnesses
         for (var, value) in &mut self.variable_map {
-            let var_expr = Expr::Variable(crate::ast::Variable::new(*var)).into();
+            let var_expr = Expr::Variable(crate::ast::Variable::new(*var)).type_expr(None);
             *value = evaluate_expr(&var_expr, &mut definitions, &mut field_assigns);
         }
     }
