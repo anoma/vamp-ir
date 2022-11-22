@@ -41,7 +41,7 @@ fn refresh_expr_variables(
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             refresh_expr_variables(expr1, map, prover_defs, gen);
             refresh_expr_variables(expr2, map, prover_defs, gen);
         },
@@ -56,7 +56,7 @@ fn refresh_expr_variables(
         Expr::Negate(expr) => {
             refresh_expr_variables(expr, map, prover_defs, gen);
         },
-        Expr::Constant(_) | Expr::Unit => {},
+        Expr::Constant(_) | Expr::Unit | Expr::Nil => {},
         Expr::Variable(var) => {
             if let Some(id) = map.get(&var.id) {
                 var.id = *id;
@@ -102,7 +102,8 @@ fn match_pattern_expr(
             ext.insert(var.id, expr.clone());
             Tribool::True
         },
-        (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
+        (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) |
+        (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
             let inner_res1 = match_pattern_expr(pat1, expr1, env, ext, prover_defs, gen);
             let inner_res2 = match_pattern_expr(pat2, expr2, env, ext, prover_defs, gen);
             std::cmp::min(inner_res1, inner_res2)
@@ -121,7 +122,21 @@ fn match_pattern_expr(
             env.insert(var.id, Expr::Product(inner_expr1, inner_expr2).type_expr(Some(Type::Product(Box::new(typ1), Box::new(typ2)))));
             match_pattern_expr(pat, expr, env, ext, prover_defs, gen)
         },
-        (Pat::Unit, Expr::Unit) => Tribool::True,
+        (Pat::Cons(_, _), Expr::Variable(var)) => {
+            let new_var1 = Variable::new(gen.generate_id());
+            let new_var2 = Variable::new(gen.generate_id());
+            if prover_defs.contains(&var.id) {
+                prover_defs.insert(new_var1.id);
+                prover_defs.insert(new_var2.id);
+            }
+            let typ1 = Type::Variable(new_var1.clone());
+            let typ2 = Type::List(Box::new(typ1.clone()));
+            let inner_expr1 = Box::new(Expr::Variable(new_var1).type_expr(Some(typ1.clone())));
+            let inner_expr2 = Box::new(Expr::Variable(new_var2).type_expr(Some(typ2.clone())));
+            env.insert(var.id, Expr::Cons(inner_expr1, inner_expr2).type_expr(Some(typ2.clone())));
+            match_pattern_expr(pat, expr, env, ext, prover_defs, gen)
+        },
+        (Pat::Unit, Expr::Unit) | (Pat::Nil, Expr::Nil) => Tribool::True,
         (Pat::Constant(a), Expr::Constant(b)) if a == b =>
             Tribool::True,
         (Pat::Constant(a), Expr::Constant(b)) if a != b =>
@@ -148,7 +163,7 @@ fn refresh_pattern_variables(
             }
             var.id = map[&var.id];
         },
-        Pat::Product(pat1, pat2) => {
+        Pat::Product(pat1, pat2) | Pat::Cons(pat1, pat2) => {
             refresh_pattern_variables(pat1, map, prover_defs, gen);
             refresh_pattern_variables(pat2, map, prover_defs, gen);
         },
@@ -159,7 +174,7 @@ fn refresh_pattern_variables(
             }
             var.id = map[&var.id];
         },
-        Pat::Constant(_) | Pat::Unit => {},
+        Pat::Constant(_) | Pat::Unit | Pat::Nil => {},
     }
 }
 
@@ -178,7 +193,7 @@ fn number_pattern_variables(
                 map.insert(name.clone(), var.id);
             }
         },
-        Pat::Product(pat1, pat2) => {
+        Pat::Product(pat1, pat2) | Pat::Cons(pat1, pat2) => {
             number_pattern_variables(pat1, map, gen);
             number_pattern_variables(pat2, map, gen);
         },
@@ -188,7 +203,7 @@ fn number_pattern_variables(
                 map.insert(name.clone(), var.id);
             }
         },
-        Pat::Constant(_) | Pat::Unit => {},
+        Pat::Constant(_) | Pat::Unit | Pat::Nil => {},
     }
 }
 
@@ -236,14 +251,14 @@ fn number_expr_variables(
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             number_expr_variables(expr1, locals, globals, gen);
             number_expr_variables(expr2, locals, globals, gen);
         },
         Expr::Negate(expr) => {
             number_expr_variables(expr, locals, globals, gen);
         },
-        Expr::Constant(_) | Expr::Unit => {},
+        Expr::Constant(_) | Expr::Unit | Expr::Nil => {},
         Expr::Variable(var) => {
             number_variable(var, locals, globals, gen);
         },
@@ -386,12 +401,12 @@ fn capture_env(val: &mut TExpr, new_bindings: HashMap<VariableId, TExpr>) {
                 intr.env.entry(k).or_insert(v);
             }
         },
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             capture_env(expr1, new_bindings.clone());
             capture_env(expr2, new_bindings);
         },
         Expr::Unit | Expr::Infix(_, _, _) | Expr::Negate(_) |
-        Expr::Constant(_) | Expr::Variable(_) => {},
+        Expr::Constant(_) | Expr::Variable(_) | Expr::Nil => {},
         Expr::Application(_, _) | Expr::Sequence(_) | Expr::LetBinding(_, _) |
         Expr::Match(_) => {
             panic!("encountered expression {} after evaluation", val)
@@ -575,6 +590,11 @@ fn evaluate(
             let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, field_ops, gen);
             Expr::Product(Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone())
         },
+        Expr::Cons(expr1, expr2) => {
+            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, field_ops, gen);
+            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, field_ops, gen);
+            Expr::Cons(Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone())
+        },
         Expr::Infix(InfixOp::Equal, expr1, expr2) => {
             let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, field_ops, gen);
             let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, field_ops, gen);
@@ -662,7 +682,7 @@ fn evaluate(
         },
         Expr::Constant(c) =>
             Expr::Constant(field_ops.canonical(c.clone())).type_expr(expr.t.clone()),
-        Expr::Unit => expr.clone(),
+        Expr::Unit | Expr::Nil => expr.clone(),
         Expr::Variable(var) => match bindings.get(&var.id) {
             Some(val) if !prover_defs.contains(&var.id) => val.clone(),
             _ if !prover_defs.contains(&var.id) => {
@@ -782,11 +802,11 @@ pub fn collect_pattern_variables(
             map.insert(var.id, var.clone());
             collect_pattern_variables(pat, map);
         },
-        Pat::Product(pat1, pat2) => {
+        Pat::Product(pat1, pat2) | Pat::Cons(pat1, pat2) => {
             collect_pattern_variables(pat1, map);
             collect_pattern_variables(pat2, map);
         },
-        Pat::Constant(_) | Pat::Unit => {}
+        Pat::Constant(_) | Pat::Unit | Pat::Nil => {}
     }
 }
 
@@ -810,7 +830,7 @@ fn collect_expr_variables(
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             collect_expr_variables(expr1, map);
             collect_expr_variables(expr2, map);
         },
@@ -835,7 +855,7 @@ fn collect_expr_variables(
                 collect_expr_variables(expr2, map);
             }
         },
-        Expr::Constant(_) | Expr::Unit => {},
+        Expr::Constant(_) | Expr::Unit | Expr::Nil => {},
     }
 }
 
@@ -1199,7 +1219,7 @@ pub fn copy_propagate_expr(
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             copy_propagate_expr(expr1, substitutions);
             copy_propagate_expr(expr2, substitutions);
         },
@@ -1217,7 +1237,7 @@ pub fn copy_propagate_expr(
             }
         },
         Expr::Intrinsic(_) | Expr::Constant(_) | Expr::Variable(_) |
-        Expr::Unit => {},
+        Expr::Unit | Expr::Nil => {},
     }
 }
 

@@ -18,13 +18,15 @@ hexadecimal = @{ '0'..'9' | 'a'..'f' | 'A'..'F' }
 
 integerLiteral = @{ "0x" ~ hexadecimal+ | "0o" ~ octal+ | "0b" ~ binary+ | ASCII_DIGIT+ }
 
-constant = { integerLiteral | "(" ~ ")" }
+constant = { integerLiteral | "(" ~ ")" | "[" ~ "]" }
 
 pattern = { pattern1 ~ ( "as" ~ valueName )* }
 
 pattern1 = { pattern2 ~ ( "," ~ pattern2 )* }
 
-pattern2 = { valueName | constant | "(" ~ pattern ~ ")" }
+pattern2 = { pattern3 ~ ( ":" ~ pattern3 )* }
+
+pattern3 = { valueName | constant | "(" ~ pattern ~ ")" }
 
 letBinding = { pattern ~ "=" ~ expr | valueName ~ pattern* ~ "=" ~ expr }
 
@@ -36,17 +38,19 @@ expr2 = { expr3 ~ ( "," ~ expr3 )* }
 
 expr3 = { expr4 ~ ( &"=" ~ infixOp ~ expr4 )* }
 
-expr4 = { expr5 ~ ( &("+" | "-") ~ infixOp ~ expr5 )* }
+expr4 = { expr5 ~ ( ":" ~ expr5 )* }
 
-expr5 = { expr6 ~ ( &("*" | "/" | "\\" | "%") ~ infixOp ~ expr6 )* }
+expr5 = { expr6 ~ ( &("+" | "-") ~ infixOp ~ expr6 )* }
 
-expr6 = { expr7 ~ ( &"^" ~ infixOp ~ expr7 )* }
+expr6 = { expr7 ~ ( &("*" | "/" | "\\" | "%") ~ infixOp ~ expr7 )* }
 
-expr7 = { "(" ~ negate+ ~ expr8 ~ ")" | expr8 }
+expr7 = { expr8 ~ ( &"^" ~ infixOp ~ expr8 )* }
 
-expr8 = { expr9+ }
+expr8 = { "(" ~ negate+ ~ expr9 ~ ")" | expr9 }
 
-expr9 = { "(" ~ expr ~ ")" | valueName | constant | &"fun" ~ expr | &"def" ~ expr }
+expr9 = { expr10+ }
+
+expr10 = { "(" ~ expr ~ ")" | valueName | constant | &"fun" ~ expr | &"def" ~ expr }
 
 function = { "fun" ~ pattern+ ~ &"{" ~ expr }
 
