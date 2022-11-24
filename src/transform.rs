@@ -328,17 +328,23 @@ fn evaluate_binding(
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) -> HashMap<VariableId, TExpr> {
+    // Evaluate the binding expression in the current environment
     let mut val = evaluate(&*binding.1, flattened, bindings, types, prover_defs, gen);
+    // Allow binding value to carry around its own context
     capture_env(&mut val, capture);
+    // Now make a let binding for the expanded value whilst making sure that the
+    // pattern is fully expanded
     let mut new_binding = Definition(LetBinding(binding.0.clone(), Box::new(val.clone())));
     let mut pat_exps = HashMap::new();
     expand_pattern_variables(&mut new_binding.0.0, &mut pat_exps, types, gen);
+    // Now decompose the let-binding into a flattened form
     flatten_binding(&new_binding.0.0, &new_binding.0.1, flattened);
+    // Now expand the environment to reflect the binding that has been effected
     let mut new_bindings = HashMap::new();
     for (var, pat) in pat_exps {
         new_bindings.insert(var, pat.to_expr());
     }
-    match_pattern_expr(&binding.0, &val, bindings, &mut new_bindings, prover_defs, gen);
+    match_pattern_expr(&new_binding.0.0, &val, bindings, &mut new_bindings, prover_defs, gen);
     new_bindings
 }
 
@@ -385,11 +391,14 @@ fn evaluate(
         Expr::Application(expr1, expr2) => {
             let mut expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
             refresh_expr_variables(&mut expr1, &HashMap::new(), prover_defs, gen);
-            match &expr1.v {
+            match &mut expr1.v {
                 Expr::Intrinsic(intr) => {
-                    let mut intr = intr.clone();
+                    // Now that the current parameter is filled, move onto the
+                    // next position
                     let param1 = intr.params[intr.pos].clone();
                     intr.pos += 1;
+                    // The specific binding that needs to be added to
+                    // environment
                     let new_bind = LetBinding(param1, Box::new(*expr2.clone()));
                     // Make sure that the argument's environment does not get
                     // overriden by that of the function by producing
@@ -401,15 +410,31 @@ fn evaluate(
                         }
                     }
                     let mut inserts = Some(HashSet::new());
-                    unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), types, &mut inserts);
-
+                    // Specialize the expression types inside the function to
+                    // correspond to applied argument
+                    unify_types(
+                        pat_type_var(&new_bind.0),
+                        expr_type_var(&new_bind.1),
+                        types,
+                        &mut inserts,
+                    );
                     // Setup the environment in which to evaluate body
                     let new_bindings = evaluate_binding(&new_bind, implicit_env, flattened, bindings, types, prover_defs, gen);
+                    // Apply the new environment to the body
                     intr.env.extend(new_bindings.clone());
-                    let new_body = Expr::Intrinsic(intr).type_expr(expr.t.clone());
-                    let mut val = evaluate(&new_body, flattened, bindings, types, prover_defs, gen);
+                    // Modify function type to account for the partial
+                    // application that has just happened
+                    expr1.t = expr.t.clone();
+                    // Finally evaluate the body
+                    let mut val = evaluate(&expr1, flattened, bindings, types, prover_defs, gen);
+                    // Enable closures by storing the required environment
+                    // modifications inside the evaluation result
                     capture_env(&mut val, new_bindings);
+                    // We are currently in a temporary type-environment which
+                    // has extra unifications, so expand out all types so that
+                    // we no longer depend on this environment
                     expand_expr_types(&mut val, &types, &HashMap::new(), gen);
+                    // Finally despecialize the function expression types
                     for bind in inserts.unwrap() { types.remove(&bind); }
                     val
                 },
@@ -417,8 +442,11 @@ fn evaluate(
                     unreachable!("functions should have at least one parameter");
                 },
                 Expr::Function(fun) => {
-                    let mut fun = fun.clone();
+                    // Now that we have an assignment, move the function
+                    // parameter into the environment
                     let param1 = fun.params.remove(0);
+                    // The specific binding that needs to be added to
+                    // environment
                     let new_bind = LetBinding(param1, Box::new(*expr2.clone()));
                     // Make sure that the argument's environment does not get
                     // overriden by that of the function by producing
@@ -430,15 +458,39 @@ fn evaluate(
                         }
                     }
                     let mut inserts = Some(HashSet::new());
-                    unify_types(pat_type_var(&new_bind.0), expr_type_var(&new_bind.1), types, &mut inserts);
-
+                    // Specialize the expression types inside the function to
+                    // correspond to applied argument
+                    unify_types(
+                        pat_type_var(&new_bind.0),
+                        expr_type_var(&new_bind.1),
+                        types,
+                        &mut inserts,
+                    );
                     // Setup the environment in which to evaluate body
-                    let new_bindings = evaluate_binding(&new_bind, implicit_env, flattened, bindings, types, prover_defs, gen);
+                    let new_bindings = evaluate_binding(
+                        &new_bind,
+                        implicit_env,
+                        flattened,
+                        bindings,
+                        types,
+                        prover_defs,
+                        gen,
+                    );
+                    // Apply the new environment to the body
                     fun.env.extend(new_bindings.clone());
-                    let new_body = Expr::Function(fun).type_expr(expr.t.clone());
-                    let mut val = evaluate(&new_body, flattened, bindings, types, prover_defs, gen);
+                    // Modify function type to account for the partial
+                    // application that has just happened
+                    expr1.t = expr.t.clone();
+                    // Finally evaluate the body
+                    let mut val = evaluate(&expr1, flattened, bindings, types, prover_defs, gen);
+                    // Enable closures by storing the required environment
+                    // modifications inside the evaluation result
                     capture_env(&mut val, new_bindings);
+                    // We are currently in a temporary type-environment which
+                    // has extra unifications, so expand out all types so that
+                    // we no longer depend on this environment
                     expand_expr_types(&mut val, &types, &HashMap::new(), gen);
+                    // Finally despecialize the function expression types
                     for bind in inserts.unwrap() { types.remove(&bind); }
                     val
                 },
@@ -447,15 +499,44 @@ fn evaluate(
                 },
             }
         },
-        Expr::LetBinding(binding, body) => {
-            let new_bindings =
-                evaluate_binding(binding, HashMap::new(), flattened, bindings, types, prover_defs, gen);
-            let mut new_bindings = new_bindings.into_iter().map(|(k, v)| (k, Some(v))).collect();
-            exchange_map(bindings, &mut new_bindings);
-            let mut val = evaluate(&body, flattened, bindings, types, prover_defs, gen);
-            exchange_map(bindings, &mut new_bindings);
-            let new_bindings = new_bindings.into_iter().map(|(k, v)| (k, v.unwrap())).collect();
-            capture_env(&mut val, new_bindings);
+        Expr::LetBinding(_, _) => {
+            let mut acc_bindings = HashMap::new();
+            let mut expr = expr;
+            // Instead of recursively evaluating let-bindings, iteratively
+            // evaluate them to reduce stack usage.
+            while let Expr::LetBinding(binding, body) = &expr.v {
+                // Evaluate binding expression and get new bindings
+                let new_bindings =
+                    evaluate_binding(binding, HashMap::new(), flattened, bindings, types, prover_defs, gen);
+                let mut new_bindings = new_bindings.into_iter().map(|(k, v)| (k, Some(v))).collect();
+                // Insert new bindings into environment and get old bindings
+                exchange_map(bindings, &mut new_bindings);
+                // Store the old bindings, prioritizing the oldest bindings
+                for (k, v) in new_bindings {
+                    acc_bindings.entry(k).or_insert(v);
+                }
+                // Now move onto the body expression
+                if let Expr::Sequence(seq) = &body.v {
+                    // Iteratively evaluate a sequence expression here in order
+                    // to avoid leaving this call frame
+                    for expr in &seq[0..seq.len()-1] {
+                        evaluate(expr, flattened, bindings, types, prover_defs, gen);
+                    }
+                    // Hence the let's body is now effectively this sequence's
+                    // last expression
+                    expr = seq.last().unwrap();
+                } else {
+                    expr = body;
+                }
+            }
+            // Now evaluate the inner-most body
+            let mut val = evaluate(expr, flattened, bindings, types, prover_defs, gen);
+            // Now restore the old environment before this entire let expression
+            exchange_map(bindings, &mut acc_bindings);
+            let acc_bindings = acc_bindings.into_iter().map(|(k, v)| (k, v.unwrap())).collect();
+            // Capture the environment modifications required to evaluate body
+            // inside the body. Necessary for closures.
+            capture_env(&mut val, acc_bindings);
             val
         },
         Expr::Sequence(seq) => {
@@ -576,6 +657,7 @@ pub fn evaluate_module(
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
 ) {
+    flattened.pubs.extend(module.pubs.clone());
     for def in &module.defs {
         evaluate_def(def, flattened, bindings, types, prover_defs, gen);
     }
