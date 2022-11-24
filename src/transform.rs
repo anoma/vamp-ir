@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use crate::typecheck::{infer_module_types, print_types, unitize_module_functions, expand_pattern_variables, expand_variables, unify_types, pat_type_var, expr_type_var, expand_expr_types, Type};
+use crate::typecheck::{infer_module_types, print_types, unitize_module_functions, expand_pattern_variables, unify_types, pat_type_var, expr_type_var, expand_expr_types, Type};
 use crate::ast::{Module, Definition, TExpr, Pat, TPat, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function};
 use std::hash::Hash;
 
@@ -351,7 +351,7 @@ fn evaluate_binding(
     // pattern is fully expanded
     let mut new_binding = Definition(LetBinding(binding.0.clone(), Box::new(val)));
     let mut pat_exps = HashMap::new();
-    expand_pattern_variables(&mut new_binding.0.0, &mut pat_exps, types, gen);
+    expand_pattern_variables(&mut new_binding.0.0, &new_binding.0.1, &mut pat_exps, types, gen);
     // Now decompose the let-binding into a flattened form
     flatten_binding(&new_binding.0.0, &new_binding.0.1, flattened);
     // Now expand the environment to reflect the binding that has been effected
@@ -600,15 +600,6 @@ fn evaluate(
         Expr::Constant(_) | Expr::Unit | Expr::Nil => expr.clone(),
         Expr::Variable(var) => match bindings.get(&var.id) {
             Some(val) if !prover_defs.contains(&var.id) => val.clone(),
-            _ if !prover_defs.contains(&var.id) => {
-                let mut pat_exps = HashMap::new();
-                let mut expanded = expr.clone();
-                expand_variables(&mut expanded, &mut pat_exps, types, gen);
-                for (var, pat) in pat_exps {
-                    bindings.insert(var, pat.to_expr());
-                }
-                expanded
-            },
             _ => expr.clone(),
         },
         Expr::Function(Function { params, body, env, .. }) if params.len() == 0 => {
@@ -845,11 +836,15 @@ fn flatten_binding(
         (Pat::As(pat, _name), _) => {
             flatten_binding(pat, expr, flattened);
         },
-        (Pat::Unit, Expr::Unit) => {},
+        (Pat::Unit, Expr::Unit) | (Pat::Nil, Expr::Nil) => {},
         (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
             flatten_binding(pat1, expr1, flattened);
             flatten_binding(pat2, expr2, flattened);
-        }
+        },
+        (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
+            flatten_binding(pat1, expr1, flattened);
+            flatten_binding(pat2, expr2, flattened);
+        },
         _ => unreachable!("encountered unexpected binding: {} = {}", pat, expr),
     }
 }
@@ -1146,6 +1141,7 @@ pub fn compile(mut module: Module) -> Module {
     let mut prog_types = HashMap::new();
     let mut global_types = HashMap::new();
     register_fresh_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
+    register_iter_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
     infer_module_types(&mut module, &globals, &mut global_types, &mut prog_types, &mut vg);
     println!("** Inferring types...");
@@ -1275,7 +1271,8 @@ fn register_fresh_intrinsic(
     let fresh_arg_id = gen.generate_id();
     let fresh_arg = Variable::new(fresh_arg_id);
     let fresh_arg_type = Type::Variable(fresh_arg.clone());
-    let fresh_arg_pat = Pat::Variable(fresh_arg.clone()).type_pat(Some(fresh_arg_type.clone()));
+    let fresh_arg_pat = Pat::Variable(fresh_arg.clone())
+        .type_pat(Some(fresh_arg_type.clone()));
     // Register the range function in global namespace
     globals.insert("fresh".to_string(), fresh_func_id);
     // Describe the intrinsic's parameters and implementation
@@ -1318,5 +1315,107 @@ fn expand_fresh_intrinsic(
             return param.to_expr();
         }) => unreachable!(),
         _ => panic!("unexpected parameters for fresh: {:?}", params),
+    }
+}
+
+/* Register the iter intrinsic in the compilation environment. */
+fn register_iter_intrinsic(
+    globals: &mut HashMap<String, VariableId>,
+    global_types: &mut HashMap<VariableId, Type>,
+    bindings: &mut HashMap<VariableId, TExpr>,
+    gen: &mut VarGen,
+) {
+    let iter_id = gen.generate_id();
+    let iter_arg = Variable::new(gen.generate_id());
+    let iter_arg_pat = Pat::Variable(iter_arg.clone())
+        .type_pat(Some(Type::Int));
+    let iter_func_arg = Variable::new(gen.generate_id());
+    let iter_func = Type::Function(
+        Box::new(Type::Variable(iter_func_arg.clone())),
+        Box::new(Type::Variable(iter_func_arg.clone())),
+    );
+    // Register the iter function in global namespace
+    globals.insert("iter".to_string(), iter_id);
+    // Describe the intrinsic's type, arity, and implementation
+    let iter_intrinsic = Intrinsic::new(
+        vec![iter_arg_pat],
+        expand_iter_intrinsic,
+    );
+    let imp_typ = Type::Function(
+        Box::new(Type::Int),
+        Box::new(Type::Function(
+            Box::new(iter_func.clone()),
+            Box::new(iter_func)
+        )),
+    );
+    // Register the intrinsic descriptor with the global binding
+    global_types.insert(
+        iter_id,
+        Type::Forall(
+            iter_func_arg,
+            Box::new(imp_typ.clone()),
+        ),
+    );
+    // Register the intrinsic descriptor with the global binding
+    bindings.insert(
+        iter_id,
+        Expr::Intrinsic(iter_intrinsic)
+            .type_expr(Some(imp_typ)),
+    );
+}
+
+/* iter x returns the Church numeral corresponding to the given integer x. */
+fn expand_iter_intrinsic(
+    params: &Vec<TPat>,
+    bindings: &HashMap<VariableId, TExpr>,
+    _prover_defs: &mut HashSet<VariableId>,
+    gen: &mut VarGen,
+) -> TExpr {
+    match &params[..] {
+        [TPat { v: Pat::Variable(param_var), .. }] => {
+            let iter_arg = Variable::new(gen.generate_id());
+            let iter_arg_typ = Type::Variable(iter_arg.clone());
+            let iter_func_var = Variable::new(gen.generate_id());
+            let iter_func = TExpr {
+                v: Expr::Variable(iter_func_var.clone()),
+                t: Some(Type::Function(
+                    Box::new(iter_arg_typ.clone()),
+                    Box::new(iter_arg_typ.clone()),
+                ))
+            };
+            let mut body = TExpr {
+                v: Expr::Variable(iter_arg.clone()),
+                t: Some(Type::Variable(iter_arg.clone()))
+            };
+            let val = if let Expr::Constant(c) = bindings[&param_var.id].v {
+                c
+            } else {
+                panic!("only constant arguments to iter supported")
+            };
+            for _ in 0..val {
+                body = TExpr {
+                    v: Expr::Application(
+                        Box::new(iter_func.clone()),
+                        Box::new(body.clone()),
+                    ),
+                    t: body.t,
+                };
+            }
+            TExpr {
+                t: Some(Type::Function(
+                    Box::new(iter_func.t.clone().unwrap()),
+                    Box::new(iter_func.t.clone().unwrap()),
+                )),
+                v: Expr::Function(Function {
+                    params: vec![
+                        Pat::Variable(iter_func_var).type_pat(iter_func.t),
+                        Pat::Variable(iter_arg).type_pat(Some(iter_arg_typ)),
+                    ],
+                    body: Box::new(body),
+                    env: HashMap::new(),
+                }),
+            }
+        },
+        _ => panic!("unexpected arguments to iter: {:?}", params),
     }
 }
