@@ -334,7 +334,7 @@ fn evaluate_binding(
     capture_env(&mut val, capture);
     // Now make a let binding for the expanded value whilst making sure that the
     // pattern is fully expanded
-    let mut new_binding = Definition(LetBinding(binding.0.clone(), Box::new(val.clone())));
+    let mut new_binding = Definition(LetBinding(binding.0.clone(), Box::new(val)));
     let mut pat_exps = HashMap::new();
     expand_pattern_variables(&mut new_binding.0.0, &mut pat_exps, types, gen);
     // Now decompose the let-binding into a flattened form
@@ -344,7 +344,14 @@ fn evaluate_binding(
     for (var, pat) in pat_exps {
         new_bindings.insert(var, pat.to_expr());
     }
-    match_pattern_expr(&new_binding.0.0, &val, bindings, &mut new_bindings, prover_defs, gen);
+    match_pattern_expr(
+        &new_binding.0.0,
+        &new_binding.0.1,
+        bindings,
+        &mut new_bindings,
+        prover_defs,
+        gen,
+    );
     new_bindings
 }
 
