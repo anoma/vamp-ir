@@ -6,7 +6,7 @@ extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 use std::fs;
-use crate::ast::{Module, VariableId, Pat};
+use crate::ast::{Module, VariableId, Pat, parse_prefixed_num};
 use crate::transform::{compile, collect_module_variables};
 use ark_bls12_381::{Bls12_381, Fr as BlsScalar};
 use ark_ed_on_bls12_381::EdwardsParameters as JubJubParameters;
@@ -18,7 +18,7 @@ use plonk::error::to_pc_error;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use plonk_core::prelude::VerifierData;
-use crate::synth::PlonkModule;
+use crate::synth::{PlonkModule, make_constant};
 use plonk_core::circuit::Circuit;
 use ark_ff::PrimeField;
 use std::fs::File;
@@ -184,12 +184,9 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
         std::io::stdin()
             .read_line(&mut input_line)
             .expect("failed to read input");
-        let x: F = if let Ok(x) = input_line.trim().parse() {
-            x
-        } else {
-            panic!("input not an integer");
-        };
-        var_assignments.insert(id, x);
+        let x = parse_prefixed_num(input_line.trim())
+            .expect("input not an integer");
+        var_assignments.insert(id, make_constant(&x));
     }
     var_assignments
 }
