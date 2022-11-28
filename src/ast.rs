@@ -5,6 +5,7 @@ use crate::typecheck::Type;
 use crate::pest::Parser;
 use bincode::{Encode, Decode};
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use crate::transform::VarGen;
 use num_bigint::BigInt;
 use num_traits::Num;
@@ -79,7 +80,7 @@ impl fmt::Display for Module {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq)]
 pub struct Definition(pub LetBinding);
 
 impl Definition {
@@ -98,7 +99,7 @@ impl fmt::Display for Definition {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct LetBinding(pub TPat, pub Box<TExpr>);
 
 impl LetBinding {
@@ -186,7 +187,7 @@ impl bincode::Decode for BigIntBincode {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Pat {
     Unit,
     As(Box<TPat>, Variable),
@@ -195,10 +196,16 @@ pub enum Pat {
     Constant(BigInt),
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Eq, Hash)]
 pub struct TPat {
     pub v: Pat,
     pub t: Option<Type>,
+}
+
+impl PartialEq for TPat {
+    fn eq(&self, other: &Self) -> bool {
+        self.v == other.v
+    }
 }
 
 impl Pat {
@@ -370,13 +377,19 @@ impl :: bincode :: Decode for Pat
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Eq, Hash)]
 pub struct TExpr {
     pub v: Expr,
     pub t: Option<Type>,
 }
 
-#[derive(Debug, Clone)]
+impl PartialEq for TExpr {
+    fn eq(&self, other: &Self) -> bool {
+        self.v == other.v
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Expr {
     Unit,
     Sequence(Vec<TExpr>),
@@ -780,7 +793,7 @@ impl fmt::Display for TExpr {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq, Hash)]
 pub struct Match(pub Box<TExpr>, pub Vec<TPat>, pub Vec<TExpr>);
 
 impl fmt::Display for Match {
@@ -801,7 +814,7 @@ impl fmt::Display for Match {
     }
 }
 
-#[derive(Debug, Clone, Copy, Encode, Decode, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Encode, Decode, Eq, PartialEq, Hash)]
 pub enum InfixOp {
     Divide,
     Multiply,
@@ -847,7 +860,7 @@ impl fmt::Display for InfixOp {
 
 pub type VariableId = u32;
 
-#[derive(Clone, Debug, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode, Eq, Hash)]
 pub struct Variable {
     pub name: Option<String>,
     pub id: VariableId,
@@ -874,11 +887,25 @@ impl fmt::Display for Variable {
     }
 }
 
-#[derive(Debug, Clone, Encode, Decode)]
+impl PartialEq for Variable {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+#[derive(Debug, Clone, Encode, Decode, PartialEq, Eq)]
 pub struct Function {
     pub params: Vec<TPat>,
     pub body: Box<TExpr>,
     pub env: HashMap<VariableId, TExpr>,
+}
+
+impl Hash for Function {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.params.hash(state);
+        self.body.hash(state);
+        self.env.keys().collect::<Vec<_>>().sort().hash(state);
+    }
 }
 
 impl Function {
@@ -930,6 +957,26 @@ pub struct Intrinsic {
     imp: IntrinsicImp,
     pub params: Vec<TPat>,
     pub env: HashMap<VariableId, TExpr>,
+}
+
+impl PartialEq for Intrinsic {
+    fn eq(&self, other: &Self) -> bool {
+        self.pos == other.pos &&
+        self.imp as usize == other.imp as usize &&
+        self.params == other.params &&
+        self.env == other.env
+    }
+}
+
+impl Eq for Intrinsic {}
+
+impl Hash for Intrinsic {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.pos.hash(state);
+        (self.imp as usize).hash(state);
+        self.params.hash(state);
+        self.env.keys().collect::<Vec<_>>().sort().hash(state);
+    }
 }
 
 impl bincode::Encode for Intrinsic {
