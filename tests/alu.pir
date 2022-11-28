@@ -22,6 +22,14 @@ def append_ind append (h:t) lst = h:(append t lst);
 
 def append n = iter n append_ind append_base;
 
+// Take the given prefix of a given list
+
+def take_base lst = [];
+
+def take_ind take (h:t) = h:(take t);
+
+def take n = iter n take_ind take_base;
+
 // Ensure that the given argument is 1 or 0, and returns it
 
 def bool x = { x*(x-1) = 0; x };
@@ -122,74 +130,81 @@ def c7 f x = f (c6 f x);
 
 // Arithmetic shift right for 8 bit values
 
-def ashr8 x = {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range 8 x;
-    combine 8 (a1:a2:a3:a4:a5:a6:a7:a7:[])
+def ashr n x = {
+    def a = range n x;
+    def msb = nth a (n-1);
+    def new_bits = append (n-1) (tl a) (msb:[]);
+    combine n new_bits
 };
 
 // Logical shift right for 8 bit values
 
-def lshr8 x = {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range 8 x;
-    combine 8 (a1:a2:a3:a4:a5:a6:a7:0:[])
+def lshr n x = {
+    def a = range n x;
+    def new_bits = append (n-1) (tl a) (0:[]);
+    combine n new_bits
 };
 
 // Shift left for 8 bit values
 
-def shl8 x = {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range 8 x;
-    combine 8 (0:a0:a1:a2:a3:a4:a5:a6:[])
+def shl n x = {
+    def a = range n x;
+    combine n (0:(take (n-1) a))
 };
 
 // Rotate right for 8 bit values
 
-def ror8 x = {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range 8 x;
-    combine 8 (a1:a2:a3:a4:a5:a6:a7:a0:[])
+def ror n x = {
+    def a = range n x;
+    def msb = hd a;
+    def new_bits = append (n-1) (tl a) (msb:[]);
+    combine n new_bits
 };
 
 // Rotate left for 8 bit values
 
-def rol8 x = {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:ar) = range 8 x;
-    combine 8 (a7:a0:a1:a2:a3:a4:a5:a6:[])
+def rol n x = {
+    def a = range n x;
+    def lsb = nth a (n-1);
+    def msbs = take (n-1) a;
+    combine n (lsb:msbs)
 };
 
-// Add two 8-bit values modulo 8
+// Add two 8-bit values modulo 2^8
 
-def add8 a b = {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:a8:ar) = range 9 (a+b);
-    combine 8 (a0:a1:a2:a3:a4:a5:a6:a7:[])
+def add n a b = {
+    def a = range (n+1) (a+b);
+    combine n (take n a)
 };
 
 // Subtract two 8-bit values modulo 8
 
-def sub8 a b = {
-    def (a0:a1:a2:a3:a4:a5:a6:a7:a8:ar) = range 9 (a+256-b);
-    combine 8 (a0:a1:a2:a3:a4:a5:a6:a7:[])
+def sub n a b = {
+    def a = range (n+1) (a+(2^n)-b);
+    combine n (take n a)
 };
 
 // Unsigned less than or equal to for 8 bits. 1 if true, 0 otherwise
 
-def ule8 a b = {
-    def (c0:c1:c2:c3:c4:c5:c6:c7:c8:ar) = range 9 (256+b-a);
-    c8
+def ule n a b = {
+    def c = range (n+1) ((2^n)+b-a);
+    nth c n
 };
 
 // Unsigned less than for 8 bits
 
-def ult8 a b = ule8 a (b-1);
+def ult n a b = ule n a (b-1);
 
 // Signed less than or equal to for 8 bits
 
-def slt8 a b = {
-    def (c0:c1:c2:c3:c4:c5:c6:c7:c8:ar) = range 9 (a+256-b);
-    c7
+def slt n a b = {
+    def c = range (n+1) (a+(2^n)-b);
+    nth c (n-1)
 };
 
 // Signed less than for 8 bits
 
-def sle8 a b = slt8 a (b+1);
+def sle n a b = slt n a (b+1);
 
 // Extract the first element of any supplied pair
 
@@ -205,13 +220,13 @@ def divrem a3 b0 = {
     def b1 = b0*2;
     def b2 = b1*2;
     def b3 = b2*2;
-    def c3 = ult8 b3 a3;
+    def c3 = ult 8 b3 a3;
     def a2 = a3 - c3*b3;
-    def c2 = ult8 b2 a2;
+    def c2 = ult 8 b2 a2;
     def a1 = a2 - c2*b2;
-    def c1 = ult8 b1 a1;
+    def c1 = ult 8 b1 a1;
     def a0 = a1 - c1*b1;
-    def c0 = ult8 b0 a0;
+    def c0 = ult 8 b0 a0;
     def rem = a0 - c0*b0;
     (combine 8 (c0:c1:c2:c3:0:0:0:0:[]), rem)
 };
@@ -226,17 +241,17 @@ def rem a b = snd (divrem a b);
 
 254 = not 8 1;
 
-1 = ult8 2 3;
+1 = ult 8 2 3;
 
-1 = ult8 2 255;
+1 = ult 8 2 255;
 
-1 = ult8 0 255;
+1 = ult 8 0 255;
 
-1 = slt8 255 0;
+1 = slt 8 255 0;
 
-1 = slt8 255 127;
+1 = slt 8 255 127;
 
-1 = sle8 5 5;
+1 = sle 8 5 5;
 
 (4,1) = divrem 9 2;
 

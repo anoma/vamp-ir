@@ -5,6 +5,7 @@ use std::hash::Hash;
 use ark_ff::{One, Zero};
 use num_traits::sign::Signed;
 use num_bigint::BigInt;
+use num_traits::ToPrimitive;
 
 /* A structure for generating unique variable IDs. */
 pub struct VarGen(VariableId);
@@ -604,6 +605,7 @@ fn evaluate(
         Expr::Infix(InfixOp::Exponentiate, e1, e2) => {
             // Compute the base once and for all
             let e1 = evaluate(e1, flattened, bindings, types, prover_defs, field_ops, gen);
+            let e2 = evaluate(e2, flattened, bindings, types, prover_defs, field_ops, gen);
             match (&e1.v, &e2.v) {
                 (Expr::Constant(a), Expr::Constant(b)) =>
                     Expr::Constant(field_ops.infix(InfixOp::Exponentiate, a.clone(), b.clone())).type_expr(Some(Type::Int)),
@@ -1417,12 +1419,12 @@ fn expand_iter_intrinsic(
                 v: Expr::Variable(iter_arg.clone()),
                 t: Some(Type::Variable(iter_arg.clone()))
             };
-            let val = if let Expr::Constant(c) = bindings[&param_var.id].v {
+            let val = if let Expr::Constant(c) = &bindings[&param_var.id].v {
                 c
             } else {
                 panic!("only constant arguments to iter supported")
             };
-            for _ in 0..val {
+            for _ in 0..val.to_i8().expect("specified iteration count is too large") {
                 body = TExpr {
                     v: Expr::Application(
                         Box::new(iter_func.clone()),
