@@ -581,6 +581,59 @@ fn evaluate(
             flatten_equals(&expr1, &expr2, flattened);
             Expr::Unit.type_expr(Some(Type::Unit))
         },
+        Expr::Infix(InfixOp::Exponentiate, e1, e2) => {
+            // Compute the base once and for all
+            let e1 = evaluate(e1, flattened, bindings, types, prover_defs, field_ops, gen);
+            match (&e1.v, &e2.v) {
+                (Expr::Constant(a), Expr::Constant(b)) =>
+                    Expr::Constant(field_ops.infix(InfixOp::Exponentiate, a.clone(), b.clone())).type_expr(Some(Type::Int)),
+                (_, Expr::Constant(c)) if c.is_zero() =>
+                    Expr::Constant(One::one()).type_expr(Some(Type::Int)),
+                (_, Expr::Constant(c)) if c.is_one() =>
+                    e1,
+                (_, Expr::Constant(v2)) if v2.is_positive() => {
+                    // Compute roughly the sqrt of this expression
+                    let sqrt = Expr::Infix(
+                        InfixOp::Exponentiate,
+                        Box::new(e1.clone()),
+                        Box::new(Expr::Constant(v2/2i8).type_expr(Some(Type::Int)))
+                    ).type_expr(Some(Type::Int));
+                    let out2_term = evaluate(&sqrt, flattened, bindings, types, prover_defs, field_ops, gen);
+                    // Now square the value to obtain roughly this expression
+                    let mut rhs = infix_op(
+                        InfixOp::Multiply,
+                        out2_term.clone(),
+                        out2_term,
+                    );
+                    // Multiply by the base once more in order to obtain
+                    // original value
+                    if v2%2i8 == One::one() {
+                        rhs = infix_op(
+                            InfixOp::Multiply,
+                            rhs,
+                            e1,
+                        );
+                    }
+                    evaluate(&rhs, flattened, bindings, types, prover_defs, field_ops, gen)
+                },
+                (_, Expr::Constant(v2)) => {
+                    // Compute the reciprocal of this expression
+                    let recip = Expr::Infix(
+                        InfixOp::Exponentiate,
+                        Box::new(e1),
+                        Box::new(Expr::Constant(-v2).type_expr(Some(Type::Int)))
+                    );
+                    // Now invert the value to obtain this expression
+                    let rhs = infix_op(
+                        InfixOp::Divide,
+                        Expr::Constant(One::one()).type_expr(Some(Type::Int)),
+                        recip.type_expr(Some(Type::Int)),
+                    );
+                    evaluate(&rhs, flattened, bindings, types, prover_defs, field_ops, gen)
+                }
+                _ => panic!("variables are not permitted in expression exponents"),
+            }
+        },
         Expr::Infix(op, expr1, expr2) => {
             let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, field_ops, gen);
             let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, field_ops, gen);
@@ -940,74 +993,7 @@ fn flatten_expr_to_3ac(
             push_constraint_def(flattened, out.clone(), rhs.type_expr(Some(Type::Int)));
             out
         },
-        (out, Expr::Infix(InfixOp::Exponentiate, e1, e2)) => {
-            match &e2.v {
-                Expr::Constant(c) if c.is_zero() =>
-                    flatten_expr_to_3ac(
-                        out,
-                        &Expr::Constant(One::one()).type_expr(Some(Type::Int)),
-                        flattened,
-                        gen,
-                    ),
-                Expr::Constant(c) if c.is_one() =>
-                    flatten_expr_to_3ac(out, e1, flattened, gen),
-                Expr::Constant(v2) if v2.is_positive() => {
-                    // Compute the base once and for all
-                    let out1_term = flatten_expr_to_3ac(None, e1, flattened, gen);
-                    // Compute roughly the sqrt of this expression
-                    let sqrt = Expr::Infix(
-                        InfixOp::Exponentiate,
-                        Box::new(out1_term.to_expr()),
-                        Box::new(Expr::Constant(v2/2).type_expr(Some(Type::Int)))
-                    );
-                    let out2_term = flatten_expr_to_3ac(
-                        None,
-                        &sqrt.type_expr(Some(Type::Int)),
-                        flattened,
-                        gen,
-                    );
-                    // Now square the value to obtain roughly this expression
-                    let mut rhs = infix_op(
-                        InfixOp::Multiply,
-                        out2_term.to_expr(),
-                        out2_term.to_expr()
-                    );
-                    // Multiply by the base once more in order to obtain
-                    // original value
-                    if v2%2 == One::one() {
-                        rhs = infix_op(
-                            InfixOp::Multiply,
-                            rhs,
-                            out1_term.to_expr()
-                        );
-                    }
-                    flatten_expr_to_3ac(out, &rhs, flattened, gen)
-                },
-                Expr::Constant(v2) => {
-                    // Compute the reciprocal of this expression
-                    let recip = Expr::Infix(
-                        InfixOp::Exponentiate,
-                        Box::new(*e1.clone()),
-                        Box::new(Expr::Constant(-v2).type_expr(Some(Type::Int)))
-                    );
-                    let out1_term = flatten_expr_to_3ac(
-                        None,
-                        &recip.type_expr(Some(Type::Int)),
-                        flattened,
-                        gen,
-                    );
-                    // Now invert the value to obtain this expression
-                    let rhs = infix_op(
-                        InfixOp::Divide,
-                        Expr::Constant(One::one()).type_expr(Some(Type::Int)),
-                        out1_term.to_expr()
-                    );
-                    flatten_expr_to_3ac(out, &rhs, flattened, gen)
-                }
-                _ => panic!("variables are not permitted in expression exponents"),
-            }
-        },
-        (out, Expr::Infix(op, e1, e2)) => {
+        (out, Expr::Infix(op, e1, e2)) if *op != InfixOp::Exponentiate => {
             let out1_term = flatten_expr_to_3ac(None, e1, flattened, gen);
             let out2_term = flatten_expr_to_3ac(None, e2, flattened, gen);
             let rhs = infix_op(
