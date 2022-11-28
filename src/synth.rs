@@ -1,5 +1,5 @@
 use crate::ast::{Module, VariableId, TExpr, InfixOp, Pat, Expr};
-use crate::transform::collect_module_variables;
+use crate::transform::{collect_module_variables, FieldOps};
 use ark_ff::PrimeField;
 use ark_ec::TEModelParameters;
 use plonk_core::circuit::Circuit;
@@ -8,7 +8,7 @@ use plonk_core::error::Error;
 use plonk_core::proof_system::pi::PublicInputs;
 use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
-use num_bigint::{BigUint, BigInt};
+use num_bigint::{BigUint, BigInt, ToBigInt, Sign};
 use num_traits::Signed;
 use crate::ast::Variable;
 
@@ -86,6 +86,46 @@ fn evaluate_expr<F>(
             (Into::<BigUint>::into(evaluate_expr(&a, defs, assigns)) %
             Into::<BigUint>::into(evaluate_expr(&b, defs, assigns))).into(),
         _ => unreachable!("encountered unexpected expression: {}", expr),
+    }
+}
+
+#[derive(Default)]
+pub struct PrimeFieldOps<F> where F: PrimeField {
+    phantom: PhantomData<F>
+}
+
+impl<F> FieldOps for PrimeFieldOps<F> where F: PrimeField {
+    /* Evaluate the given negation expression in the given prime field. */
+    fn canonical(&self, a: BigInt) -> BigInt {
+        let b = make_constant::<F>(&a);
+        Into::<BigUint>::into(b).to_bigint().unwrap()
+    }
+    /* Evaluate the given negation expression in the given prime field. */
+    fn negate(&self, a: BigInt) -> BigInt {
+        let b = make_constant::<F>(&a);
+        Into::<BigUint>::into(-b).to_bigint().unwrap()
+    }
+    /* Evaluate the given infix expression in the given prime field. */
+    fn infix(&self, op: InfixOp, a: BigInt, b: BigInt) -> BigInt {
+        let c = make_constant::<F>(&a);
+        let d = make_constant::<F>(&b);
+        match op {
+            InfixOp::Add => Into::<BigUint>::into(c + d).to_bigint().unwrap(),
+            InfixOp::Subtract => Into::<BigUint>::into(c - d).to_bigint().unwrap(),
+            InfixOp::Multiply => Into::<BigUint>::into(c * d).to_bigint().unwrap(),
+            InfixOp::Divide => Into::<BigUint>::into(c / d).to_bigint().unwrap(),
+            InfixOp::IntDivide => a / b,
+            InfixOp::Modulo => a % b,
+            InfixOp::Exponentiate => {
+                let (sign, limbs) = b.to_u64_digits();
+                Into::<BigUint>::into(if sign == Sign::Minus {
+                    F::one()/c.pow(limbs)
+                } else {
+                    c.pow(limbs)
+                }).to_bigint().unwrap()
+            },
+            InfixOp::Equal => panic!("cannot evaluate equals expression"),
+        }
     }
 }
 

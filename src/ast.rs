@@ -801,7 +801,7 @@ impl fmt::Display for Match {
     }
 }
 
-#[derive(Debug, Clone, Copy, Encode, Decode)]
+#[derive(Debug, Clone, Copy, Encode, Decode, Eq, PartialEq)]
 pub enum InfixOp {
     Divide,
     Multiply,
