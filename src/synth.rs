@@ -1,4 +1,4 @@
-use crate::ast::{Module, VariableId, TExpr, InfixOp, Pattern, Expr};
+use crate::ast::{Module, VariableId, TExpr, InfixOp, Pat, Expr};
 use crate::transform::collect_module_variables;
 use ark_ff::PrimeField;
 use ark_ec::TEModelParameters;
@@ -37,11 +37,11 @@ impl<T> bincode::Decode for PrimeFieldBincode<T> where T: PrimeField {
 }
 
 // Make field elements from signed values
-fn make_constant<F: PrimeField>(c: i32) -> F {
+fn make_constant<F: PrimeField>(c: i128) -> F {
     if c >= 0 {
-        F::from(c as u32)
+        F::from(c as u128)
     } else {
-        -F::from((-c) as u32)
+        -F::from((-c) as u128)
     }
 }
 
@@ -154,13 +154,13 @@ where
         // Get the definitions necessary to populate auxiliary variables
         let mut definitions = HashMap::new();
         for def in &self.module.defs {
-            if let Pattern::Variable(var) = &def.0.0 {
+            if let Pat::Variable(var) = &def.0.0.v {
                 definitions.insert(var.id, *def.0.1.clone());
             }
         }
         // Start deriving witnesses
         for (var, value) in &mut self.variable_map {
-            let var_expr = Expr::Variable(crate::ast::Variable::new(*var)).into();
+            let var_expr = Expr::Variable(crate::ast::Variable::new(*var)).type_expr(None);
             *value = evaluate_expr(&var_expr, &mut definitions, &mut field_assigns);
         }
     }

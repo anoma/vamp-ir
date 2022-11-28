@@ -96,7 +96,7 @@ impl fmt::Display for Definition {
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub struct LetBinding(pub Pattern, pub Box<TExpr>);
+pub struct LetBinding(pub TPat, pub Box<TExpr>);
 
 impl LetBinding {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
@@ -110,15 +110,19 @@ impl LetBinding {
                 let name = Variable::parse(pair).expect("expression should be value name");
                 let mut pats = vec![];
                 while let Some(pair) = pairs.next() {
-                    let rhs = Pattern::parse(pair)
+                    let rhs = TPat::parse(pair)
                         .expect("expected RHS to be a product");
                     pats.push(rhs);
                 }
-                let expr = Box::new(Expr::Function(Function(pats, Box::new(expr))).into());
-                Some(Self(Pattern::Variable(name), expr))
+                let expr = Box::new(Expr::Function(Function {
+                    params: pats,
+                    body: Box::new(expr),
+                    env: HashMap::new(),
+                }).type_expr(None));
+                Some(Self(Pat::Variable(name).type_pat(None), expr))
             },
             Rule::pattern => {
-                let pat = Pattern::parse(pair).expect("pattern should start with pattern");
+                let pat = TPat::parse(pair).expect("pattern should start with pattern");
                 Some(Self(pat, Box::new(expr)))
             },
             _ => unreachable!("let binding is of unknown form")
@@ -129,7 +133,7 @@ impl LetBinding {
 impl fmt::Display for LetBinding {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.1.v {
-            Expr::Function(Function(params, body)) => {
+            Expr::Function(Function { params, body, .. }) => {
                 write!(f, "{}", self.0)?;
                 for pat in params {
                     write!(f, " {}", pat)?;
@@ -159,15 +163,38 @@ impl fmt::Display for LetBinding {
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub enum Pattern {
+pub enum Pat {
     Unit,
-    As(Box<Pattern>, Variable),
-    Product(Box<Pattern>, Box<Pattern>),
+    As(Box<TPat>, Variable),
+    Product(Box<TPat>, Box<TPat>),
     Variable(Variable),
-    Constant(i32),
+    Constant(i128),
 }
 
-impl Pattern {
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct TPat {
+    pub v: Pat,
+    pub t: Option<Type>,
+}
+
+impl Pat {
+    pub fn type_pat(self, t: Option<Type>) -> TPat {
+        let t = t.or_else(|| match &self {
+            Self::Unit => Some(Type::Unit),
+            Self::Product(pat1, pat2) => {
+                pat1.t.clone()
+                    .zip(pat2.t.clone())
+                    .map(|(a,b)| Type::Product(Box::new(a), Box::new(b)))
+            },
+            Self::As(pat1, _) => pat1.t.clone(),
+            Self::Constant(_) => Some(Type::Int),
+            Self::Variable(_) => None,
+        });
+        TPat { v: self, t }
+    }
+}
+
+impl TPat {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
         if pair.as_rule() != Rule::pattern { return None }
         let mut pairs = pair.into_inner();
@@ -176,7 +203,7 @@ impl Pattern {
             Self::parse_pat1(pair).expect("pattern should start with pattern");
         while let Some(pair) = pairs.next() {
             let name = Variable::parse(pair).expect("expected pattern name");
-            pat = Self::As(Box::new(pat), name);
+            pat = Pat::As(Box::new(pat), name).type_pat(None);
         }
         Some(pat)
     }
@@ -190,7 +217,7 @@ impl Pattern {
         while let Some(pair) = pairs.next_back() {
             let rhs = Self::parse_pat2(pair)
                 .expect("expected RHS to be a product");
-            pats = Self::Product(Box::new(rhs), Box::new(pats));
+            pats = Pat::Product(Box::new(rhs), Box::new(pats)).type_pat(None);
         }
         Some(pats)
     }
@@ -201,15 +228,15 @@ impl Pattern {
         let pair = pairs.next_back().expect("expression should not be empty");
         match pair.as_rule() {
             Rule::constant if pair.as_str().starts_with("(") => {
-                Some(Self::Unit)
+                Some(Pat::Unit.type_pat(None))
             },
             Rule::constant => {
                 let value = pair.as_str().parse().ok().expect("constant should be an integer");
-                Some(Self::Constant(value))
+                Some(Pat::Constant(value).type_pat(None))
             },
             Rule::valueName => {
                 let name = Variable::parse(pair).expect("pattern should be value name");
-                Some(Self::Variable(name))
+                Some(Pat::Variable(name).type_pat(None))
             },
             Rule::pattern => Self::parse(pair),
             _ => unreachable!("pattern is of unknown form")
@@ -217,52 +244,31 @@ impl Pattern {
     }
 
     pub fn to_expr(&self) -> TExpr {
-        match self {
-            Self::Unit => Expr::Unit.into(),
-            Self::Constant(val) => Expr::Constant(*val).into(),
-            Self::Variable(var) => Expr::Variable(var.clone()).into(),
-            Self::As(pat, _name) => pat.to_expr(),
-            Self::Product(pat1, pat2) => {
+        let v = match &self.v {
+            Pat::Unit => Expr::Unit,
+            Pat::Constant(val) => Expr::Constant(*val),
+            Pat::Variable(var) => Expr::Variable(var.clone()),
+            Pat::As(pat, _name) => pat.to_expr().v,
+            Pat::Product(pat1, pat2) => {
                 Expr::Product(
                     Box::new(pat1.to_expr()),
                     Box::new(pat2.to_expr()),
-                ).into()
+                )
             }
-        }
-    }
-
-    pub fn to_typed_expr(&self, typ: Type) -> TExpr {
-        match (self, typ) {
-            (Self::Unit, Type::Unit | Type::Variable(_)) =>
-                TExpr { v: Expr::Unit, t: Some(Type::Unit) },
-            (Self::Constant(val), Type::Int | Type::Variable(_)) =>
-                TExpr { v: Expr::Constant(*val), t: Some(Type::Int) },
-            (Self::Variable(var), typ) =>
-                TExpr { v:Expr::Variable(var.clone()), t: Some(typ) },
-            (Self::As(pat, _name), typ) => pat.to_typed_expr(typ),
-            (Self::Product(pat1, pat2), Type::Product(typ1, typ2)) =>
-            {
-                let expr1 = Box::new(pat1.to_typed_expr(*typ1.clone()));
-                let expr2 = Box::new(pat2.to_typed_expr(*typ2.clone()));
-                TExpr {
-                    v: Expr::Product(expr1, expr2),
-                    t: Some(Type::Product(typ1, typ2)),
-                }
-            },
-            (_, typ) => panic!("expression {} cannot have the type {}", self, typ),
-        }
+        };
+        TExpr { v, t: self.t.clone() }
     }
 }
 
-impl fmt::Display for Pattern {
+impl fmt::Display for TPat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unit => write!(f, "()")?,
-            Self::As(pat, name) => write!(f, "{} as {}", pat, name)?,
-            Self::Product(pat1, pat2) =>
+        match &self.v {
+            Pat::Unit => write!(f, "()")?,
+            Pat::As(pat, name) => write!(f, "{} as {}", pat, name)?,
+            Pat::Product(pat1, pat2) =>
                 write!(f, "({}, {})", pat1, pat2)?,
-            Self::Variable(var) => write!(f, "{}", var)?,
-            Self::Constant(val) => write!(f, "{}", val)?,
+            Pat::Variable(var) => write!(f, "{}", var)?,
+            Pat::Constant(val) => write!(f, "{}", val)?,
         }
         Ok(())
     }
@@ -282,12 +288,34 @@ pub enum Expr {
     Infix(InfixOp, Box<TExpr>, Box<TExpr>),
     Negate(Box<TExpr>),
     Application(Box<TExpr>, Box<TExpr>),
-    Constant(i32),
+    Constant(i128),
     Variable(Variable),
     Function(Function),
     Intrinsic(Intrinsic),
     LetBinding(LetBinding, Box<TExpr>),
     Match(Match),
+}
+
+impl Expr {
+    pub fn type_expr(self, t: Option<Type>) -> TExpr {
+        let t = t.or_else(|| match &self {
+            Self::Unit => Some(Type::Unit),
+            Self::Sequence(exprs) => exprs.last().unwrap().t.clone(),
+            Self::Product(expr1, expr2) => {
+                expr1.t.clone()
+                    .zip(expr2.t.clone())
+                    .map(|(a,b)| Type::Product(Box::new(a), Box::new(b)))
+            },
+            Self::Infix(InfixOp::Equal, _, _) => Some(Type::Unit),
+            Self::Infix(_, _, _) => Some(Type::Int),
+            Self::Negate(_) => Some(Type::Int),
+            Self::Constant(_) => Some(Type::Int),
+            Self::LetBinding(_, expr) => expr.t.clone(),
+            Self::Application(_, _) | Self::Match(_) | Self::Variable(_) |
+            Self::Function(_) | Self::Intrinsic(_) => None,
+        });
+        TExpr { v: self, t }
+    }
 }
 
 impl TExpr {
@@ -297,7 +325,7 @@ impl TExpr {
         let mut pairs = pair.into_inner();
         if string.starts_with("fun") {
             let pair = pairs.next().expect("expression should not be empty");
-            Function::parse(pair).map(|x| Expr::Function(x).into())
+            Function::parse(pair).map(|x| Expr::Function(x).type_expr(None))
         } else if string.starts_with("def") {
             let pair = pairs.next().expect("body expression should be prefixed by binding");
             let binding = LetBinding::parse(pair).expect("expression should start with binding");
@@ -306,7 +334,7 @@ impl TExpr {
                 body.push(Self::parse(pair).expect("expression should end with expression"));
             }
             if body.is_empty() { panic!("expression should not be empty") }
-            Some(Expr::LetBinding(binding, Box::new(Expr::Sequence(body).into())).into())
+            Some(Expr::LetBinding(binding, Box::new(Expr::Sequence(body).type_expr(None))).type_expr(None))
         } else {
             let pair = pairs.next().expect("expression should not be empty");
             Self::parse_expr1(pair)
@@ -325,7 +353,7 @@ impl TExpr {
             exprs.push(rhs);
             
         }
-        Some(if exprs.len() == 1 { exprs[0].clone() } else { Expr::Sequence(exprs).into() })
+        Some(if exprs.len() == 1 { exprs[0].clone() } else { Expr::Sequence(exprs).type_expr(None) })
     }
 
     pub fn parse_expr2(pair: Pair<Rule>) -> Option<Self> {
@@ -337,7 +365,7 @@ impl TExpr {
         while let Some(pair) = pairs.next_back() {
             let rhs = Self::parse_expr3(pair)
                 .expect("expected RHS to be a product");
-            exprs = Expr::Product(Box::new(rhs), Box::new(exprs)).into();
+            exprs = Expr::Product(Box::new(rhs), Box::new(exprs)).type_expr(None);
         }
         Some(exprs)
     }
@@ -353,7 +381,7 @@ impl TExpr {
             let rhs_pair = pairs.next().expect("expected RHS product");
             let rhs = Self::parse_expr4(rhs_pair)
                 .expect("expected RHS to be a product");
-            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).into();
+            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).type_expr(None);
         }
         Some(expr)
     }
@@ -369,7 +397,7 @@ impl TExpr {
             let rhs_pair = pairs.next().expect("expected RHS product");
             let rhs = Self::parse_expr5(rhs_pair)
                 .expect("expected RHS to be a product");
-            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).into();
+            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).type_expr(None);
         }
         Some(expr)
     }
@@ -385,7 +413,7 @@ impl TExpr {
             let rhs_pair = pairs.next().expect("expected RHS product");
             let rhs = Self::parse_expr6(rhs_pair)
                 .expect("expected RHS to be a product");
-            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).into();
+            expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).type_expr(None);
         }
         Some(expr)
     }
@@ -401,7 +429,7 @@ impl TExpr {
             let lhs_pair = pairs.next_back().expect("expected RHS product");
             let lhs = Self::parse_expr7(lhs_pair)
                 .expect("expected RHS to be a product");
-            expr = Expr::Infix(op, Box::new(lhs), Box::new(expr)).into();
+            expr = Expr::Infix(op, Box::new(lhs), Box::new(expr)).type_expr(None);
         }
         Some(expr)
     }
@@ -414,7 +442,7 @@ impl TExpr {
             Self::parse_expr8(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next_back() {
             if pair.as_rule() == Rule::negate {
-                expr = Expr::Negate(Box::new(expr)).into();
+                expr = Expr::Negate(Box::new(expr)).type_expr(None);
             } else {
                 unreachable!("only negative signs should occur here");
             }
@@ -431,7 +459,7 @@ impl TExpr {
         while let Some(pair) = pairs.next() {
             let rhs = Self::parse_expr9(pair)
                 .expect("expected RHS to be a product");
-            expr = Expr::Application(Box::new(expr), Box::new(rhs)).into();
+            expr = Expr::Application(Box::new(expr), Box::new(rhs)).type_expr(None);
         }
         Some(expr)
     }
@@ -442,13 +470,13 @@ impl TExpr {
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
         if pair.as_rule() == Rule::constant && string.starts_with("(") {
-            Some(Expr::Unit.into())
+            Some(Expr::Unit.type_expr(None))
         } else if pair.as_rule() == Rule::constant {
             let value = pair.as_str().parse().ok().expect("constant should be an integer");
-            Some(Expr::Constant(value).into())
+            Some(Expr::Constant(value).type_expr(None))
         } else if pair.as_rule() == Rule::valueName {
             let name = Variable::parse(pair).expect("expression should be value name");
-            Some(Expr::Variable(name).into())
+            Some(Expr::Variable(name).type_expr(None))
         } else if string.starts_with("(") || string.starts_with("fun") ||
         string.starts_with("def") {
             Self::parse(pair)
@@ -503,14 +531,8 @@ impl fmt::Display for TExpr {
     }
 }
 
-impl From<Expr> for TExpr {
-    fn from(v: Expr) -> TExpr {
-        TExpr { v, t: None }
-    }
-}
-
 #[derive(Debug, Clone, Encode, Decode)]
-pub struct Match(pub Box<TExpr>, pub Vec<Pattern>, pub Vec<TExpr>);
+pub struct Match(pub Box<TExpr>, pub Vec<TPat>, pub Vec<TExpr>);
 
 impl fmt::Display for Match {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -604,7 +626,11 @@ impl fmt::Display for Variable {
 }
 
 #[derive(Debug, Clone, Encode, Decode)]
-pub struct Function(pub Vec<Pattern>, pub Box<TExpr>);
+pub struct Function {
+    pub params: Vec<TPat>,
+    pub body: Box<TExpr>,
+    pub env: HashMap<VariableId, TExpr>,
+}
 
 impl Function {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
@@ -615,22 +641,22 @@ impl Function {
         let mut params = vec![];
         while let Some(pair) = pairs.next() {
             let param =
-                Pattern::parse(pair).expect("all prefixes to function should be patterns");
+                TPat::parse(pair).expect("all prefixes to function should be patterns");
             params.push(param);
         }
-        Some(Self(params, Box::new(body)))
+        Some(Self { params, body: Box::new(body), env: HashMap::default() })
     }
 }
 
 impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "fun {}", self.0[0])?;
-        for pat in &self.0[1..] {
+        write!(f, "fun {}", self.params[0])?;
+        for pat in &self.params[1..] {
             write!(f, " {}", pat)?;
         }
 
         let mut body = String::new();
-        write!(body, "{}", self.1)?;
+        write!(body, "{}", self.body)?;
         if body.contains("\n") {
             body = body.replace("\n", "\n    ");
             write!(f, " ->\n    {}", body)?
@@ -643,7 +669,7 @@ impl fmt::Display for Function {
 
 /* The underlying function that expands an intrinsic call. */
 type IntrinsicImp = fn(
-    &Vec<TExpr>,
+    &Vec<TPat>,
     &HashMap<VariableId, TExpr>,
     &mut HashSet<VariableId>,
     &mut VarGen
@@ -651,10 +677,10 @@ type IntrinsicImp = fn(
 
 #[derive(Clone)]
 pub struct Intrinsic {
-    arity: usize,
-    pub imp_typ: Type,
+    pub pos: usize,
     imp: IntrinsicImp,
-    pub args: Vec<TExpr>,
+    pub params: Vec<TPat>,
+    pub env: HashMap<VariableId, TExpr>,
 }
 
 impl bincode::Encode for Intrinsic {
@@ -677,9 +703,10 @@ impl bincode::Decode for Intrinsic {
 impl fmt::Debug for Intrinsic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Intrinsic")
-            .field("arity", &self.arity)
-            .field("args", &self.args)
-            .field("apply", &(self.imp as fn(_, _, _, _) -> _))
+            .field("pos", &self.pos)
+            .field("params", &self.params)
+            .field("imp", &(self.imp as fn(_, _, _, _) -> _))
+            .field("env", &self.env)
             .finish()
     }
 }
@@ -687,7 +714,7 @@ impl fmt::Debug for Intrinsic {
 impl fmt::Display for Intrinsic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:p}", self.imp as fn(_, _, _, _) -> _)?;
-        for arg in &self.args {
+        for arg in &self.params {
             write!(f, " {}", arg)?;
         }
         Ok(())
@@ -695,24 +722,21 @@ impl fmt::Display for Intrinsic {
 }
 
 impl Intrinsic {
-    pub fn new(arity: usize, imp_typ: Type, imp: IntrinsicImp) -> Self {
-        Self { arity, imp, imp_typ, args: vec![] }
+    pub fn new(params: Vec<TPat>, imp: IntrinsicImp) -> Self {
+        Self {
+            imp,
+            params,
+            pos: 0,
+            env: HashMap::new(),
+        }
     }
-    
-    pub fn apply(
-        mut self,
-        arg: TExpr,
+
+    pub fn execute(
+        &self,
         bindings: &HashMap<VariableId, TExpr>,
         prover_defs: &mut HashSet<VariableId>,
         gen: &mut VarGen
     ) -> TExpr {
-        self.args.push(arg);
-        if self.args.len() < self.arity {
-            Expr::Intrinsic(self).into()
-        } else if self.args.len() == self.arity {
-            (self.imp)(&self.args, bindings, prover_defs, gen)
-        } else {
-            panic!("too many arguments applied to intrinsic function")
-        }
+        (self.imp)(&self.params, bindings, prover_defs, gen)
     }
 }
