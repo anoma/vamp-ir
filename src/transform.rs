@@ -4,6 +4,7 @@ use crate::ast::{Module, Definition, TExpr, Pat, TPat, VariableId, LetBinding, V
 use std::hash::Hash;
 use ark_ff::{One, Zero};
 use num_traits::sign::Signed;
+use num_bigint::BigInt;
 
 /* A structure for generating unique variable IDs. */
 pub struct VarGen(VariableId);
@@ -319,6 +320,17 @@ where U: Eq + Hash + Clone {
     }
 }
 
+/* Defines an interface for completing various arithmetic operations over a
+ * field without exposing the underlying field. */
+pub trait FieldOps {
+    // Puts the given big integer in canonical form
+    fn canonical(&self, num: BigInt) -> BigInt;
+    // Negates the given big integer over the given field
+    fn negate(&self, num: BigInt) -> BigInt;
+    // Completes the given infix operation over the given field
+    fn infix(&self, op: InfixOp, lhs: BigInt, rhs: BigInt) -> BigInt;
+}
+
 /* Evaluate the given binding emitting constraints as necessary. Returns the new
  * bindings created by this program fragment. */
 fn evaluate_binding(
@@ -328,10 +340,11 @@ fn evaluate_binding(
     bindings: &mut HashMap<VariableId, TExpr>,
     types: &mut HashMap<VariableId, Type>,
     prover_defs: &mut HashSet<VariableId>,
+    field_ops: &dyn FieldOps,
     gen: &mut VarGen,
 ) -> HashMap<VariableId, TExpr> {
     // Evaluate the binding expression in the current environment
-    let mut val = evaluate(&*binding.1, flattened, bindings, types, prover_defs, gen);
+    let mut val = evaluate(&*binding.1, flattened, bindings, types, prover_defs, field_ops, gen);
     // Allow binding value to carry around its own context
     capture_env(&mut val, capture);
     // Now make a let binding for the expanded value whilst making sure that the
@@ -394,11 +407,12 @@ fn evaluate(
     bindings: &mut HashMap<VariableId, TExpr>,
     types: &mut HashMap<VariableId, Type>,
     prover_defs: &mut HashSet<VariableId>,
+    field_ops: &dyn FieldOps,
     gen: &mut VarGen,
 ) -> TExpr {
     match &expr.v {
         Expr::Application(expr1, expr2) => {
-            let mut expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
+            let mut expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, field_ops, gen);
             refresh_expr_variables(&mut expr1, &HashMap::new(), prover_defs, gen);
             match &mut expr1.v {
                 Expr::Intrinsic(intr) => {
@@ -428,14 +442,14 @@ fn evaluate(
                         &mut inserts,
                     );
                     // Setup the environment in which to evaluate body
-                    let new_bindings = evaluate_binding(&new_bind, implicit_env, flattened, bindings, types, prover_defs, gen);
+                    let new_bindings = evaluate_binding(&new_bind, implicit_env, flattened, bindings, types, prover_defs, field_ops, gen);
                     // Apply the new environment to the body
                     intr.env.extend(new_bindings.clone());
                     // Modify function type to account for the partial
                     // application that has just happened
                     expr1.t = expr.t.clone();
                     // Finally evaluate the body
-                    let mut val = evaluate(&expr1, flattened, bindings, types, prover_defs, gen);
+                    let mut val = evaluate(&expr1, flattened, bindings, types, prover_defs, field_ops, gen);
                     // Enable closures by storing the required environment
                     // modifications inside the evaluation result
                     capture_env(&mut val, new_bindings);
@@ -483,6 +497,7 @@ fn evaluate(
                         bindings,
                         types,
                         prover_defs,
+                        field_ops,
                         gen,
                     );
                     // Apply the new environment to the body
@@ -491,7 +506,7 @@ fn evaluate(
                     // application that has just happened
                     expr1.t = expr.t.clone();
                     // Finally evaluate the body
-                    let mut val = evaluate(&expr1, flattened, bindings, types, prover_defs, gen);
+                    let mut val = evaluate(&expr1, flattened, bindings, types, prover_defs, field_ops, gen);
                     // Enable closures by storing the required environment
                     // modifications inside the evaluation result
                     capture_env(&mut val, new_bindings);
@@ -516,7 +531,7 @@ fn evaluate(
             while let Expr::LetBinding(binding, body) = &expr.v {
                 // Evaluate binding expression and get new bindings
                 let new_bindings =
-                    evaluate_binding(binding, HashMap::new(), flattened, bindings, types, prover_defs, gen);
+                    evaluate_binding(binding, HashMap::new(), flattened, bindings, types, prover_defs, field_ops, gen);
                 let mut new_bindings = new_bindings.into_iter().map(|(k, v)| (k, Some(v))).collect();
                 // Insert new bindings into environment and get old bindings
                 exchange_map(bindings, &mut new_bindings);
@@ -529,7 +544,7 @@ fn evaluate(
                     // Iteratively evaluate a sequence expression here in order
                     // to avoid leaving this call frame
                     for expr in &seq[0..seq.len()-1] {
-                        evaluate(expr, flattened, bindings, types, prover_defs, gen);
+                        evaluate(expr, flattened, bindings, types, prover_defs, field_ops, gen);
                     }
                     // Hence the let's body is now effectively this sequence's
                     // last expression
@@ -539,7 +554,7 @@ fn evaluate(
                 }
             }
             // Now evaluate the inner-most body
-            let mut val = evaluate(expr, flattened, bindings, types, prover_defs, gen);
+            let mut val = evaluate(expr, flattened, bindings, types, prover_defs, field_ops, gen);
             // Now restore the old environment before this entire let expression
             exchange_map(bindings, &mut acc_bindings);
             let acc_bindings = acc_bindings.into_iter().map(|(k, v)| (k, v.unwrap())).collect();
@@ -551,35 +566,50 @@ fn evaluate(
         Expr::Sequence(seq) => {
             let mut val = None;
             for expr in seq {
-                val = Some(evaluate(expr, flattened, bindings, types, prover_defs, gen));
+                val = Some(evaluate(expr, flattened, bindings, types, prover_defs, field_ops, gen));
             }
             val.expect("encountered empty sequence")
         },
         Expr::Product(expr1, expr2) => {
-            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
-            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, gen);
+            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, field_ops, gen);
+            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, field_ops, gen);
             Expr::Product(Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone())
         },
         Expr::Infix(InfixOp::Equal, expr1, expr2) => {
-            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
-            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, gen);
+            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, field_ops, gen);
+            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, field_ops, gen);
             flatten_equals(&expr1, &expr2, flattened);
             Expr::Unit.type_expr(Some(Type::Unit))
         },
         Expr::Infix(op, expr1, expr2) => {
-            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
-            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, gen);
-            let val = Expr::Infix(op.clone(), Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone());
-            let var = Variable::new(gen.generate_id());
-            let binding = Definition(LetBinding(Pat::Variable(var.clone()).type_pat(expr.t.clone()), Box::new(val)));
-            flattened.defs.push(binding);
-            Expr::Variable(var).type_expr(expr.t.clone())
+            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, field_ops, gen);
+            let expr2 = evaluate(expr2, flattened, bindings, types, prover_defs, field_ops, gen);
+            match (&expr1.v, &expr2.v) {
+                (Expr::Constant(c1), Expr::Constant(c2)) =>
+                    Expr::Constant(field_ops.infix(*op, c1.clone(), c2.clone())).type_expr(expr.t.clone()),
+                (_, _) => {
+                    let val = infix_op(op.clone(), expr1, expr2);
+                    let var = Variable::new(gen.generate_id());
+                    let binding = Definition(LetBinding(
+                        Pat::Variable(var.clone()).type_pat(expr.t.clone()),
+                        Box::new(val),
+                    ));
+                    flattened.defs.push(binding);
+                    Expr::Variable(var).type_expr(expr.t.clone())
+                }
+            }
         },
         Expr::Negate(expr1) => {
-            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, gen);
-            Expr::Negate(Box::new(expr1)).type_expr(expr.t.clone())
+            let expr1 = evaluate(expr1, flattened, bindings, types, prover_defs, field_ops, gen);
+            match expr1.v {
+                Expr::Constant(c1) =>
+                    Expr::Constant(field_ops.negate(c1)).type_expr(expr.t.clone()),
+                _ => Expr::Negate(Box::new(expr1)).type_expr(expr.t.clone()),
+            }
         },
-        Expr::Constant(_) | Expr::Unit => expr.clone(),
+        Expr::Constant(c) =>
+            Expr::Constant(field_ops.canonical(c.clone())).type_expr(expr.t.clone()),
+        Expr::Unit => expr.clone(),
         Expr::Variable(var) => match bindings.get(&var.id) {
             Some(val) if !prover_defs.contains(&var.id) => val.clone(),
             _ if !prover_defs.contains(&var.id) => {
@@ -597,7 +627,7 @@ fn evaluate(
             let mut ext = env.clone().into_iter().map(|(k, v)| (k, Some(v))).collect();
             // Supplement the partially captured environment with bindings
             exchange_map(bindings, &mut ext);
-            let val = evaluate(body, flattened, bindings, types, prover_defs, gen);
+            let val = evaluate(body, flattened, bindings, types, prover_defs, field_ops, gen);
             exchange_map(bindings, &mut ext);
             val
         },
@@ -606,13 +636,13 @@ fn evaluate(
             // Supplement the partially captured environment with bindings
             exchange_map(bindings, &mut ext);
             let expr1 = intr.execute(bindings, prover_defs, gen);
-            let val = evaluate(&expr1, flattened, bindings, types, prover_defs, gen);
+            let val = evaluate(&expr1, flattened, bindings, types, prover_defs, field_ops, gen);
             exchange_map(bindings, &mut ext);
             val
         },
         Expr::Function(_) | Expr::Intrinsic(_) => expr.clone(),
         Expr::Match(matche) => {
-            let val = evaluate(&matche.0, flattened, bindings, types, prover_defs, gen);
+            let val = evaluate(&matche.0, flattened, bindings, types, prover_defs, field_ops, gen);
             for (pat, expr2) in matche.1.iter().zip(matche.2.iter()) {
                 let res = match_pattern_expr(
                     &pat,
@@ -631,7 +661,7 @@ fn evaluate(
                             ),
                             t: expr.t.clone()
                         };
-                        return evaluate(&expr, flattened, bindings, types, prover_defs, gen);
+                        return evaluate(&expr, flattened, bindings, types, prover_defs, field_ops, gen);
                     },
                     Tribool::Indeterminate =>
                         panic!("cannot statically match {} against {}", val, pat),
@@ -651,9 +681,19 @@ fn evaluate_def(
     bindings: &mut HashMap<VariableId, TExpr>,
     types: &mut HashMap<VariableId, Type>,
     prover_defs: &mut HashSet<VariableId>,
+    field_ops: &dyn FieldOps,
     gen: &mut VarGen,
 ) {
-    let ext = evaluate_binding(&def.0, HashMap::new(), flattened, bindings, types, prover_defs, gen);
+    let ext = evaluate_binding(
+        &def.0,
+        HashMap::new(),
+        flattened,
+        bindings,
+        types,
+        prover_defs,
+        field_ops,
+        gen,
+    );
     bindings.extend(ext);
 }
 
@@ -664,14 +704,15 @@ pub fn evaluate_module(
     bindings: &mut HashMap<VariableId, TExpr>,
     types: &mut HashMap<VariableId, Type>,
     prover_defs: &mut HashSet<VariableId>,
+    field_ops: &dyn FieldOps,
     gen: &mut VarGen,
 ) {
     flattened.pubs.extend(module.pubs.clone());
     for def in &module.defs {
-        evaluate_def(def, flattened, bindings, types, prover_defs, gen);
+        evaluate_def(def, flattened, bindings, types, prover_defs, field_ops, gen);
     }
     for expr in &module.exprs {
-        evaluate(expr, flattened, bindings, types, prover_defs, gen);
+        evaluate(expr, flattened, bindings, types, prover_defs, field_ops, gen);
     }
 }
 
@@ -1121,7 +1162,7 @@ pub fn classify_defs(module: &mut Module, prover_defs: &mut HashSet<VariableId>)
 }
 
 /* Compile the given module down into three-address codes. */
-pub fn compile(mut module: Module) -> Module {
+pub fn compile(mut module: Module, field_ops: &dyn FieldOps) -> Module {
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
     let mut bindings = HashMap::new();
@@ -1141,6 +1182,7 @@ pub fn compile(mut module: Module) -> Module {
         &mut bindings,
         &mut prog_types,
         &mut prover_defs,
+        field_ops,
         &mut vg,
     );
     // Unitize all function expressions

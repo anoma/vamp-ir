@@ -18,7 +18,7 @@ use plonk::error::to_pc_error;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use plonk_core::prelude::VerifierData;
-use crate::synth::{PlonkModule, make_constant};
+use crate::synth::{PlonkModule, PrimeFieldOps, make_constant};
 use plonk_core::circuit::Circuit;
 use ark_ff::PrimeField;
 use std::fs::File;
@@ -223,7 +223,7 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile
     println!("* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module);
+    let module_3ac = compile(module, &PrimeFieldOps::<BlsScalar>::default());
 
     println!("* Synthesizing arithmetic circuit...");
     let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
