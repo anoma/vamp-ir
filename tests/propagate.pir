@@ -1,4 +1,4 @@
-/* Run as follows:
+/* Output should be a proof verification error. Run as follows:
    vamp-ir setup -o params.pp
    vamp-ir compile -u params.pp -s tests/propagate.pir -o circuit.plonk
    vamp-ir prove -u params.pp -c circuit.plonk -o proof.plonk
