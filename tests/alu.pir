@@ -214,26 +214,38 @@ def fst (a,b) = a;
 
 def snd (a,b) = b;
 
-// 4 bit unsigned Euclidean division
+// Single round of n bit unsigned Euclidean division
 
-def divrem a3 b0 = {
-    def b1 = b0*2;
-    def b2 = b1*2;
-    def b3 = b2*2;
-    def c3 = ult 8 b3 a3;
-    def a2 = a3 - c3*b3;
-    def c2 = ult 8 b2 a2;
-    def a1 = a2 - c2*b2;
-    def c1 = ult 8 b1 a1;
-    def a0 = a1 - c1*b1;
-    def c0 = ult 8 b0 a0;
-    def rem = a0 - c0*b0;
-    (combine 8 (c0:c1:c2:c3:0:0:0:0:[]), rem)
+def div_next prev a b m n acc = {
+    def n = n - 1;
+    // Shift the divisor
+    def c = b * (2^n);
+    // Check if shifting produces larger number
+    def d = ult m c a;
+    // Subtract the shifted value if it is smaller
+    def e = a - d * c;
+    // Move to the next round on the remainder
+    prev e b m n (d:acc)
 };
 
-def div a b = fst (divrem a b);
+// n bit unsigned Euclidean division base case
 
-def rem a b = snd (divrem a b);
+def div_base a b m n acc = (acc, a);
+
+// n bit unsigned Euclidean division
+
+def divrem n a b = {
+    // Inductively build up division function
+    def div = iter n div_next div_base;
+    // Do the division, doubling space for inequalities
+    def (quot, rem) = div a b (2*n) n [];
+    // Combine the bits into a number again
+    (combine n quot, rem)
+};
+
+def div n a b = fst (divrem n a b);
+
+def rem n a b = snd (divrem n a b);
 
 // Check the operations work correctly
 
@@ -253,7 +265,7 @@ def rem a b = snd (divrem a b);
 
 1 = sle 8 5 5;
 
-(4,1) = divrem 9 2;
+(25,21) = divrem 32 3846 153;
 
 range 4 15;
 

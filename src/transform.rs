@@ -919,8 +919,9 @@ fn flatten_equals(
     flattened: &mut Module,
 ) {
     match (&expr1.v, &expr2.v) {
-        (Expr::Unit, Expr::Unit) => {},
-        (Expr::Product(expr11, expr12), Expr::Product(expr21, expr22)) => {
+        (Expr::Unit, Expr::Unit) | (Expr::Nil, Expr::Nil) => {},
+        (Expr::Product(expr11, expr12), Expr::Product(expr21, expr22)) |
+        (Expr::Cons(expr11, expr12), Expr::Cons(expr21, expr22)) => {
             flatten_equals(expr11, expr21, flattened);
             flatten_equals(expr12, expr22, flattened);
         },
