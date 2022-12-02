@@ -873,14 +873,16 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Variable(v1),
                         Expr::Constant(c2),
                     ) => {
-                        self.make_gate(Some(v1.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), make_constant::<F>(-c2), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op2: F = make_constant::<F>(c2.clone());
+                        self.make_gate(Some(v1.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), -op2, cell0, &mut inputs, &cs, &mut layouter)?;
                     },
                     // v1 = -c2
                     (
                         Expr::Variable(v1),
                         Expr::Negate(e2),
                     ) if matches!(&e2.v, Expr::Constant(c2) if {
-                        self.make_gate(Some(v1.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), make_constant::<F>(c2.clone()), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op2: F = make_constant::<F>(c2.clone());
+                        self.make_gate(Some(v1.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op2, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // v1 = -v2
@@ -899,7 +901,9 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c2),
                         Expr::Constant(c3),
                     ) if {
-                        self.make_gate(Some(v1.id), None, None, F::one(), F::one(), F::zero(), F::zero(), make_constant::<F>(-c2-c3), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op2: F = make_constant::<F>(c2.clone());
+                        let op3: F = make_constant::<F>(c3.clone());
+                        self.make_gate(Some(v1.id), None, None, F::one(), F::one(), F::zero(), F::zero(), -op2-op3, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // v1 = v2 + c3
@@ -910,7 +914,8 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Variable(v2),
                         Expr::Constant(c3),
                     ) if {
-                        self.make_gate(Some(v1.id), Some(v2.id), None, F::one(), -F::one(), F::zero(), F::zero(), make_constant::<F>(-c3.clone()), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op3: F = make_constant::<F>(c3.clone());
+                        self.make_gate(Some(v1.id), Some(v2.id), None, F::one(), -F::one(), F::zero(), F::zero(), -op3, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // v1 = c2 + v3
@@ -921,7 +926,8 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c2),
                         Expr::Variable(v3),
                     ) if {
-                        self.make_gate(Some(v1.id), Some(v3.id), None, F::one(), -F::one(), F::zero(), F::zero(), make_constant::<F>(-c2.clone()), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op2: F = make_constant::<F>(c2.clone());
+                        self.make_gate(Some(v1.id), Some(v3.id), None, F::one(), -F::one(), F::zero(), F::zero(), -op2, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // v1 = v2 + v3
@@ -943,7 +949,9 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c2),
                         Expr::Constant(c3),
                     ) if {
-                        self.make_gate(Some(v1.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), make_constant::<F>(c3-c2), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op2: F = make_constant::<F>(c2.clone());
+                        let op3: F = make_constant::<F>(c3.clone());
+                        self.make_gate(Some(v1.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op3-op2, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // v1 = v2 - c3
@@ -954,7 +962,8 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Variable(v2),
                         Expr::Constant(c3),
                     ) if {
-                        self.make_gate(Some(v1.id), Some(v2.id), None, F::one(), -F::one(), F::zero(), F::zero(), make_constant::<F>(c3.clone()), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op3: F = make_constant::<F>(c3.clone());
+                        self.make_gate(Some(v1.id), Some(v2.id), None, F::one(), -F::one(), F::zero(), F::zero(), op3, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // v1 = c2 - v3
@@ -965,7 +974,8 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c2),
                         Expr::Variable(v3),
                     ) if {
-                        self.make_gate(Some(v1.id), Some(v3.id), None, F::one(), F::one(), F::zero(), F::zero(), make_constant::<F>(-c2), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op2: F = make_constant::<F>(c2.clone());
+                        self.make_gate(Some(v1.id), Some(v3.id), None, F::one(), F::one(), F::zero(), F::zero(), -op2, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // v1 = v2 - v3
@@ -1012,7 +1022,8 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c2),
                         Expr::Variable(v3),
                     ) if {
-                        self.make_gate(Some(v1.id), Some(v3.id), None, F::zero(), F::zero(), F::zero(), F::one(), make_constant::<F>(-c2), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op2: F = make_constant::<F>(c2.clone());
+                        self.make_gate(Some(v1.id), Some(v3.id), None, F::zero(), F::zero(), F::zero(), F::one(), -op2, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // v1 = v2 / v3 ***
@@ -1080,21 +1091,26 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c1),
                         Expr::Variable(v2),
                     ) => {
-                        self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), make_constant(-c1), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), -op1, cell0, &mut inputs, &cs, &mut layouter)?;
                     },
                     // c1 = c2
                     (
                         Expr::Constant(c1),
                         Expr::Constant(c2),
                     ) => {
-                        self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), make_constant(c1-c2), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        let op2: F = make_constant::<F>(c2.clone());
+                        self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), op1-op2, cell0, &mut inputs, &cs, &mut layouter)?;
                     },
                     // c1 = -c2
                     (
                         Expr::Constant(c1),
                         Expr::Negate(e2),
                     ) if matches!(&e2.v, Expr::Constant(c2) if {
-                        self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), make_constant(c1+c2), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        let op2: F = make_constant::<F>(c2.clone());
+                        self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), op1+op2, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // c1 = -v2
@@ -1102,7 +1118,8 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c1),
                         Expr::Negate(e2),
                     ) if matches!(&e2.v, Expr::Variable(v2) if {
-                        self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), make_constant(c1.clone()), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op1, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // c1 = c2 + c3
@@ -1113,7 +1130,10 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c2),
                         Expr::Constant(c3),
                     ) if {
-                        self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), make_constant(c1-c2-c3), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        let op2: F = make_constant::<F>(c2.clone());
+                        let op3: F = make_constant::<F>(c3.clone());
+                        self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), op1-op2-op3, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // c1 = v2 + c3
@@ -1124,7 +1144,9 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Variable(v2),
                         Expr::Constant(c3),
                     ) if {
-                        self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), make_constant(c3-c1), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        let op3: F = make_constant::<F>(c3.clone());
+                        self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op3-op1, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // c1 = c2 + v3
@@ -1135,7 +1157,9 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c2),
                         Expr::Variable(v3),
                     ) if {
-                        self.make_gate(Some(v3.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), make_constant(c2-c1), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        let op2: F = make_constant::<F>(c2.clone());
+                        self.make_gate(Some(v3.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op2-op1, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // c1 = v2 + v3
@@ -1146,7 +1170,8 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Variable(v2),
                         Expr::Variable(v3),
                     ) if {
-                        self.make_gate(Some(v2.id), Some(v3.id), None, F::one(), F::one(), F::zero(), F::zero(), make_constant(-c1), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        self.make_gate(Some(v2.id), Some(v3.id), None, F::one(), F::one(), F::zero(), F::zero(), -op1, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // c1 = c2 - c3
@@ -1157,7 +1182,10 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c2),
                         Expr::Constant(c3),
                     ) if {
-                        self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), make_constant(c1-c2+c3), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        let op2: F = make_constant::<F>(c2.clone());
+                        let op3: F = make_constant::<F>(c3.clone());
+                        self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), op1-op2+op3, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // c1 = v2 - c3
@@ -1168,7 +1196,9 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Variable(v2),
                         Expr::Constant(c3),
                     ) if {
-                        self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), make_constant(-c1-c3), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        let op3: F = make_constant::<F>(c3.clone());
+                        self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), -op1-op3, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // c1 = c2 - v3
@@ -1179,7 +1209,9 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Constant(c2),
                         Expr::Variable(v3),
                     ) if {
-                        self.make_gate(Some(v3.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), make_constant(c1-c2), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        let op2: F = make_constant::<F>(c2.clone());
+                        self.make_gate(Some(v3.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op1-op2, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // c1 = v2 - v3
@@ -1190,7 +1222,8 @@ impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {
                         Expr::Variable(v2),
                         Expr::Variable(v3),
                     ) if {
-                        self.make_gate(Some(v2.id), Some(v3.id), None, F::one(), -F::one(), F::zero(), F::zero(), make_constant(-c1), cell0, &mut inputs, &cs, &mut layouter)?;
+                        let op1: F = make_constant::<F>(c1.clone());
+                        self.make_gate(Some(v2.id), Some(v3.id), None, F::one(), -F::one(), F::zero(), F::zero(), -op1, cell0, &mut inputs, &cs, &mut layouter)?;
                         true
                     }) => {},
                     // c1 = c2 / c3
