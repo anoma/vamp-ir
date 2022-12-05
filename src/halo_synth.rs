@@ -423,6 +423,7 @@ fn main() {
 */
 
 use group::ff::Field;
+use ff::PrimeField;
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::circuit::{Cell, Layouter, SimpleFloorPlanner, Value};
 use halo2_proofs::pasta::{EqAffine, Fp};
@@ -431,15 +432,15 @@ use halo2_proofs::poly::{commitment::Params, Rotation};
 use halo2_proofs::transcript::{Blake2bRead, Blake2bWrite, Challenge255};
 use rand_core::OsRng;
 
-use num_bigint::BigInt;
+use num_bigint::{BigInt, BigUint, ToBigInt, Sign};
 use num_traits::Signed;
 
 use std::marker::PhantomData;
 use std::collections::{HashMap, BTreeMap};
 use std::collections::btree_map::Entry;
 
-use crate::ast::{VariableId, Module, Expr, InfixOp};
-use crate::transform::collect_module_variables;
+use crate::ast::{VariableId, Module, Expr, InfixOp, Pat, TExpr};
+use crate::transform::{collect_module_variables, FieldOps};
 
 // Make field elements from signed values
 fn make_constant<F: FieldExt>(c: BigInt) -> F {
@@ -449,6 +450,92 @@ fn make_constant<F: FieldExt>(c: BigInt) -> F {
         magnitude
     } else {
         -magnitude
+    }
+}
+
+/* Evaluate the given expression sourcing any variables from the given maps. */
+fn evaluate_expr<F>(
+    expr: &TExpr,
+    defs: &mut HashMap<VariableId, TExpr>,
+    assigns: &mut HashMap<VariableId, F>,
+) -> F where F: FieldExt + PrimeField {
+    match &expr.v {
+        Expr::Constant(c) => make_constant(c.clone()),
+        Expr::Variable(v) => {
+            if let Some(val) = assigns.get(&v.id) {
+                // First look for existing variable assignment
+                *val
+            } else {
+                // Otherwise compute variable from first principles
+                let val = evaluate_expr(&defs[&v.id].clone(), defs, assigns);
+                assigns.insert(v.id, val);
+                val
+            }
+        },
+        Expr::Negate(e) => -evaluate_expr(e, defs, assigns),
+        Expr::Infix(InfixOp::Add, a, b) =>
+            evaluate_expr(&a, defs, assigns) +
+            evaluate_expr(&b, defs, assigns),
+        Expr::Infix(InfixOp::Subtract, a, b) =>
+            evaluate_expr(&a, defs, assigns) -
+            evaluate_expr(&b, defs, assigns),
+        Expr::Infix(InfixOp::Multiply, a, b) =>
+            evaluate_expr(&a, defs, assigns) *
+            evaluate_expr(&b, defs, assigns),
+        Expr::Infix(InfixOp::Divide, a, b) =>
+            evaluate_expr(&a, defs, assigns) *
+            evaluate_expr(&b, defs, assigns).invert().unwrap(),
+        Expr::Infix(InfixOp::IntDivide, a, b) => {
+            let op1 = BigUint::from_bytes_le(evaluate_expr(&a, defs, assigns).to_repr().as_ref());
+            let op2 = BigUint::from_bytes_le(evaluate_expr(&b, defs, assigns).to_repr().as_ref());
+            F::from_bytes_wide(&(op1 / op2).to_bytes_le().try_into().unwrap())
+        },
+        Expr::Infix(InfixOp::Modulo, a, b) => {
+            let op1 = BigUint::from_bytes_le(evaluate_expr(&a, defs, assigns).to_repr().as_ref());
+            let op2 = BigUint::from_bytes_le(evaluate_expr(&b, defs, assigns).to_repr().as_ref());
+            F::from_bytes_wide(&(op1 % op2).to_bytes_le().try_into().unwrap())
+        },
+        _ => unreachable!("encountered unexpected expression: {}", expr),
+    }
+}
+
+#[derive(Default)]
+pub struct PrimeFieldOps<F> where F: PrimeField {
+    phantom: PhantomData<F>
+}
+
+impl<F> FieldOps for PrimeFieldOps<F> where F: PrimeField + FieldExt {
+    /* Evaluate the given negation expression in the given prime field. */
+    fn canonical(&self, a: BigInt) -> BigInt {
+        let b = make_constant::<F>(a);
+        BigUint::from_bytes_le(b.to_repr().as_ref()).to_bigint().unwrap()
+    }
+    /* Evaluate the given negation expression in the given prime field. */
+    fn negate(&self, a: BigInt) -> BigInt {
+        let b = make_constant::<F>(a);
+        BigUint::from_bytes_le((-b).to_repr().as_ref()).to_bigint().unwrap()
+    }
+    /* Evaluate the given infix expression in the given prime field. */
+    fn infix(&self, op: InfixOp, a: BigInt, b: BigInt) -> BigInt {
+        let c = make_constant::<F>(a.clone());
+        let d = make_constant::<F>(b.clone());
+        match op {
+            InfixOp::Add => BigUint::from_bytes_le((c + d).to_repr().as_ref()).to_bigint().unwrap(),
+            InfixOp::Subtract => BigUint::from_bytes_le((c - d).to_repr().as_ref()).to_bigint().unwrap(),
+            InfixOp::Multiply => BigUint::from_bytes_le((c * d).to_repr().as_ref()).to_bigint().unwrap(),
+            InfixOp::Divide => BigUint::from_bytes_le((c * d.invert().unwrap()).to_repr().as_ref()).to_bigint().unwrap(),
+            InfixOp::IntDivide => a / b,
+            InfixOp::Modulo => a % b,
+            InfixOp::Exponentiate => {
+                let (sign, limbs) = b.to_u64_digits();
+                BigUint::from_bytes_le(if sign == Sign::Minus {
+                    c.pow(&limbs.try_into().unwrap()).invert().unwrap()
+                } else {
+                    c.pow(&limbs.try_into().unwrap())
+                }.to_repr().as_ref()).to_bigint().unwrap()
+            },
+            InfixOp::Equal => panic!("cannot evaluate equals expression"),
+        }
     }
 }
 
@@ -680,7 +767,7 @@ impl<FF: FieldExt> StandardCs<FF> for StandardPlonk<FF> {
     }
 }
 
-impl<F: FieldExt> MyCircuit<F> {
+impl<F: FieldExt + PrimeField> MyCircuit<F> {
     /* Make new circuit with default assignments to all variables in module. */
     pub fn new(module: Module) -> Self {
         let mut variables = HashMap::new();
@@ -699,44 +786,24 @@ impl<F: FieldExt> MyCircuit<F> {
     }
 
     /* Populate input and auxilliary variables from the given program inputs. */
-    /*pub fn populate_variables(
+    pub fn populate_variables(
         &mut self,
         mut field_assigns: HashMap<VariableId, F>,
     ) {
         // Get the definitions necessary to populate auxiliary variables
         let mut definitions = HashMap::new();
         for def in &self.module.defs {
-            if let Pattern::Variable(var) = &def.0.0 {
+            if let Pat::Variable(var) = &def.0.0.v {
                 definitions.insert(var.id, *def.0.1.clone());
             }
         }
         // Start deriving witnesses
         for (var, value) in &mut self.variable_map {
-            let var_expr = Expr::Variable(crate::ast::Variable::new(*var)).into();
-            *value = evaluate_expr(&var_expr, &mut definitions, &mut field_assigns);
+            let var_expr = Expr::Variable(crate::ast::Variable::new(*var)).type_expr(None);
+            *value = Value::known(evaluate_expr(&var_expr, &mut definitions, &mut field_assigns));
         }
-    }*/
-}
-
-fn copy_variable<F: FieldExt>(
-    var: VariableId,
-    cell: Cell,
-    map: &mut BTreeMap<VariableId, Cell>,
-    cs: &impl StandardCs<F>,
-    layouter: &mut impl Layouter<F>,) -> Result<(), Error>
-{
-    match map.entry(var) {
-        Entry::Vacant(vac) => {
-            vac.insert(cell);
-        },
-        Entry::Occupied(occ) => {
-            cs.copy(layouter, cell, *occ.get())?
-        },
     }
-    Ok(())
-}
 
-impl<F: FieldExt> MyCircuit<F> {
     fn make_gate(
         &self, a: Option<VariableId>, b: Option<VariableId>, c: Option<VariableId>,
         sl: F, sr: F, so: F, sm: F, sc: F, cell0: Cell,
@@ -770,6 +837,24 @@ impl<F: FieldExt> MyCircuit<F> {
         }
         Ok(())
     }
+}
+
+fn copy_variable<F: FieldExt>(
+    var: VariableId,
+    cell: Cell,
+    map: &mut BTreeMap<VariableId, Cell>,
+    cs: &impl StandardCs<F>,
+    layouter: &mut impl Layouter<F>,) -> Result<(), Error>
+{
+    match map.entry(var) {
+        Entry::Vacant(vac) => {
+            vac.insert(cell);
+        },
+        Entry::Occupied(occ) => {
+            cs.copy(layouter, cell, *occ.get())?
+        },
+    }
+    Ok(())
 }
 
 impl<F: FieldExt + Field> Circuit<F> for MyCircuit<F> {

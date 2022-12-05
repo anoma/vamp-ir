@@ -24,6 +24,7 @@ halo2_gadgets = "0.2.0"
 num-bigint = "^0.4.0"
 num-traits = "^0.2.14"
 bincode = "2.0.0-rc.1"
+ff = "0.12.1"
 rand_core = "0.6.3"
 plonk = { git = "https://github.com/ZK-Garage/plonk", rev = "ec76fd3" }
 plonk-core = { git = "https://github.com/ZK-Garage/plonk", rev = "ec76fd3", features = [ "std", "trace", "trace-print" ] }

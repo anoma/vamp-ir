@@ -1145,6 +1145,7 @@ dependencies = [
  "ark-serialize",
  "bincode",
  "clap",
+ "ff",
  "group",
  "halo2_gadgets",
  "halo2_proofs",
