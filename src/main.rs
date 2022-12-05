@@ -19,7 +19,8 @@ use plonk::error::to_pc_error;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use plonk_core::prelude::VerifierData;
-use crate::plonk_synth::{PlonkModule, PrimeFieldOps, make_constant};
+use crate::plonk_synth::{PlonkModule, make_constant};
+use crate::halo_synth::Halo2Module;
 use plonk_core::circuit::Circuit;
 use ark_ff::PrimeField;
 use std::fs::File;
@@ -29,8 +30,9 @@ use plonk_core::proof_system::{ProverKey, VerifierKey, Proof};
 use plonk_core::proof_system::pi::PublicInputs;
 use bincode::error::{DecodeError, EncodeError};
 use ark_serialize::{Read, SerializationError};
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
+use halo2_proofs::pasta::Fp;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -64,11 +66,22 @@ struct Setup {
     unchecked: bool,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum ProofSystems {
+    /// PLONK general-purpose zero-knowledge proof scheme
+    Plonk,
+    /// Halo 2 zero-knowledge proving system
+    Halo2,
+}
+
 #[derive(Args)]
 struct Compile {
     /// Path to public parameters
     #[arg(short, long)]
     universal_params: PathBuf,
+    /// Proving system to target
+    #[arg(short, long)]
+    target: ProofSystems,
     /// Path to source file to be compiled
     #[arg(short, long)]
     source: PathBuf,
@@ -211,32 +224,56 @@ fn setup_cmd(Setup { max_degree, output, unchecked }: &Setup) {
 
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
  */
-fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile) {
-    println!("* Compiling constraints...");
-    let unparsed_file = fs::read_to_string(source).expect("cannot read file");
-    let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module, &PrimeFieldOps::<BlsScalar>::default());
+fn compile_cmd(Compile { universal_params, source, output, unchecked, target }: &Compile) {
+    match target {
+        ProofSystems::Plonk => {
+            println!("* Compiling constraints...");
+            let unparsed_file = fs::read_to_string(source).expect("cannot read file");
+            let module = Module::parse(&unparsed_file).unwrap();
+            let module_3ac = compile(module, &plonk_synth::PrimeFieldOps::<BlsScalar>::default());
 
-    println!("* Reading public parameters...");
-    let mut pp_file = File::open(universal_params)
-        .expect("unable to load public parameters file");
-    let pp = if *unchecked {
-        UniversalParams::deserialize_unchecked(&mut pp_file)
-    } else {
-        UniversalParams::deserialize(&mut pp_file)
-    }.unwrap();
+            println!("* Reading public parameters...");
+            let mut pp_file = File::open(universal_params)
+                .expect("unable to load public parameters file");
+            let pp = if *unchecked {
+                UniversalParams::deserialize_unchecked(&mut pp_file)
+            } else {
+                UniversalParams::deserialize(&mut pp_file)
+            }.unwrap();
 
-    println!("* Synthesizing arithmetic circuit...");
-    let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
-    // Compile the circuit
-    let (pk_p, vk) = circuit.compile::<PC>(&pp)
-        .expect("unable to compile circuit");
-    println!("* Serializing circuit to storage...");
-    let mut circuit_file = File::create(output)
-        .expect("unable to create circuit file");
-    CircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
+            println!("* Synthesizing arithmetic circuit...");
+            let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
+            // Compile the circuit
+            let (pk_p, vk) = circuit.compile::<PC>(&pp)
+                .expect("unable to compile circuit");
+            println!("* Serializing circuit to storage...");
+            let mut circuit_file = File::create(output)
+                .expect("unable to create circuit file");
+            CircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
 
-    println!("* Constraint compilation success!");
+            println!("* Constraint compilation success!");
+        },
+        ProofSystems::Halo2 => {
+            println!("* Compiling constraints...");
+            let unparsed_file = fs::read_to_string(source).expect("cannot read file");
+            let module = Module::parse(&unparsed_file).unwrap();
+            let module_3ac = compile(module, &halo_synth::PrimeFieldOps::<Fp>::default());
+
+            println!("* Synthesizing arithmetic circuit...");
+            let circuit = Halo2Module::<Fp>::new(module_3ac.clone());
+            let (params, proving_key) = halo_synth::keygen(&circuit);
+            let mut circuit_file = File::create(output)
+                .expect("unable to create circuit file");
+            params.write(&mut circuit_file).expect("unable to create circuit file");
+            bincode::encode_into_std_write(
+                &circuit,
+                &mut circuit_file,
+                bincode::config::standard(),
+            ).expect("unable to create circuit file");
+
+            println!("* Constraint compilation success!");
+        },
+    }
 }
 
 /* Implements the subcommand that creates a proof from interactively entered
