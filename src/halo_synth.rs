@@ -46,7 +46,7 @@ impl<T> bincode::Decode for PrimeFieldBincode<T> where T: PrimeField, T::Repr: b
 }
 
 // Make field elements from signed values
-fn make_constant<F: FieldExt>(c: BigInt) -> F {
+pub fn make_constant<F: FieldExt>(c: BigInt) -> F {
     let mut bytes = c.magnitude().to_bytes_le();
     bytes.resize(64, 0);
     let magnitude = F::from_bytes_wide(&bytes.try_into().unwrap());

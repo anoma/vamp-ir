@@ -32,7 +32,11 @@ use bincode::error::{DecodeError, EncodeError};
 use ark_serialize::{Read, SerializationError};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
-use halo2_proofs::pasta::Fp;
+use std::str::FromStr;
+use halo2_proofs::poly::commitment::Params;
+use halo2_proofs::pasta::{EqAffine, Fp};
+use std::ops::Neg;
+use num_traits::Num;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -74,14 +78,24 @@ enum ProofSystems {
     Halo2,
 }
 
+
+/*impl FromStr for ProofSystems {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "halo2" => Self::Halo2,
+            "plonk" => Self::Plonk,
+            _ => panic!("unrecognized circuit format"),
+        })
+    }
+}*/
+
 #[derive(Args)]
 struct Compile {
     /// Path to public parameters
     #[arg(short, long)]
     universal_params: PathBuf,
-    /// Proving system to target
-    #[arg(short, long)]
-    target: ProofSystems,
     /// Path to source file to be compiled
     #[arg(short, long)]
     source: PathBuf,
@@ -128,14 +142,42 @@ struct Verify {
 type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
 type UniversalParams = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams;
 
-/* Captures all the data required to use a circuit. */
-struct CircuitData {
+/* Captures all the data required to use a Halo2 circuit. */
+struct HaloCircuitData {
+    params: Params<EqAffine>,
+    circuit: Halo2Module::<Fp>,
+}
+
+impl HaloCircuitData {
+    fn read<R>(mut reader: R) -> Result<Self, DecodeError>
+    where R: std::io::Read {
+        let params = Params::<EqAffine>::read(&mut reader)
+            .map_err(|x| DecodeError::OtherString(x.to_string()))?;
+        let circuit: Halo2Module::<Fp> =
+            bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
+        Ok(Self { params, circuit })
+    }
+    
+    fn write<W>(&self, mut writer: W) -> Result<(), EncodeError>
+    where W: std::io::Write {
+        self.params.write(&mut writer).expect("unable to create circuit file");
+        bincode::encode_into_std_write(
+            &self.circuit,
+            &mut writer,
+            bincode::config::standard(),
+        ).expect("unable to create circuit file");
+        Ok(())
+    }
+}
+
+/* Captures all the data required to use a PLONK circuit. */
+struct PlonkCircuitData {
     pk_p: ProverKey::<BlsScalar>,
     vk: (VerifierKey::<BlsScalar, PC>, Vec<usize>),
     circuit: PlonkModule::<BlsScalar, JubJubParameters>,
 }
 
-impl CircuitData {
+impl PlonkCircuitData {
     fn read<R>(mut reader: R) -> Result<Self, DecodeError>
     where R: std::io::Read {
         let pk_p = ProverKey::<BlsScalar>::deserialize(&mut reader)
@@ -170,7 +212,7 @@ struct ProofData {
 }
 
 /* Prompt for satisfying inputs to the given program. */
-fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: PrimeField {
+fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug {
     let mut input_variables = HashMap::new();
     collect_module_variables(&annotated, &mut input_variables);
     // Defined variables should not be requested from user
@@ -200,7 +242,7 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Prime
             .expect("failed to read input");
         let x = parse_prefixed_num(input_line.trim())
             .expect("input not an integer");
-        var_assignments.insert(id, make_constant(&x));
+        var_assignments.insert(id, x);
     }
     var_assignments
 }
@@ -222,10 +264,18 @@ fn setup_cmd(Setup { max_degree, output, unchecked }: &Setup) {
     println!("* Public parameter setup success!");
 }
 
+/* Extract the circuit format from the path. */
+fn circuit_format(path_buf: &PathBuf) -> ProofSystems {
+    const ERROR: &str =
+        "output circuit must have one of following extensions: halo2, plonk";
+    let ext = path_buf.extension().expect(ERROR);
+    ProofSystems::from_str(ext.to_str().unwrap(), true).expect(ERROR)
+}
+
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
  */
-fn compile_cmd(Compile { universal_params, source, output, unchecked, target }: &Compile) {
-    match target {
+fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile) {
+    match circuit_format(output) {
         ProofSystems::Plonk => {
             println!("* Compiling constraints...");
             let unparsed_file = fs::read_to_string(source).expect("cannot read file");
@@ -249,7 +299,7 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked, target }: 
             println!("* Serializing circuit to storage...");
             let mut circuit_file = File::create(output)
                 .expect("unable to create circuit file");
-            CircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
+            PlonkCircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
 
             println!("* Constraint compilation success!");
         },
@@ -261,15 +311,10 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked, target }: 
 
             println!("* Synthesizing arithmetic circuit...");
             let circuit = Halo2Module::<Fp>::new(module_3ac.clone());
-            let (params, proving_key) = halo_synth::keygen(&circuit);
+            let (params, _proving_key) = halo_synth::keygen(&circuit);
             let mut circuit_file = File::create(output)
                 .expect("unable to create circuit file");
-            params.write(&mut circuit_file).expect("unable to create circuit file");
-            bincode::encode_into_std_write(
-                &circuit,
-                &mut circuit_file,
-                bincode::config::standard(),
-            ).expect("unable to create circuit file");
+            HaloCircuitData { params, circuit }.write(&mut circuit_file).unwrap();
 
             println!("* Constraint compilation success!");
         },
@@ -279,36 +324,64 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked, target }: 
 /* Implements the subcommand that creates a proof from interactively entered
  * inputs. */
 fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
-    println!("* Reading arithmetic circuit...");
-    let mut circuit_file = File::open(circuit)
-        .expect("unable to load circuit file");
-    let CircuitData { pk_p, vk: _vk, mut circuit} =
-        CircuitData::read(&mut circuit_file).unwrap();
+    match circuit_format(circuit) {
+        ProofSystems::Plonk => {
+            println!("* Reading arithmetic circuit...");
+            let mut circuit_file = File::open(circuit)
+                .expect("unable to load circuit file");
+            let PlonkCircuitData { pk_p, vk: _vk, mut circuit} =
+                PlonkCircuitData::read(&mut circuit_file).unwrap();
 
-    // Prover POV
-    println!("* Soliciting circuit witnesses...");
-    // Prompt for program inputs
-    let var_assignments = prompt_inputs(&circuit.module);
-    // Populate variable definitions
-    circuit.populate_variables(var_assignments);
-    println!("* Reading public parameters...");
-    let mut pp_file = File::open(universal_params)
-        .expect("unable to load public parameters file");
-    let pp = if *unchecked {
-        UniversalParams::deserialize_unchecked(&mut pp_file)
-    } else {
-        UniversalParams::deserialize(&mut pp_file)
-    }.unwrap();
-    // Start proving witnesses
-    println!("* Proving knowledge of witnesses...");
-    let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
+            // Prover POV
+            println!("* Soliciting circuit witnesses...");
+            // Prompt for program inputs
+            let var_assignments_ints = prompt_inputs(&circuit.module);
+            let mut var_assignments = HashMap::new();
+            for (k, v) in var_assignments_ints {
+                var_assignments.insert(k, plonk_synth::make_constant(&v));
+            }
+            
+            // Populate variable definitions
+            circuit.populate_variables(var_assignments);
+            
+            println!("* Reading public parameters...");
+            let mut pp_file = File::open(universal_params)
+                .expect("unable to load public parameters file");
+            let pp = if *unchecked {
+                UniversalParams::deserialize_unchecked(&mut pp_file)
+            } else {
+                UniversalParams::deserialize(&mut pp_file)
+            }.unwrap();
+            // Start proving witnesses
+            println!("* Proving knowledge of witnesses...");
+            let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
 
-    println!("* Serializing proof to storage...");
-    let mut proof_file = File::create(output)
-        .expect("unable to create proof file");
-    ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
+            println!("* Serializing proof to storage...");
+            let mut proof_file = File::create(output)
+                .expect("unable to create proof file");
+            ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
 
-    println!("* Proof generation success!");
+            println!("* Proof generation success!");
+        },
+        ProofSystems::Halo2 => {
+            println!("* Reading arithmetic circuit...");
+            let mut circuit_file = File::open(circuit)
+                .expect("unable to load circuit file");
+            let HaloCircuitData { params, mut circuit} =
+                HaloCircuitData::read(&mut circuit_file).unwrap();
+
+            // Prover POV
+            println!("* Soliciting circuit witnesses...");
+            // Prompt for program inputs
+            let var_assignments_ints = prompt_inputs(&circuit.module);
+            let mut var_assignments = HashMap::new();
+            for (k, v) in var_assignments_ints {
+                var_assignments.insert(k, halo_synth::make_constant(v));
+            }
+            // Populate variable definitions
+            circuit.populate_variables(var_assignments);
+        },
+    }
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
@@ -316,8 +389,8 @@ fn verify_cmd(Verify { universal_params, circuit, proof, unchecked }: &Verify) {
     println!("* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit)
         .expect("unable to load circuit file");
-    let CircuitData { pk_p: _pk_p, vk, circuit } =
-        CircuitData::read(&mut circuit_file).unwrap();
+    let PlonkCircuitData { pk_p: _pk_p, vk, circuit } =
+        PlonkCircuitData::read(&mut circuit_file).unwrap();
 
     println!("* Reading zero-knowledge proof...");
     let mut proof_file = File::open(proof)
