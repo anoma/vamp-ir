@@ -20,7 +20,7 @@ ark-serialize = "0.3.0"
 clap = { version = "4.0.17", features = [ "derive" ] }
 num-bigint = "^0.4.0"
 num-traits = "^0.2.14"
-bincode = "2.0.0-rc.1"
+bincode = "=2.0.0-rc.1"
 rand_core = "0.6.3"
 plonk = { git = "https://github.com/ZK-Garage/plonk", rev = "ec76fd3" }
 plonk-core = { git = "https://github.com/ZK-Garage/plonk", rev = "ec76fd3", features = [ "std", "trace", "trace-print" ] }
