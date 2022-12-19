@@ -211,6 +211,11 @@ fn setup_cmd(Setup { max_degree, output, unchecked }: &Setup) {
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
  */
 fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile) {
+    println!("* Compiling constraints...");
+    let unparsed_file = fs::read_to_string(source).expect("cannot read file");
+    let module = Module::parse(&unparsed_file).unwrap();
+    let module_3ac = compile(module, &PrimeFieldOps::<BlsScalar>::default());
+
     println!("* Reading public parameters...");
     let mut pp_file = File::open(universal_params)
         .expect("unable to load public parameters file");
@@ -219,11 +224,6 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile
     } else {
         UniversalParams::deserialize(&mut pp_file)
     }.unwrap();
-
-    println!("* Compiling constraints...");
-    let unparsed_file = fs::read_to_string(source).expect("cannot read file");
-    let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module, &PrimeFieldOps::<BlsScalar>::default());
 
     println!("* Synthesizing arithmetic circuit...");
     let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
@@ -247,6 +247,12 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
     let CircuitData { pk_p, vk: _vk, mut circuit} =
         CircuitData::read(&mut circuit_file).unwrap();
 
+    // Prover POV
+    println!("* Soliciting circuit witnesses...");
+    // Prompt for program inputs
+    let var_assignments = prompt_inputs(&circuit.module);
+    // Populate variable definitions
+    circuit.populate_variables(var_assignments);
     println!("* Reading public parameters...");
     let mut pp_file = File::open(universal_params)
         .expect("unable to load public parameters file");
@@ -255,12 +261,6 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
     } else {
         UniversalParams::deserialize(&mut pp_file)
     }.unwrap();
-    // Prover POV
-    println!("* Soliciting circuit witnesses...");
-    // Prompt for program inputs
-    let var_assignments = prompt_inputs(&circuit.module);
-    // Populate variable definitions
-    circuit.populate_variables(var_assignments);
     // Start proving witnesses
     println!("* Proving knowledge of witnesses...");
     let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
@@ -286,6 +286,11 @@ fn verify_cmd(Verify { universal_params, circuit, proof, unchecked }: &Verify) {
         .expect("unable to load proof file");
     let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
 
+    println!("* Public inputs:");
+    for (var, val) in circuit.annotate_public_inputs(&vk.1, &pi).values() {
+        println!("{} = {}", var, val);
+    }
+
     println!("* Reading public parameters...");
     let mut pp_file = File::open(universal_params)
         .expect("unable to load public parameters file");
@@ -294,11 +299,6 @@ fn verify_cmd(Verify { universal_params, circuit, proof, unchecked }: &Verify) {
     } else {
         UniversalParams::deserialize(&mut pp_file)
     }.unwrap();
-
-    println!("* Public inputs:");
-    for (var, val) in circuit.annotate_public_inputs(&vk.1, &pi).values() {
-        println!("{} = {}", var, val);
-    }
     
     // Verifier POV
     println!("* Verifying proof validity...");

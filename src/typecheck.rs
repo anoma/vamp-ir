@@ -279,55 +279,76 @@ fn instantiate_type_vars(
     }
 }
 
-/* Refresh all type variables occuring in the given expression that are not
- * already bound in the type environment. */
-pub fn expand_expr_types(
-    expr: &mut TExpr,
-    types: &HashMap<VariableId, Type>,
-    type_env: &HashMap<VariableId, VariableId>,
-    gen: &mut VarGen,
-) {
-    let expanded = expand_type(
-        expr.t.as_ref().expect("type inference must already be done"),
-        types,
-    );
-    expr.t = Some(expanded);
+/* Strip all type variables occuring in the given pattern. */
+pub fn strip_pat_types(pat: &mut TPat) {
+    pat.t = None;
+    match &mut pat.v {
+        Pat::As(pat1, _) => {
+            strip_pat_types(pat1);
+        },
+        Pat::Product(pat1, pat2) => {
+            strip_pat_types(pat1);
+            strip_pat_types(pat2);
+        },
+        Pat::Constant(_) | Pat::Unit | Pat::Variable(_) => {},
+    }
+}
+
+/* Strip all type variables occuring in the given expression. */
+pub fn strip_expr_types(expr: &mut TExpr) {
+    expr.t = None;
     match &mut expr.v {
         Expr::Sequence(exprs) => {
             for expr in exprs {
-                expand_expr_types(expr, types, type_env, gen);
+                strip_expr_types(expr);
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
         Expr::Product(expr1, expr2) => {
-            expand_expr_types(expr1, types, type_env, gen);
-            expand_expr_types(expr2, types, type_env, gen);
+            strip_expr_types(expr1);
+            strip_expr_types(expr2);
         },
         Expr::Match(matche) => {
-            expand_expr_types(&mut matche.0, types, type_env, gen);
+            strip_expr_types(&mut matche.0);
             for (_, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
-                expand_expr_types(expr2, types, type_env, gen);
+                strip_expr_types(expr2);
             }
         },
         Expr::Negate(expr) => {
-            expand_expr_types(expr, types, type_env, gen);
+            strip_expr_types(expr);
         },
         Expr::Constant(_) | Expr::Unit | Expr::Variable(_) => {},
         Expr::Intrinsic(Intrinsic { env, .. }) => {
             for val in env.values_mut() {
-                expand_expr_types(val, types, type_env, gen);
+                strip_expr_types(val);
             }
         },
         Expr::Function(Function { body, env, .. }) => {
-            expand_expr_types(body, types, type_env, gen);
+            strip_expr_types(body);
             for val in env.values_mut() {
-                expand_expr_types(val, types, type_env, gen);
+                strip_expr_types(val);
             }
         },
         Expr::LetBinding(binding, expr) => {
-            expand_expr_types(&mut binding.1, types, type_env, gen);
-            expand_expr_types(expr, types, type_env, gen);
+            strip_expr_types(&mut binding.1);
+            strip_expr_types(expr);
         },
+    }
+}
+
+/* Strip all type variables occuring in the given definition. */
+pub fn strip_def_types(def: &mut Definition) {
+    strip_pat_types(&mut def.0.0);
+    strip_expr_types(&mut def.0.1);
+}
+
+/* Strip all type variables occuring in the given module. */
+pub fn strip_module_types(module: &mut Module) {
+    for def in &mut module.defs {
+        strip_def_types(def);
+    }
+    for expr in &mut module.exprs {
+        strip_expr_types(expr);
     }
 }
 
@@ -637,242 +658,102 @@ pub fn infer_module_types(
 /* Expand tuple pattern variables into tuple patterns. */
 pub fn expand_pattern_variables(
     pat: &mut TPat,
+    expr: &TExpr,
     map: &mut HashMap<VariableId, TPat>,
-    types: &HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
-    let typ = partial_expand_type(pat_type_var(pat), types);
-    match (&mut pat.v, typ) {
+    match (&mut pat.v, &expr.v) {
         (Pat::Variable(var), _) if map.contains_key(&var.id) => {
             *pat = map[&var.id].clone();
         },
-        (Pat::Variable(var), Type::Product(typ1, typ2)) => {
+        (Pat::Variable(var), Expr::Product(expr1, expr2)) => {
             let mut new_var1 = Variable::new(gen.generate_id());
             new_var1.name = var
                 .name
                 .as_ref()
                 .map(|x| x.to_owned() + ".0");
-            let mut var1 = Pat::Variable(new_var1).type_pat(Some(*typ1.clone()));
-            expand_pattern_variables(&mut var1, map, types, gen);
+            let mut var1 = Pat::Variable(new_var1).type_pat(None);
+            expand_pattern_variables(&mut var1, &expr1, map, gen);
             
             let mut new_var2 = Variable::new(gen.generate_id());
             new_var2.name = var
                 .name
                 .as_ref()
                 .map(|x| x.to_owned() + ".1");
-            let mut var2 = Pat::Variable(new_var2).type_pat(Some(*typ2.clone()));
-            expand_pattern_variables(&mut var2, map, types, gen);
+            let mut var2 = Pat::Variable(new_var2).type_pat(None);
+            expand_pattern_variables(&mut var2, &expr2, map, gen);
 
             let curr_id = var.id;
             pat.v = Pat::Product(Box::new(var1), Box::new(var2));
             map.insert(curr_id, pat.clone());
         },
-        (Pat::Variable(var), Type::Unit) => {
+        (Pat::Variable(var), Expr::Unit) => {
             map.insert(var.id, Pat::Unit.type_pat(Some(Type::Unit)));
             *pat = map[&var.id].clone();
         },
         (Pat::Variable(_), _) => {},
-        (Pat::Product(pat1, pat2), _) => {
-            expand_pattern_variables(pat1, map, types, gen);
-            expand_pattern_variables(pat2, map, types, gen);
+        (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
+            expand_pattern_variables(pat1, &expr1, map, gen);
+            expand_pattern_variables(pat2, &expr2, map, gen);
         },
-        (Pat::Constant(_), Type::Int) => {},
-        (Pat::Unit, Type::Unit) => {},
+        (Pat::Constant(_), _) => {},
+        (Pat::Unit, _) => {},
         (Pat::As(pat1, _name), _) => {
-            expand_pattern_variables(pat1, map, types, gen);
+            expand_pattern_variables(pat1, expr, map, gen);
         },
-        _ => panic!("pattern {} cannot have type {}", pat, pat_type_var(pat)),
+        _ => panic!("pattern {} cannot match {}", pat, expr),
     }
 }
 
-/* Expand tuple expression variables into tuple expressions. */
-pub fn expand_variables(
+/* Expand tuple variables into tuple expressions using the available type
+ * information. */
+pub fn expand_expr_variables(
     expr: &mut TExpr,
-    map: &mut HashMap<VariableId, TPat>,
+    map: &mut HashMap<VariableId, TExpr>,
     types: &HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
-    match &mut expr.v {
-        Expr::LetBinding(binding, body) => {
-            expand_variables(&mut *binding.1, map, types, gen);
-            expand_pattern_variables(&mut binding.0, map, types, gen);
-            expand_variables(body, map, types, gen);
+    let typ = partial_expand_type(expr_type_var(expr), types);
+    match (&mut expr.v, typ) {
+        (Expr::Variable(var), _) if map.contains_key(&var.id) => {
+            *expr = map[&var.id].clone();
         },
-        Expr::Sequence(exprs) => {
-            for expr in exprs {
-                expand_variables(expr, map, types, gen);
-            }
-        },
-        Expr::Match(matche) => {
-            expand_variables(&mut matche.0, map, types, gen);
-            for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
-                expand_pattern_variables(pat, map, types, gen);
-                expand_variables(expr2, map, types, gen);
-            }
-        },
-        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
-            expand_variables(expr1, map, types, gen);
-            expand_variables(expr2, map, types, gen);
-        },
-        Expr::Negate(expr1) => {
-            expand_variables(expr1, map, types, gen);
-        },
-        Expr::Variable(var) if map.contains_key(&var.id) => {
-            *expr = map[&var.id].to_expr();
-        },
-        Expr::Variable(var) if expr.t.is_some() => {
-            let expanded_type = partial_expand_type(expr.t.as_ref().unwrap(), types);
-            if let Type::Product(typ1, typ2) = expanded_type {
-                let mut new_var1 = Variable::new(gen.generate_id());
-                new_var1.name = var
-                    .name
-                    .as_ref()
-                    .map(|x| x.to_owned() + ".0");
-                let var_expr1 = Expr::Variable(new_var1.clone()).type_expr(Some(*typ1.clone()));
-                
-                let mut new_var2 = Variable::new(gen.generate_id());
-                new_var2.name = var
-                    .name
-                    .as_ref()
-                    .map(|x| x.to_owned() + ".1");
-                let var_expr2 = Expr::Variable(new_var2.clone()).type_expr(Some(*typ2.clone()));
-                
-                map.insert(var.id, Pat::Product(
-                    Box::new(Pat::Variable(new_var1).type_pat(Some(*typ1.clone()))),
-                    Box::new(Pat::Variable(new_var2).type_pat(Some(*typ2.clone()))),
-                ).type_pat(expr.t.clone()));
-                *expr = TExpr {
-                    v: Expr::Product(Box::new(var_expr1), Box::new(var_expr2)),
-                    t: expr.t.clone(),
-                };
-                expand_variables(&mut *expr, map, types, gen);
-            } else if let Type::Unit = expanded_type {
-                map.insert(var.id, Pat::Unit.type_pat(Some(Type::Unit)));
-                *expr = TExpr { v: Expr::Unit, t: expr.t.clone() };
-            }
-        },
-        Expr::Function(fun) => {
-            expand_variables(&mut fun.body, map, types, gen);
-        },
-        Expr::Constant(_) | Expr::Variable(_) | Expr::Unit |
-        Expr::Intrinsic(_) => {},
-    }
-}
+        (Expr::Variable(var), Type::Product(typ1, typ2)) => {
+            let mut new_var1 = Variable::new(gen.generate_id());
+            new_var1.name = var
+                .name
+                .as_ref()
+                .map(|x| x.to_owned() + ".0");
+            let mut var1 = Expr::Variable(new_var1).type_expr(Some(*typ1.clone()));
+            expand_expr_variables(&mut var1, map, types, gen);
+            
+            let mut new_var2 = Variable::new(gen.generate_id());
+            new_var2.name = var
+                .name
+                .as_ref()
+                .map(|x| x.to_owned() + ".1");
+            let mut var2 = Expr::Variable(new_var2).type_expr(Some(*typ2.clone()));
+            expand_expr_variables(&mut var2, map, types, gen);
 
-/* Replace all the function types occurring in this type expression with units.
- */
-fn unitize_type_functions(
-    typ: &mut Type,
-    types: &mut HashMap<VariableId, Type>,
-) {
-    match typ {
-        Type::Variable(var) if types.contains_key(&var.id) => {
-            // Temporarily checkout the current type expression to avoid having
-            // multiple borrows.
-            let mut curr = types.remove(&var.id).unwrap();
-            unitize_type_functions(&mut curr, types);
-            types.insert(var.id, curr);
-        }
-        Type::Variable(_) | Type::Int | Type::Unit => {},
-        Type::Function(_, _) => *typ = Type::Unit,
-        Type::Product(typ1, typ2) => {
-            unitize_type_functions(&mut *typ1, types);
-            unitize_type_functions(&mut *typ2, types);
+            let curr_id = var.id;
+            expr.v = Expr::Product(Box::new(var1), Box::new(var2));
+            map.insert(curr_id, expr.clone());
         },
-        Type::Forall(_, b) => unitize_type_functions(b, types),
-    }
-}
-
-/* Takes a pattern and its type. Returns a pattern where pattern variables
- * corresponding to function types are replaced by units. */
-fn unitize_pattern_functions(
-    pat: &mut TPat,
-    types: &HashMap<VariableId, Type>,
-) {
-    let typ = partial_expand_type(pat_type_var(&pat), types);
-    match (&mut pat.v, typ) {
-        (Pat::Variable(_), Type::Function(_, _)) => {
-            *pat = Pat::Unit.type_pat(Some(Type::Unit));
+        (Expr::Variable(var), Type::Unit) => {
+            map.insert(var.id, Expr::Unit.type_expr(Some(Type::Unit)));
+            *expr = map[&var.id].clone();
         },
-        (Pat::As(inner_pat, _), _) => {
-            unitize_pattern_functions(inner_pat, types);
+        (Expr::Variable(_), Type::Int) => {},
+        (Expr::Variable(var), Type::Function(_, _)) =>
+            panic!("the global function {} is undefined", var),
+        (Expr::Variable(var), Type::Variable(_)) =>
+            panic!("unable to determine type of global variable {}", var),
+        (Expr::Product(expr1, expr2), _) => {
+            expand_expr_variables(expr1, map, types, gen);
+            expand_expr_variables(expr2, map, types, gen);
         },
-        (Pat::Product(pat1, pat2), _) => {
-            unitize_pattern_functions(pat1, types);
-            unitize_pattern_functions(pat2, types);
-        },
-        (Pat::Variable(_), Type::Variable(_)) => {},
-        (Pat::Constant(_) | Pat::Variable(_), Type::Int) => {},
-        (Pat::Unit | Pat::Variable(_), Type::Unit) => {},
-        (_, typ) =>
-            panic!("pattern {} does not correspond to type {}", pat, typ),
-    }
-}
-
-/* Replace all functions occuring in the given expression with 0-tuples. */
-fn unitize_expr_functions(
-    expr: &mut TExpr,
-    types: &mut HashMap<VariableId, Type>,
-) {
-    match &mut expr.v {
-        Expr::Function(_) | Expr::Intrinsic(_) => {
-            expr.v = Expr::Unit;
-        },
-        Expr::Sequence(exprs) => {
-            for expr in exprs {
-                unitize_expr_functions(expr, types);
-            }
-        },
-        Expr::Match(matche) => {
-            unitize_expr_functions(&mut matche.0, types);
-            for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
-                unitize_pattern_functions(pat, types);
-                unitize_expr_functions(expr2, types);
-            }
-        },
-        Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2)=> {
-            unitize_expr_functions(expr1, types);
-            unitize_expr_functions(expr2, types);
-        },
-        Expr::LetBinding(binding, body) => {
-            unitize_pattern_functions(&mut binding.0, types);
-            unitize_expr_functions(&mut *binding.1, types);
-            unitize_expr_functions(body, types);
-        },
-        Expr::Negate(expr1) => unitize_expr_functions(expr1, types),
-        Expr::Constant(_) | Expr::Unit => {},
-        Expr::Variable(_) => {
-            let partial_type = expr.t.as_ref().map(|x| partial_expand_type(x, types));
-            if let Some(Type::Function(_, _)) = partial_type {
-                expr.v = Expr::Unit;
-            }
-        },
-    }
-    // Scrub functions from this expression's type
-    unitize_type_functions(expr.t.as_mut().unwrap(), types);
-}
-
-/* Replace all functions occuring in the given definition with 0-tuples. */
-fn unitize_def_functions(
-    def: &mut Definition,
-    types: &mut HashMap<VariableId, Type>,
-) {
-    unitize_pattern_functions(&mut def.0.0, types);
-    unitize_expr_functions(&mut *def.0.1, types);
-}
-
-/* Replace all functions occuring in the given module with 0-tuples. */
-pub fn unitize_module_functions(
-    module: &mut Module,
-    types: &mut HashMap<VariableId, Type>,
-) {
-    for def in &mut module.defs {
-        unitize_def_functions(def, types);
-    }
-    for expr in &mut module.exprs {
-        unitize_expr_functions(expr, types);
+        (Expr::Constant(_), Type::Int) | (Expr::Unit, Type::Unit) => {},
+        _ => panic!("expression {} cannot have type {}", expr, expand_type(expr_type_var(expr), types)),
     }
 }
 

@@ -18,6 +18,6 @@ def bool x = { x*(x-1) = 0 };
 // user higher order function
 map bool q;
 // function value
-def myeq2 = fun (a,b) { a = b };
+def myeq2 = fun (a,b) { a + 0 = b };
 // polymorphism
 map myeq2 r;
