@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use crate::polynomial::create_polynomials;
 use crate::typecheck::{infer_module_types, print_types, expand_pattern_variables, strip_module_types, expand_expr_variables, Type};
 use crate::ast::{Module, Definition, TExpr, Pat, TPat, VariableId, LetBinding, Variable, InfixOp, Expr, Intrinsic, Function};
 use std::hash::Hash;
@@ -1170,6 +1171,7 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps) -> Module {
     // Start doing basic optimizations
     copy_propagate(&mut module_3ac, &prover_defs);
     eliminate_dead_equalities(&mut module_3ac);
+    create_polynomials(&mut module_3ac);
     module_3ac
 }
 

@@ -2,6 +2,7 @@ mod ast;
 mod transform;
 mod synth;
 mod typecheck;
+mod polynomial;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;

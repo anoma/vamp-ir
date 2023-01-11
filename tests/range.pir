@@ -6,7 +6,7 @@
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
 
-pub x;
+pub x, pi;
 
 // Ensure that the given argument is 1 or 0, and returns it
 
@@ -25,3 +25,25 @@ def range5 a = {
 };
 
 def (0, 1, ar) = range5 x;
+
+o = 3*l*r + 5*l + 6*r + 17 + pi;
+
+c = a*b;
+a = 2*d + (1 + 2);
+b = 5*e + 7;
+f - 13 = 11*c;
+g = f + pi;
+
+h = 5*b*a;
+i = 4*c - 3*h;
+
+j = k + p;
+p = 2*j;
+
+s = 2*q;
+t = 5*q;
+u = 4*s;
+v = 3*q;
+w = u-v;
+z = 0-w;
+zz = 2 + 3;
