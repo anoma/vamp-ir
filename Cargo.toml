@@ -16,7 +16,7 @@ ark-bn254 = "0.3"
 ark-ed-on-bn254 = "0.3"
 ark-poly = "0.3"
 ark-poly-commit = "0.3"
-ark-serialize = { version = "0.3.0", features = ["derive"]}
+ark-serialize = { version = "0.4.0", features = ["derive"]}
 clap = { version = "4.0.17", features = [ "derive" ] }
 num-bigint = "^0.4.0"
 num-traits = "^0.2.14"

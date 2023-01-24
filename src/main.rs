@@ -2,14 +2,15 @@ mod ast;
 mod transform;
 mod synth;
 mod typecheck;
+mod util;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 use std::fs;
 use crate::ast::{Module, VariableId, Pat, parse_prefixed_num};
 use crate::transform::{compile, collect_module_variables};
-use ark_bls12_381::{Bls12_381, Fr as BlsScalar};
-use ark_ed_on_bls12_381::EdwardsParameters as JubJubParameters;
+use ark_bn254::{Bn254, Fr as BnScalar};
+use ark_ed_on_bn254::EdwardsParameters as InnerParameters;
 use plonk_core::circuit::verify_proof;
 use ark_poly_commit::{sonic_pc::SonicKZG10, PolynomialCommitment};
 use ark_poly::polynomial::univariate::DensePolynomial;
@@ -111,24 +112,24 @@ struct Verify {
     unchecked: bool,
 }
 
-type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
-type UniversalParams = <PC as PolynomialCommitment<<Bls12_381 as PairingEngine>::Fr, DensePolynomial<BlsScalar>>>::UniversalParams;
+type PC = SonicKZG10<Bn254, DensePolynomial<BnScalar>>;
+type UniversalParams = <PC as PolynomialCommitment<<Bn254 as PairingEngine>::Fr, DensePolynomial<BnScalar>>>::UniversalParams;
 
 /* Captures all the data required to use a circuit. */
 struct CircuitData {
-    pk_p: ProverKey::<BlsScalar>,
-    vk: (VerifierKey::<BlsScalar, PC>, Vec<usize>),
-    circuit: PlonkModule::<BlsScalar, JubJubParameters>,
+    pk_p: ProverKey::<BnScalar>,
+    vk: (VerifierKey::<BnScalar, PC>, Vec<usize>),
+    circuit: PlonkModule::<BnScalar, InnerParameters>,
 }
 
 impl CircuitData {
     fn read<R>(mut reader: R) -> Result<Self, DecodeError>
     where R: std::io::Read {
-        let pk_p = ProverKey::<BlsScalar>::deserialize(&mut reader)
+        let pk_p = ProverKey::<BnScalar>::deserialize(&mut reader)
             .map_err(|x| DecodeError::OtherString(x.to_string()))?;
         let vk = <(VerifierKey::<_, _>, Vec::<usize>)>::deserialize(&mut reader)
             .map_err(|x| DecodeError::OtherString(x.to_string()))?;
-        let circuit: PlonkModule::<BlsScalar, JubJubParameters> =
+        let circuit: PlonkModule::<BnScalar, InnerParameters> =
             bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
         Ok(Self { pk_p, vk, circuit })
     }
@@ -151,8 +152,8 @@ impl CircuitData {
 /* Captures all the data generated from proving circuit witnesses. */
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 struct ProofData {
-    proof: Proof<BlsScalar, PC>,
-    pi: PublicInputs<BlsScalar>,
+    proof: Proof<BnScalar, PC>,
+    pi: PublicInputs<BnScalar>,
 }
 
 /* Prompt for satisfying inputs to the given program. */
@@ -196,7 +197,7 @@ fn setup_cmd(Setup { max_degree, output, unchecked }: &Setup) {
     // Generate CRS
     println!("* Setting up public parameters...");
     let pp = PC::setup(1 << max_degree, None, &mut OsRng)
-        .map_err(to_pc_error::<BlsScalar, PC>)
+        .map_err(to_pc_error::<BnScalar, PC>)
         .expect("unable to setup polynomial commitment scheme public parameters");
     let mut pp_file = File::create(output)
         .expect("unable to create public parameters file");
@@ -214,7 +215,7 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile
     println!("* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module, &PrimeFieldOps::<BlsScalar>::default());
+    let module_3ac = compile(module, &PrimeFieldOps::<BnScalar>::default());
 
     println!("* Reading public parameters...");
     let mut pp_file = File::open(universal_params)
@@ -226,7 +227,7 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile
     }.unwrap();
 
     println!("* Synthesizing arithmetic circuit...");
-    let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
+    let mut circuit = PlonkModule::<BnScalar, InnerParameters>::new(module_3ac.clone());
     // Compile the circuit
     let (pk_p, vk) = circuit.compile::<PC>(&pp)
         .expect("unable to compile circuit");
@@ -303,7 +304,7 @@ fn verify_cmd(Verify { universal_params, circuit, proof, unchecked }: &Verify) {
     // Verifier POV
     println!("* Verifying proof validity...");
     let verifier_data = VerifierData::new(vk.0, pi);
-    let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
+    let verifier_result = verify_proof::<BnScalar, InnerParameters, PC>(
         &pp,
         verifier_data.key,
         &proof,
