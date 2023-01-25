@@ -804,6 +804,7 @@ impl fmt::Display for Match {
 #[derive(Debug, Clone, Copy, Encode, Decode, Eq, PartialEq)]
 pub enum InfixOp {
     Divide,
+    DivideZ,
     Multiply,
     Add,
     Subtract,
@@ -819,6 +820,7 @@ impl InfixOp {
         match pair.as_span().as_str() {
             "=" => Some(Self::Equal),
             "/" => Some(Self::Divide),
+            "|" => Some(Self::DivideZ),
             "*" => Some(Self::Multiply),
             "+" => Some(Self::Add),
             "-" => Some(Self::Subtract),
@@ -834,6 +836,7 @@ impl fmt::Display for InfixOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Divide => write!(f, "/"),
+            Self::DivideZ => write!(f, "|"),
             Self::Multiply => write!(f, "*"),
             Self::Add => write!(f, "+"),
             Self::Subtract => write!(f, "-"),
