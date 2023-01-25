@@ -1,6 +1,6 @@
-/* And 'if' function, implementing the relation `(x=0) => (y=0). Run as follows:
+/* 'if' and 'if_else' functions over 32 bits. Run as follows:
    vamp-ir setup -o params.pp
-   vamp-ir compile -u params.pp -s tests/if.pir -o circuit.plonk
+   vamp-ir compile -u params.pp -s tests/if32.pir -o circuit.plonk
    vamp-ir prove -u params.pp -c circuit.plonk -o proof.plonk
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
