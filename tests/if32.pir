@@ -66,7 +66,9 @@ def nonZero32 a = or32 (map (fun x { 1-x }) (range32 a));
 // If x is nonZero, then y may be anything
 def if x y = (nonZero32 x) * y;
 
-
+// if x = 0 holds, then y must also = 0
+// but if x /= 0, then z must = 0
+def if_else x y z = if x y + x * z;
 
 
 

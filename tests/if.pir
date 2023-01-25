@@ -6,6 +6,7 @@
 */
 
 // Determine that a number is not 0
+// a is non-zero iff there exists an a' s.t. a' * a = 1.
 def nonZero a = {
     def ai = fresh (1|a);
     1 - ai * a
@@ -21,7 +22,7 @@ nonZero 0 = 1;
 // If x is not 0, then y may be anything
 def if x y = (nonZero x) * y;
 
-// Calling the function
+// Testing if
 if 0 0 = 0;
 if 55 34 = 0;
 if 55 0 = 0;
@@ -30,6 +31,23 @@ if 0 20 = 20;
 
 // User input
 //if a b = 0;
+
+// if x = 0 holds, then y must also = 0
+// but if x /= 0, then z must = 0
+def if_else x y z = if x y + x * z;
+
+// Testing if_else
+if_else 0 0 0 = 0;
+if_else 0 0 20 = 0;
+if_else 20 0 0 = 0;
+
+if_else 20 0 5 = 100;
+if_else 20 6 5 = 100;
+if_else 0 6 5 = 6;
+
+
+
+
 
 
 
