@@ -15,7 +15,7 @@ def nonZero a = {
 nonZero 1 = 0;
 nonZero 25 = 0;
 nonZero 234534564 = 0;
-//nonZero 0 = 0;
+nonZero 0 = 1;
 
 // If x is 0, then y must also be 0
 // If x is not 0, then y may be anything
@@ -25,10 +25,11 @@ def if x y = (nonZero x) * y;
 if 0 0 = 0;
 if 55 34 = 0;
 if 55 0 = 0;
-//if 0 1 = 0;
+if 0 1 = 1;
+if 0 20 = 20;
 
 // User input
-//if a b;
+//if a b = 0;
 
 
 
