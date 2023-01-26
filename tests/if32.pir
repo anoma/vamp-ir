@@ -87,6 +87,7 @@ def if_else x y z = if x y + x * z;
 //if_else 0 0 0 = 0;
 //if_else 0 0 20 = 0;
 //if_else 20 0 0 = 0;
+//if_else 20 6 0 = 0;
 // Note: all the tests together produce a TrimmingDegreeTooLarge error
 
 if_else 20 0 5 = 100;
