@@ -9,6 +9,8 @@
 // a is non-zero iff there exists an a' s.t. a' * a = 1.
 def nonZero a = {
     def ai = fresh (1|a);
+    // Correctness Check
+    a * (1 - ai * a) = 0;
     1 - ai * a
 };
 
