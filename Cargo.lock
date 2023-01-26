@@ -25,6 +25,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-bn254"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea691771ebbb28aea556c044e2e5c5227398d840cee0c34d4d20fa8eb2689e8c"
+dependencies = [
+ "ark-ec",
+ "ark-ff",
+ "ark-std",
+]
+
+[[package]]
 name = "ark-ec"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -40,12 +51,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "ark-ed-on-bls12-381"
+name = "ark-ed-on-bn254"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43b7ada17db3854f5994e74e60b18e10e818594935ee7e1d329800c117b32970"
+checksum = "7fdc786b806fdbff4abebb08ec2fcb50cfe3941918e57120ab121228452903fd"
 dependencies = [
- "ark-bls12-381",
+ "ark-bn254",
  "ark-ec",
  "ark-ff",
  "ark-std",
@@ -668,7 +679,7 @@ checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
 [[package]]
 name = "plonk"
 version = "0.8.2"
-source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd3#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
+source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
 dependencies = [
  "plonk-core",
  "plonk-hashing",
@@ -677,7 +688,7 @@ dependencies = [
 [[package]]
 name = "plonk-core"
 version = "0.1.0"
-source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd3#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
+source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
@@ -699,7 +710,7 @@ dependencies = [
 [[package]]
 name = "plonk-hashing"
 version = "0.8.2"
-source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd3#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
+source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
 dependencies = [
  "plonk-core",
 ]
@@ -970,9 +981,9 @@ checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
 name = "vamp-ir"
 version = "0.1.0"
 dependencies = [
- "ark-bls12-381",
+ "ark-bn254",
  "ark-ec",
- "ark-ed-on-bls12-381",
+ "ark-ed-on-bn254",
  "ark-ff",
  "ark-poly",
  "ark-poly-commit",

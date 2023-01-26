@@ -6,13 +6,6 @@
 pragma solidity >=0.8.4;
 // gas count: 299,341 (includes 21,000 tx base cost, includes cost of 3 pub inputs. Cost of circuit without pub inputs is 298,312)
 
-library VK {
-    function get_verification_key() external pure returns (StandardTypes.VerificationKey memory) {
-        StandardTypes.VerificationKey memory vk;
-        return vk;
-    }
-}
-
 library StandardTypes {
     uint256 internal constant PROGRAM_WIDTH = 3;
     uint256 internal constant NUM_NU_CHALLENGES = 6;
@@ -241,7 +234,7 @@ contract StandardVerifier {
             }
         }
 
-        StandardTypes.VerificationKey memory vk = VK.get_verification_key();
+        StandardTypes.VerificationKey memory vk;
 
         assembly {
             /**
