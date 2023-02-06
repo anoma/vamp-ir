@@ -92,12 +92,24 @@ fn evaluate_expr<F>(
         Expr::Infix(InfixOp::IntDivide, a, b) => {
             let op1 = BigUint::from_bytes_le(evaluate_expr(&a, defs, assigns).to_repr().as_ref());
             let op2 = BigUint::from_bytes_le(evaluate_expr(&b, defs, assigns).to_repr().as_ref());
-            F::from_bytes_wide(&(op1 / op2).to_bytes_le().try_into().unwrap())
+            let bytes: Vec<u8> = (op1 / op2).to_bytes_le();
+            let mut byte_array = [0u8; 64];
+            let length = bytes.len();
+            let padding = 64 - bytes.len();
+            byte_array[..length].copy_from_slice(&bytes);
+            byte_array[length..length + padding].iter_mut().for_each(|x| *x = 0);
+            F::from_bytes_wide(&byte_array)
         },
         Expr::Infix(InfixOp::Modulo, a, b) => {
             let op1 = BigUint::from_bytes_le(evaluate_expr(&a, defs, assigns).to_repr().as_ref());
             let op2 = BigUint::from_bytes_le(evaluate_expr(&b, defs, assigns).to_repr().as_ref());
-            F::from_bytes_wide(&(op1 % op2).to_bytes_le().try_into().unwrap())
+            let bytes: Vec<u8> = (op1 % op2).to_bytes_le();
+            let mut byte_array = [0u8; 64];
+            let length = bytes.len();
+            let padding = 64 - bytes.len();
+            byte_array[..length].copy_from_slice(&bytes);
+            byte_array[length..length + padding].iter_mut().for_each(|x| *x = 0);
+            F::from_bytes_wide(&byte_array)
         },
         _ => unreachable!("encountered unexpected expression: {}", expr),
     }
@@ -188,8 +200,8 @@ trait StandardCs<FF: FieldExt> {
 #[derive(Clone)]
 pub struct Halo2Module<F: PrimeField> {
     pub module: Module,
-    variable_map: HashMap<VariableId, Value<F>>,
-    k: u32,
+    pub variable_map: HashMap<VariableId, Value<F>>,
+    pub k: u32,
 }
 
 impl<F> bincode::Encode for Halo2Module<F>
@@ -1058,11 +1070,11 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
     }
 }
 
-pub fn keygen(circuit: &Halo2Module<Fp>) -> (Params<EqAffine>, ProvingKey<EqAffine>) {
-    let params: Params<EqAffine> = Params::new(circuit.k);
+pub fn keygen(circuit: &Halo2Module<Fp>, params: &Params<EqAffine>) -> (ProvingKey<EqAffine>, VerifyingKey<EqAffine>) {
     let vk = keygen_vk(&params, circuit).expect("keygen_vk should not fail");
+    let vk_return = vk.clone();
     let pk = keygen_pk(&params, vk, circuit).expect("keygen_pk should not fail");
-    (params, pk)
+    (pk, vk_return)
 }
 
 pub fn prover(circuit: Halo2Module<Fp>, params: &Params<EqAffine>, pk: &ProvingKey<EqAffine>) -> Vec<u8> {
@@ -1073,22 +1085,8 @@ pub fn prover(circuit: Halo2Module<Fp>, params: &Params<EqAffine>, pk: &ProvingK
     transcript.finalize()
 }
 
-pub fn verifier(params: &Params<EqAffine>, vk: &VerifyingKey<EqAffine>, proof: &[u8]) {
+pub fn verifier(params: &Params<EqAffine>, vk: &VerifyingKey<EqAffine>, proof: &[u8]) -> Result<(), Error> {
     let strategy = SingleVerifier::new(params);
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(proof);
-    assert!(verify_proof(params, vk, strategy, &[&[]], &mut transcript).is_ok());
-}
-
-fn main2(module: Module) {
-    let circuit: Halo2Module<Fp> = Halo2Module::new(module.clone());
-    let k_range = 8..=16;
-
-    for k in k_range.clone() {
-        let (params, pk) = keygen(&circuit);
-    }
-
-    for k in k_range {
-        let (params, pk) = keygen(&circuit);
-        let proof = prover(circuit.clone(), &params, &pk);
-    }
+    verify_proof(params, vk, strategy, &[&[]], &mut transcript)
 }

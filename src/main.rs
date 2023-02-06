@@ -19,10 +19,9 @@ use plonk::error::to_pc_error;
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use plonk_core::prelude::VerifierData;
-use crate::plonk_synth::{PlonkModule, make_constant};
-use crate::halo_synth::Halo2Module;
+use crate::plonk_synth::PlonkModule;
+use crate::halo_synth::{Halo2Module, keygen, prover, verifier};
 use plonk_core::circuit::Circuit;
-use ark_ff::PrimeField;
 use std::fs::File;
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use ark_ec::PairingEngine;
@@ -32,10 +31,10 @@ use bincode::error::{DecodeError, EncodeError};
 use ark_serialize::{Read, SerializationError};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
-use std::str::FromStr;
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::pasta::{EqAffine, Fp};
 use std::ops::Neg;
+use halo2_proofs::plonk::keygen_vk;
 use num_traits::Num;
 
 #[derive(Parser)]
@@ -211,6 +210,13 @@ struct ProofData {
     pi: PublicInputs<BlsScalar>,
 }
 
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+struct ProofDataHalo2 {
+    proof: Vec<u8>,
+}
+
+
+
 /* Prompt for satisfying inputs to the given program. */
 fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug {
     let mut input_variables = HashMap::new();
@@ -311,7 +317,7 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile
 
             println!("* Synthesizing arithmetic circuit...");
             let circuit = Halo2Module::<Fp>::new(module_3ac.clone());
-            let (params, _proving_key) = halo_synth::keygen(&circuit);
+            let params: Params<EqAffine> = Params::new(circuit.k);
             let mut circuit_file = File::create(output)
                 .expect("unable to create circuit file");
             HaloCircuitData { params, circuit }.write(&mut circuit_file).unwrap();
@@ -380,51 +386,97 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
             }
             // Populate variable definitions
             circuit.populate_variables(var_assignments);
+
+            // Generating proving key
+            println!("* Generating proving key...");
+            let (pk, _vk) = keygen(&circuit, &params);
+
+            // Start proving witnesses
+            println!("* Proving knowledge of witnesses...");
+            let proof = prover(circuit, &params, &pk);
+
+            // verifier(&params, &vk, &proof);
+
+            println!("* Serializing proof to storage...");
+            let mut proof_file = File::create(output)
+                .expect("unable to create proof file");
+            ProofDataHalo2 { proof }.serialize(&mut proof_file).expect("Proof serialization failed");
+
+            println!("* Proof generation success!");
         },
     }
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
 fn verify_cmd(Verify { universal_params, circuit, proof, unchecked }: &Verify) {
-    println!("* Reading arithmetic circuit...");
-    let mut circuit_file = File::open(circuit)
-        .expect("unable to load circuit file");
-    let PlonkCircuitData { pk_p: _pk_p, vk, circuit } =
-        PlonkCircuitData::read(&mut circuit_file).unwrap();
+    match circuit_format(circuit) {
+        ProofSystems::Plonk => {
+            println!("* Reading arithmetic circuit...");
+            let mut circuit_file = File::open(circuit)
+                .expect("unable to load circuit file");
+            let PlonkCircuitData { pk_p: _pk_p, vk, circuit } =
+                PlonkCircuitData::read(&mut circuit_file).unwrap();
 
-    println!("* Reading zero-knowledge proof...");
-    let mut proof_file = File::open(proof)
-        .expect("unable to load proof file");
-    let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
+            println!("* Reading zero-knowledge proof...");
+            let mut proof_file = File::open(proof)
+                .expect("unable to load proof file");
+            let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
 
-    println!("* Public inputs:");
-    for (var, val) in circuit.annotate_public_inputs(&vk.1, &pi).values() {
-        println!("{} = {}", var, val);
-    }
+            println!("* Public inputs:");
+            for (var, val) in circuit.annotate_public_inputs(&vk.1, &pi).values() {
+                println!("{} = {}", var, val);
+            }
 
-    println!("* Reading public parameters...");
-    let mut pp_file = File::open(universal_params)
-        .expect("unable to load public parameters file");
-    let pp = if *unchecked {
-        UniversalParams::deserialize_unchecked(&mut pp_file)
-    } else {
-        UniversalParams::deserialize(&mut pp_file)
-    }.unwrap();
-    
-    // Verifier POV
-    println!("* Verifying proof validity...");
-    let verifier_data = VerifierData::new(vk.0, pi);
-    let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
-        &pp,
-        verifier_data.key,
-        &proof,
-        &verifier_data.pi,
-        b"Test",
-    );
-    if let Ok(()) = verifier_result {
-        println!("* Zero-knowledge proof is valid");
-    } else {
-        println!("* Result from verifier: {:?}", verifier_result);
+            println!("* Reading public parameters...");
+            let mut pp_file = File::open(universal_params)
+                .expect("unable to load public parameters file");
+            let pp = if *unchecked {
+                UniversalParams::deserialize_unchecked(&mut pp_file)
+            } else {
+                UniversalParams::deserialize(&mut pp_file)
+            }.unwrap();
+
+            // Verifier POV
+            println!("* Verifying proof validity...");
+            let verifier_data = VerifierData::new(vk.0, pi);
+            let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
+                &pp,
+                verifier_data.key,
+                &proof,
+                &verifier_data.pi,
+                b"Test",
+            );
+            if let Ok(()) = verifier_result {
+                println!("* Zero-knowledge proof is valid");
+            } else {
+                println!("* Result from verifier: {:?}", verifier_result);
+            }
+        },
+        ProofSystems::Halo2 => {
+            println!("* Reading arithmetic circuit...");
+            let circuit_file = File::open(circuit)
+                .expect("unable to load circuit file");
+            let HaloCircuitData { params, circuit} =
+                HaloCircuitData::read(&circuit_file).unwrap();
+
+            println!("* Generating verifying key...");
+            let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
+
+            println!("* Reading zero-knowledge proof...");
+            let mut proof_file = File::open(proof)
+                .expect("unable to load proof file");
+            let ProofDataHalo2 { proof } = ProofDataHalo2::deserialize(&mut proof_file).unwrap();
+
+            // Veryfing proof
+            println!("* Verifying proof validity...");
+            let verifier_result = verifier(&params, &vk, &proof);
+
+            if let Ok(()) = verifier_result {
+                println!("* Zero-knowledge proof is valid");
+            } else {
+                println!("* Result from verifier: {:?}", verifier_result);
+            }
+        }
     }
 }
 
