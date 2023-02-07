@@ -1,4 +1,4 @@
-/* Implementation for two's complement, and less and mod operations as applications. Run as follows:
+/* Implementation for less and mod operations as applications. Run as follows:
    vamp-ir setup -o params.pp
    vamp-ir compile -u params.pp -s tests/less_mod16.pir -o circuit.plonk
    vamp-ir prove -u params.pp -c circuit.plonk -o proof.plonk
