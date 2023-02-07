@@ -51,12 +51,12 @@ def range15 a = {
     (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, ())
 };
 
-// It also range checks for -2^15 <= x < 2^15.
+// Range checks for -2^15 <= x < 2^15.
 def intRange16 a = {
   range16 (a + 32768)
 };
 
-// It also range checks for -2^14 <= x < 2^14.
+// Range checks for -2^14 <= x < 2^14.
 def intRange15 a = {
   range15 (a + 16384)
 };
