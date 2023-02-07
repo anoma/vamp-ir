@@ -1,6 +1,6 @@
 use ark_ff::FftField;
 //use plonk_core::proof_system::VerifierKey as ZkGarageVerifierKey;
-use plonk_core::proof_system::Proof as ZkGarageProof;
+//use plonk_core::proof_system::Proof;
 use plonk_core::proof_system::pi::PublicInputs;
 use plonk_core::commitment::HomomorphicCommitment;
 use plonk_core::error::Error;
@@ -18,6 +18,7 @@ use num_traits::Num;
 
 type KZG10 = SonicKZG10<Bn254, DensePolynomial<Fr>>;
 type PC = <KZG10 as PolynomialCommitment<<Bn254 as PairingEngine>::Fr, DensePolynomial<Fr>>>::Commitment;
+type Opening = <KZG10 as PolynomialCommitment<<Bn254 as PairingEngine>::Fr, DensePolynomial<Fr>>>::Proof;
 type UniversalParams = <KZG10 as PolynomialCommitment<<Bn254 as PairingEngine>::Fr, DensePolynomial<Fr>>>::UniversalParams;
 type ZkGaragePublicInputs = PublicInputs<Fr>;
 
@@ -105,6 +106,144 @@ pub struct ZkGarageVerifierKey
     pub(crate) lookup: ZkGarageLookupVerifierKey,
 }
 
+#[derive(CanonicalDeserialize)]
+pub struct ZkGarageProof
+{
+    /// Commitment to the witness polynomial for the left wires.
+    pub(crate) a_comm: PC,
+
+    /// Commitment to the witness polynomial for the right wires.
+    pub(crate) b_comm: PC,
+
+    /// Commitment to the witness polynomial for the output wires.
+    pub(crate) c_comm: PC,
+
+    /// Commitment to the witness polynomial for the fourth wires.
+    pub(crate) d_comm: PC,
+
+    /// Commitment to the permutation polynomial.
+    pub(crate) z_comm: PC,
+
+    /// Commitment to the lookup query polynomial.
+    pub(crate) f_comm: PC,
+
+    /// Commitment to first half of sorted polynomial
+    pub(crate) h_1_comm: PC,
+
+    /// Commitment to second half of sorted polynomial
+    pub(crate) h_2_comm: PC,
+
+    /// Commitment to the lookup permutation polynomial.
+    pub(crate) z_2_comm: PC,
+
+    /// Commitment to the quotient polynomial.
+    pub(crate) t_1_comm: PC,
+
+    /// Commitment to the quotient polynomial.
+    pub(crate) t_2_comm: PC,
+
+    /// Commitment to the quotient polynomial.
+    pub(crate) t_3_comm: PC,
+
+    /// Commitment to the quotient polynomial.
+    pub(crate) t_4_comm: PC,
+
+    /// Batch opening proof of the aggregated witnesses
+    pub aw_commit: PC,
+
+    /// Batch opening proof of the shifted aggregated witnesses
+    pub saw_commit: PC,
+
+    /// Subset of all of the evaluations added to the proof.
+    pub(crate) evaluations: ProofEvaluations,
+
+}
+
+#[derive(CanonicalDeserialize)]
+pub struct ProofEvaluations
+{
+    /// Wire evaluations
+    pub wire_evals: WireEvaluations,
+
+    /// Permutation and sigma polynomials evaluations
+    pub perm_evals: PermutationEvaluations,
+
+    /// Lookup evaluations
+    pub lookup_evals: LookupEvaluations,
+
+    /// Evaluations needed for custom gates. This includes selector polynomials
+    /// and evaluations of wire polynomials at an offset
+    pub custom_evals: CustomEvaluations,
+}
+
+#[derive(CanonicalDeserialize)]
+pub struct WireEvaluations
+{
+    /// Evaluation of the witness polynomial for the left wire at `z`.
+    pub a_eval: Fr,
+
+    /// Evaluation of the witness polynomial for the right wire at `z`.
+    pub b_eval: Fr,
+
+    /// Evaluation of the witness polynomial for the output wire at `z`.
+    pub c_eval: Fr,
+
+    /// Evaluation of the witness polynomial for the fourth wire at `z`.
+    pub d_eval: Fr,
+}
+
+#[derive(CanonicalDeserialize)]
+pub struct PermutationEvaluations
+{
+    /// Evaluation of the left sigma polynomial at `z`.
+    pub left_sigma_eval: Fr,
+
+    /// Evaluation of the right sigma polynomial at `z`.
+    pub right_sigma_eval: Fr,
+
+    /// Evaluation of the out sigma polynomial at `z`.
+    pub out_sigma_eval: Fr,
+
+    /// Evaluation of the permutation polynomial at `z * omega` where `omega`
+    /// is a root of unity.
+    pub permutation_eval: Fr,
+}
+
+#[derive(CanonicalDeserialize)]
+pub struct LookupEvaluations
+{
+    pub q_lookup_eval: Fr,
+    // (Shifted) Evaluation of the lookup permutation polynomial at `z * root
+    // of unity`
+    pub z2_next_eval: Fr,
+
+    /// Evaluations of the first half of sorted plonkup poly at `z`
+    pub h1_eval: Fr,
+
+    /// (Shifted) Evaluations of the even indexed half of sorted plonkup poly
+    /// at `z root of unity
+    pub h1_next_eval: Fr,
+
+    /// Evaluations of the odd indexed half of sorted plonkup poly at `z
+    /// root of unity
+    pub h2_eval: Fr,
+
+    /// Evaluations of the query polynomial at `z`
+    pub f_eval: Fr,
+
+    /// Evaluations of the table polynomial at `z`
+    pub table_eval: Fr,
+
+    /// Evaluations of the table polynomial at `z * root of unity`
+    pub table_next_eval: Fr,
+}
+
+#[derive(CanonicalDeserialize)]
+pub struct CustomEvaluations
+{
+    pub vals: Vec<(String, Fr)>,
+}
+
 #[derive(Debug)]
 pub struct MatterLabsVerificationKey
 {
@@ -118,17 +257,16 @@ pub struct MatterLabsVerificationKey
     g2_x: G2Affine,
 }
 
+#[derive(Debug)]
 pub struct MatterLabsProof
 {
-    input_values: [u8; 32],
-    wire_commitments: [PC; 4],
-    grand_product_commitment: PC,
-    quotient_poly_commitments: [PC; 4],
+    input_values: Vec<Fr>,
+    wire_commitments: [PC; 4],transcript.update_with_g1(proof.copy_permutation_grand_product_commitment);
     wire_values_at_z: [Fr; 4],
     wire_values_at_z_omega: Fr,
     grand_product_at_z_omega: Fr,
-    quotient_polynomial_at_z: Fr,
-    linearization_polynomial_at_z: Fr,
+    //quotient_polynomial_at_z: Fr,
+    //linearization_polynomial_at_z: Fr,
     permutation_polynomials_at_z: [Fr; 3],
 
     opening_at_z_proof: PC,
@@ -197,6 +335,58 @@ pub fn adapt_verifier_key(
         permutation_commitments,
         permutation_non_residues,
         g2_x,
+    }
+}
+
+fn adapt_proof(
+    pi: ZkGaragePublicInputs,
+    proof: ZkGarageProof,
+) -> MatterLabsProof 
+{
+    let input_values = pi.get_vals().collect::<Vec<_>>();
+    let wire_commitments = [
+        proof.a_comm,
+        proof.b_comm,
+        proof.c_comm,
+        proof.d_comm,
+    ];
+    
+    let grand_product_commitment =
+        proof.z_comm;
+
+    let quotient_poly_commitments = [
+        proof.t_1_comm,
+        proof.t_2_comm,
+        proof.t_3_comm,
+        proof.t_4_comm,
+    ];
+
+    let wire_values_at_z = [
+        proof.evaluations.wire_evals.a_eval,
+        proof.evaluations.wire_evals.b_eval,
+        proof.evaluations.wire_evals.c_eval,
+        proof.evaluations.wire_evals.d_eval,
+    ];
+
+    let grand_product_at_z_omega =
+        proof.evaluations.perm_evals.permutation_eval;
+        
+    let quotient_polynomial_at_z =
+    
+
+    MatterLabsProof { 
+        input_values: (),
+        wire_commitments: (),
+        grand_product_commitment: (),
+        quotient_poly_commitments: (),
+        wire_values_at_z: (),
+        wire_values_at_z_omega: (),
+        grand_product_at_z_omega: (),
+        //quotient_polynomial_at_z: (),
+        //linearization_polynomial_at_z: (),
+        permutation_polynomials_at_z: (),
+        opening_at_z_proof: (),
+        opening_at_z_omega_proof: ()
     }
 }
 
