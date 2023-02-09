@@ -64,7 +64,8 @@ def intRange15 a = {
 //intRange16 30000 = (0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 1, 1, ());
 //intRange16 ((-30000)) = (0, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 0, ());
 
-// Check if a number is non-negative
+// Check if a number is negative
+// Returns 0 iff a < 0 and 1 otherwise
 def negative16 a = {
   def (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, ()) = intRange16 a;
 
@@ -75,7 +76,8 @@ def negative16 a = {
 //negative16 165 = 1;
 //negative16 ((-165)) = 0;
 
-// Check if a number is negative
+// Check if a number is not negative
+// Returns 1 iff a < 0 and 0 otherwise
 def nonNegative16 a = 1 - negative16 a;
 
 //nonNegative16 0 = 0;
@@ -83,6 +85,7 @@ def nonNegative16 a = 1 - negative16 a;
 //nonNegative16 ((-165)) = 1;
 
 // Check if a number is positive
+// Returns 0 iff a > 0 and 1 otherwise
 def positive16 a = nonNegative16 (a - 1);
 
 //positive16 0 = 1;
@@ -90,6 +93,7 @@ def positive16 a = nonNegative16 (a - 1);
 //positive16 ((-165)) = 1;
 
 // Test if a is less than b
+// Returns 0 iff a < b and 1 otherwise
 def less16 a b = {
   // Range checks
   // Are these necessary?
