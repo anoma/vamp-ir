@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-pragma solidity >=0.5.0 <0.8.0;
+pragma solidity >=0.5.0;
 pragma experimental ABIEncoderV2;
 
 import {PairingsBn254} from './pairings.sol';
@@ -9,7 +9,7 @@ library ZkGarage {
     using PairingsBn254 for PairingsBn254.G2Point;
     using PairingsBn254 for PairingsBn254.Fr;
 
-    struct VerificationKey {
+    struct VerifierKey {
         uint256 domain_size;
         uint256 num_inputs;
         PairingsBn254.Fr omega;
@@ -95,6 +95,34 @@ library ZkGarage {
 
     struct CustomEvaluations {
         PairingsBn254.Fr[] vals;
+    }
+
+    struct VerifierState {
+        PairingsBn254.Fr alpha;
+        PairingsBn254.Fr beta;
+        PairingsBn254.Fr gamma;
+        PairingsBn254.Fr delta;
+        PairingsBn254.Fr epsilon;
+        PairingsBn254.Fr zeta;
+        PairingsBn254.Fr range_sep_challenge;
+        PairingsBn254.Fr logic_sep_challenge;
+        PairingsBn254.Fr fixed_base_sep_challenge;
+        PairingsBn254.Fr var_base_sep_challenge;
+        PairingsBn254.Fr lookup_sep_challenge;
+        PairingsBn254.Fr z_challenge;
+        PairingsBn254.Fr z_h_eval;
+        PairingsBn254.Fr l1_eval;
+        PairingsBn254.Fr pi_eval;
+        PairingsBn254.Fr r0;
+        PairingsBn254.Fr vanishing_poly_eval;
+        PairingsBn254.Fr z_challenge_to_n;
+        PairingsBn254.Fr aw_challenge;
+        PairingsBn254.Fr saw_challenge;
+        PairingsBn254.G1Point[] aw_commits;
+        PairingsBn254.Fr[] aw_evals;
+        PairingsBn254.Fr[] aw_separators;
+        PairingsBn254.Fr[] saw_evals;
+        PairingsBn254.Fr[] saw_separators;
     }
 }
 
