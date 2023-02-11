@@ -18,9 +18,13 @@ ark-poly = "0.3"
 ark-poly-commit = "0.3"
 ark-serialize = "0.3.0"
 clap = { version = "4.0.17", features = [ "derive" ] }
+group = "0.12"
+halo2_proofs = "0.2.0"
+halo2_gadgets = "0.2.0"
 num-bigint = "^0.4.0"
 num-traits = "^0.2.14"
 bincode = "2.0.0-rc.1"
+ff = "0.12.1"
 rand_core = "0.6.3"
 plonk = { git = "https://github.com/ZK-Garage/plonk", rev = "ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4" }
 plonk-core = { git = "https://github.com/ZK-Garage/plonk", rev = "ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4", features = [ "std", "trace", "trace-print" ] }
