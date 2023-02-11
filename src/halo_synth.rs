@@ -140,6 +140,7 @@ impl<F> FieldOps for PrimeFieldOps<F> where F: PrimeField + FieldExt {
             InfixOp::Subtract => BigUint::from_bytes_le((c - d).to_repr().as_ref()).to_bigint().unwrap(),
             InfixOp::Multiply => BigUint::from_bytes_le((c * d).to_repr().as_ref()).to_bigint().unwrap(),
             InfixOp::Divide => BigUint::from_bytes_le((c * d.invert().unwrap()).to_repr().as_ref()).to_bigint().unwrap(),
+            InfixOp::DivideZ => if d == F::zero() { BigInt::from(0) } else { BigUint::from_bytes_le((c * d.invert().unwrap()).to_repr().as_ref()).to_bigint().unwrap()},
             InfixOp::IntDivide => a / b,
             InfixOp::Modulo => a % b,
             InfixOp::Exponentiate => {
