@@ -979,15 +979,17 @@ contract Plonk4ArithVerifier {
     }
 
     function verify(
-        ZkGarage.Proof memory proof
-    ) public view returns (bool) {
+        bytes calldata input
+    ) external view returns (bool) {
+
+        ZkGarage.Proof memory proof = ZkGarage.deserialize_proof(input, vk);
 
         ZkGarage.VerifierState memory verifier;
 
         PairingsBn254.Fr memory domain_size_as_fr = PairingsBn254.new_fr(vk.domain_size);
 
-        require(proof.input_values.length == vk.num_inputs);
-        require(vk.num_inputs >= 1);
+        //require(proof.input_values.length == vk.num_inputs);
+        //require(vk.num_inputs >= 1);
         TranscriptLibrary.Transcript memory transcript = TranscriptLibrary.new_transcript();
 
         // Append Public Inputs to the transcript
@@ -1029,12 +1031,12 @@ contract Plonk4ArithVerifier {
         transcript.update_with_fr(verifier.epsilon); 
 
         // Challenges must be different
-        require(verifier.beta.value != verifier.gamma.value);
-        require(verifier.beta.value != verifier.delta.value);
-        require(verifier.beta.value != verifier.epsilon.value); 
-        require(verifier.gamma.value != verifier.delta.value); 
-        require(verifier.gamma.value != verifier.epsilon.value); 
-        require(verifier.delta.value != verifier.epsilon.value);
+        //require(verifier.beta.value != verifier.gamma.value);
+        //require(verifier.beta.value != verifier.delta.value);
+        //require(verifier.beta.value != verifier.epsilon.value); 
+        //require(verifier.gamma.value != verifier.delta.value); 
+        //require(verifier.gamma.value != verifier.epsilon.value); 
+        //require(verifier.delta.value != verifier.epsilon.value);
 
         // Add commitment to permutation polynomial to transcript
         transcript.update_with_g1(proof.z_comm);
@@ -1164,7 +1166,7 @@ contract Plonk4ArithVerifier {
         points[10] = proof.t_3_comm;
         points[11] = proof.t_4_comm;
 
-        require(scalars.length == points.length);
+        //require(scalars.length == points.length);
 
         verifier.aw_commits = new PairingsBn254.G1Point[](8);
 

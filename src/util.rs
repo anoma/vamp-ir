@@ -1,7 +1,7 @@
 use ark_ff::FftField;
 use plonk::proof_system::verifier;
 use plonk_core::proof_system::VerifierKey;
-//use plonk_core::proof_system::Proof;
+use plonk_core::proof_system::Proof;
 use plonk_core::proof_system::pi::PublicInputs;
 use plonk_core::commitment::HomomorphicCommitment;
 use plonk_core::error::Error;
@@ -21,9 +21,9 @@ use std::path::PathBuf;
 
 type KZG10 = SonicKZG10<Bn254, DensePolynomial<Fr>>;
 type PC = <KZG10 as PolynomialCommitment<<Bn254 as PairingEngine>::Fr, DensePolynomial<Fr>>>::Commitment;
-// //type Opening = <KZG10 as PolynomialCommitment<<Bn254 as PairingEngine>::Fr, DensePolynomial<Fr>>>::Proof;
 type UniversalParams = <KZG10 as PolynomialCommitment<<Bn254 as PairingEngine>::Fr, DensePolynomial<Fr>>>::UniversalParams;
-// type ZkGaragePublicInputs = PublicInputs<Fr>;
+
+
 
 pub fn write_verifier(source: PathBuf, out: PathBuf, pi: PublicInputs<Fr>, params: UniversalParams)
 {

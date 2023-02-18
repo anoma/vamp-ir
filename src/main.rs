@@ -2,7 +2,7 @@ mod ast;
 mod transform;
 mod synth;
 mod typecheck;
-mod util;
+mod ethereum;
 
 extern crate pest;
 #[macro_use]
