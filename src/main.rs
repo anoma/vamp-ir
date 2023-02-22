@@ -36,6 +36,8 @@ use halo2_proofs::pasta::{EqAffine, Fp};
 use std::ops::Neg;
 use halo2_proofs::plonk::keygen_vk;
 use num_traits::Num;
+use serde::{Deserialize, Serialize};
+//use serde_json::Result;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -120,6 +122,9 @@ struct Prove {
     /// Do not perform validity checks on public parameters
     #[arg(long)]
     unchecked: bool,
+    /// Path to prover's input file
+    #[arg(short, long)]
+    inputs: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -213,9 +218,42 @@ struct ProofData {
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 struct ProofDataHalo2 {
     proof: Vec<u8>,
+} 
+
+/* Read satisfying inputs to the given program from a file. */
+fn read_inputs_from_file<F>(annotated: &Module, path_to_inputs: &PathBuf) -> HashMap<VariableId, F>
+where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug {
+    let inputs = File::open(path_to_inputs)
+        .expect("Could not open inputs file");
+
+    // Read the user-supplied inputs from the file
+    let named_assignments: HashMap<String, String> = serde_json::from_reader(inputs).unwrap();
+
+    // Get the expected inputs from the circuit module
+    let mut input_variables = HashMap::new();
+    collect_module_variables(&annotated, &mut input_variables);
+
+    // Defined variables should not be requested from user
+    for def in &annotated.defs {
+        if let Pat::Variable(var) = &def.0.0.v {
+            input_variables.remove(&var.id);
+        }
+    }
+
+    let mut variable_assignments = HashMap::new();
+
+    // Check that the user supplied the expected inputs
+    for (id, expected_var) in input_variables {
+        variable_assignments.insert(
+            id,
+            parse_prefixed_num(&named_assignments[&expected_var.name.unwrap()].clone())
+                .expect("input not an integer")
+        );
+    }
+
+    variable_assignments
+    
 }
-
-
 
 /* Prompt for satisfying inputs to the given program. */
 fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug {
@@ -329,7 +367,7 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile
 
 /* Implements the subcommand that creates a proof from interactively entered
  * inputs. */
-fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
+fn prove_cmd(Prove { universal_params, circuit, output, unchecked, inputs }: &Prove) {
     match circuit_format(circuit) {
         ProofSystems::Plonk => {
             println!("* Reading arithmetic circuit...");
@@ -340,8 +378,14 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
 
             // Prover POV
             println!("* Soliciting circuit witnesses...");
+
             // Prompt for program inputs
-            let var_assignments_ints = prompt_inputs(&circuit.module);
+            let var_assignments_ints = match inputs {
+                Some(path_to_inputs) => read_inputs_from_file(&circuit.module, path_to_inputs),
+                None => prompt_inputs(&circuit.module),
+            };
+
+            //let var_assignments_ints = prompt_inputs(&circuit.module);
             let mut var_assignments = HashMap::new();
             for (k, v) in var_assignments_ints {
                 var_assignments.insert(k, plonk_synth::make_constant(&v));
