@@ -36,6 +36,7 @@ use halo2_proofs::pasta::{EqAffine, Fp};
 use std::ops::Neg;
 use halo2_proofs::plonk::keygen_vk;
 use num_traits::Num;
+//use serde_json::from_reader;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
