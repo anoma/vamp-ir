@@ -36,7 +36,6 @@ use halo2_proofs::pasta::{EqAffine, Fp};
 use std::ops::Neg;
 use halo2_proofs::plonk::keygen_vk;
 use num_traits::Num;
-//use serde_json::from_reader;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -222,6 +221,7 @@ struct ProofDataHalo2 {
 /* Read satisfying inputs to the given program from a file. */
 fn read_inputs_from_file<F>(annotated: &Module, path_to_inputs: &PathBuf) -> HashMap<VariableId, F>
 where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug {
+    println!("* Reading inputs from file: {}", path_to_inputs.to_str().unwrap());
     let inputs = File::open(path_to_inputs)
         .expect("Could not open inputs file");
 
@@ -269,7 +269,9 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Num +
     for var in &annotated.pubs {
         public_variables.insert(var.id);
     }
+
     let mut var_assignments = HashMap::new();
+
     // Solicit input variables from user and solve for choice point values
     for (id, var) in input_variables {
         let visibility = if public_variables.contains(&id) {
@@ -372,16 +374,25 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked, inputs }: &Pr
             println!("* Reading arithmetic circuit...");
             let mut circuit_file = File::open(circuit)
                 .expect("unable to load circuit file");
+
+            let mut expected_path_to_inputs = circuit.clone();
+            expected_path_to_inputs.set_extension("inputs");
+
             let PlonkCircuitData { pk_p, vk: _vk, mut circuit} =
                 PlonkCircuitData::read(&mut circuit_file).unwrap();
-
-            // Prover POV
-            println!("* Soliciting circuit witnesses...");
 
             // Prompt for program inputs
             let var_assignments_ints = match inputs {
                 Some(path_to_inputs) => read_inputs_from_file(&circuit.module, path_to_inputs),
-                None => prompt_inputs(&circuit.module),
+                None => {
+                    if expected_path_to_inputs.exists() {
+                        read_inputs_from_file(&circuit.module, &expected_path_to_inputs)
+                    } else {
+                        println!("* Soliciting circuit witnesses...");
+                        prompt_inputs(&circuit.module)
+                    }
+                    
+                },
             };
 
             //let var_assignments_ints = prompt_inputs(&circuit.module);
