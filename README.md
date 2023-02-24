@@ -231,6 +231,40 @@ w25: 0
 w26: 0
 w27: 0
 ```
+## Benchmarks
+### Halo2 backend
+
+#### SHA256 1 block message
+
+|         | `Compile`  | `Prove`    | `Verify` |
+|:--------|:-----------|:-----------|:---------|
+| Vamp-IR | `172.05 s` | `26.72 s`  | `0.61 s` |
+| Halo2   | //         | `161.05 s` | `1.06 s` |
+
+#### SHA256 2 block message
+
+|         | `Compile`  | `Prove`    | `Verify` |
+|:--------|:-----------|:-----------|:---------|
+| Vamp-IR | `353.76 s` | `46.91 s`  | `1.09 s` |
+| Halo2   | //         | `160.03 s` | `1.05 s` |
+
+#### SHA256 4 block message
+
+|         | `Compile`  | `Prove`         | `Verify` |
+|:--------|:-----------|:----------------|:---------|
+| Vamp-IR | `729.47 s` | Memory Failiure | X        |
+| Halo2   | //         | `160.36 s`      | `1.03 s` |
+
+
+### ZK-garage plonk backend
+
+#### Blake2s
+
+|           | `Compile` | `Prove`   | `Verify` |
+|:----------|:----------|:----------|:---------|
+| Vamp-IR   | `76.30 s` | `57.59 s` | `0.22 s` |
+| ZK-Garage | //        | `32.48 s` | `0.10 s` |
+
 
 ## License
 
