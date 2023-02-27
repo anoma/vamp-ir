@@ -34,6 +34,7 @@ use std::path::PathBuf;
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::pasta::{EqAffine, Fp};
 use std::ops::Neg;
+use std::time::Instant;
 use halo2_proofs::plonk::keygen_vk;
 use num_traits::Num;
 
@@ -283,12 +284,18 @@ fn circuit_format(path_buf: &PathBuf) -> ProofSystems {
 fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile) {
     match circuit_format(output) {
         ProofSystems::Plonk => {
+
+            //create a file that has the timings of the compilation step
+            let mut file = File::create("compilation_time.txt").unwrap();
             println!("* Compiling constraints...");
+            let inst0 = Instant::now();
             let unparsed_file = fs::read_to_string(source).expect("cannot read file");
             let module = Module::parse(&unparsed_file).unwrap();
             let module_3ac = compile(module, &plonk_synth::PrimeFieldOps::<BlsScalar>::default());
-
+            let inst1 = Instant::now();
+            file.write_all(format!("Compiling constraints time: {:?}\n", inst1.duration_since(inst0)).as_bytes()).unwrap();
             println!("* Reading public parameters...");
+            let inst2 = Instant::now();
             let mut pp_file = File::open(universal_params)
                 .expect("unable to load public parameters file");
             let pp = if *unchecked {
@@ -296,31 +303,50 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile
             } else {
                 UniversalParams::deserialize(&mut pp_file)
             }.unwrap();
+            let inst3 = Instant::now();
+            file.write_all(format!("Reading public parameters time: {:?}\n", inst3.duration_since(inst2)).as_bytes()).unwrap();
 
             println!("* Synthesizing arithmetic circuit...");
+            let inst4 = Instant::now();
             let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
             // Compile the circuit
+            let inst4b = Instant::now();
             let (pk_p, vk) = circuit.compile::<PC>(&pp)
                 .expect("unable to compile circuit");
+            let inst5 = Instant::now();
+            file.write_all(format!("Synthesizing arithmetic circuit time: {:?}\n", inst5.duration_since(inst4)).as_bytes()).unwrap();
             println!("* Serializing circuit to storage...");
+            let inst6 = Instant::now();
             let mut circuit_file = File::create(output)
                 .expect("unable to create circuit file");
             PlonkCircuitData { pk_p, vk, circuit }.write(&mut circuit_file).unwrap();
-
+            let inst7 = Instant::now();
+            file.write_all(format!("Serializing circuit to storage time: {:?}\n\n", inst7.duration_since(inst6)).as_bytes()).unwrap();
             println!("* Constraint compilation success!");
+            //print total compilation time
+            file.write_all(format!("Total compilation time: {:?}\n", inst7.duration_since(inst0)).as_bytes()).unwrap();
+            //print compile the circuit time
+            file.write_all(format!("Pure compilation time: {:?}\n", inst5.duration_since(inst4b)).as_bytes()).unwrap();
         },
         ProofSystems::Halo2 => {
+            let mut file = File::create("compilation_time.txt").unwrap();
             println!("* Compiling constraints...");
+            let inst0 = Instant::now();
             let unparsed_file = fs::read_to_string(source).expect("cannot read file");
             let module = Module::parse(&unparsed_file).unwrap();
             let module_3ac = compile(module, &halo_synth::PrimeFieldOps::<Fp>::default());
+            let inst1 = Instant::now();
+            file.write_all(format!("Compiling constraints time: {:?}\n", inst1.duration_since(inst0)).as_bytes()).unwrap();
 
             println!("* Synthesizing arithmetic circuit...");
+            let inst2 = Instant::now();
             let circuit = Halo2Module::<Fp>::new(module_3ac.clone());
             let params: Params<EqAffine> = Params::new(circuit.k);
             let mut circuit_file = File::create(output)
                 .expect("unable to create circuit file");
             HaloCircuitData { params, circuit }.write(&mut circuit_file).unwrap();
+            let inst3 = Instant::now();
+            file.write_all(format!("Synthesizing arithmetic circuit time: {:?}\n", inst3.duration_since(inst2)).as_bytes()).unwrap();
 
             println!("* Constraint compilation success!");
         },
@@ -332,25 +358,34 @@ fn compile_cmd(Compile { universal_params, source, output, unchecked }: &Compile
 fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
     match circuit_format(circuit) {
         ProofSystems::Plonk => {
+            //create a file that has the timings of the proof generation step
+            let mut file = File::create("proving_time.txt").unwrap();
             println!("* Reading arithmetic circuit...");
+            let inst0 = Instant::now();
             let mut circuit_file = File::open(circuit)
                 .expect("unable to load circuit file");
             let PlonkCircuitData { pk_p, vk: _vk, mut circuit} =
                 PlonkCircuitData::read(&mut circuit_file).unwrap();
+            let inst1 = Instant::now();
+            file.write_all(format!("Reading arithmetic circuit time: {:?}\n", inst1.duration_since(inst0)).as_bytes()).unwrap();
 
             // Prover POV
             println!("* Soliciting circuit witnesses...");
+            let inst2 = Instant::now();
             // Prompt for program inputs
             let var_assignments_ints = prompt_inputs(&circuit.module);
             let mut var_assignments = HashMap::new();
             for (k, v) in var_assignments_ints {
                 var_assignments.insert(k, plonk_synth::make_constant(&v));
             }
+            let inst3 = Instant::now();
+            file.write_all(format!("Soliciting circuit witnesses time: {:?}\n", inst3.duration_since(inst2)).as_bytes()).unwrap();
             
             // Populate variable definitions
             circuit.populate_variables(var_assignments);
             
             println!("* Reading public parameters...");
+            let inst4 = Instant::now();
             let mut pp_file = File::open(universal_params)
                 .expect("unable to load public parameters file");
             let pp = if *unchecked {
@@ -358,27 +393,41 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
             } else {
                 UniversalParams::deserialize(&mut pp_file)
             }.unwrap();
+            let inst5 = Instant::now();
+            file.write_all(format!("Reading public parameters time: {:?}\n", inst5.duration_since(inst4)).as_bytes()).unwrap();
+
             // Start proving witnesses
             println!("* Proving knowledge of witnesses...");
+            let inst6 = Instant::now();
             let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
+            let inst7 = Instant::now();
+            file.write_all(format!("Proving knowledge of witnesses time: {:?}\n", inst7.duration_since(inst6)).as_bytes()).unwrap();
 
             println!("* Serializing proof to storage...");
+            let inst8 = Instant::now();
             let mut proof_file = File::create(output)
                 .expect("unable to create proof file");
             ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
-
+            let inst9 = Instant::now();
+            file.write_all(format!("Serializing proof to storage time: {:?}\n\n", inst9.duration_since(inst8)).as_bytes()).unwrap();
             println!("* Proof generation success!");
+            //print total proof generation time
+            file.write_all(format!("Total proof generation time: {:?}\n", inst9.duration_since(inst0)).as_bytes()).unwrap();
         },
         ProofSystems::Halo2 => {
+            let mut file = File::create("proving_time.txt").unwrap();
             println!("* Reading arithmetic circuit...");
+            let inst0 = Instant::now();
             let mut circuit_file = File::open(circuit)
                 .expect("unable to load circuit file");
             let HaloCircuitData { params, mut circuit} =
                 HaloCircuitData::read(&mut circuit_file).unwrap();
-
+            let inst1 = Instant::now();
+            file.write_all(format!("Reading arithmetic circuit time: {:?}\n", inst1.duration_since(inst0)).as_bytes()).unwrap();
             // Prover POV
             println!("* Soliciting circuit witnesses...");
             // Prompt for program inputs
+            let inst2 = Instant::now();
             let var_assignments_ints = prompt_inputs(&circuit.module);
             let mut var_assignments = HashMap::new();
             for (k, v) in var_assignments_ints {
@@ -386,23 +435,35 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
             }
             // Populate variable definitions
             circuit.populate_variables(var_assignments);
+            let inst3 = Instant::now();
+            file.write_all(format!("Soliciting circuit witnesses time: {:?}\n", inst3.duration_since(inst2)).as_bytes()).unwrap();
+            let inst3 = Instant::now();
+            file.write_all(format!("Soliciting circuit witnesses time: {:?}\n", inst3.duration_since(inst2)).as_bytes()).unwrap();
 
             // Generating proving key
             println!("* Generating proving key...");
+            let inst4 = Instant::now();
             let (pk, _vk) = keygen(&circuit, &params);
+            let inst5 = Instant::now();
+            file.write_all(format!("Generating proving key time: {:?}\n", inst5.duration_since(inst4)).as_bytes()).unwrap();
 
             // Start proving witnesses
             println!("* Proving knowledge of witnesses...");
+            let inst6 = Instant::now();
             let proof = prover(circuit, &params, &pk);
-
-            // verifier(&params, &vk, &proof);
+            let inst7 = Instant::now();
+            file.write_all(format!("Proving knowledge of witnesses time: {:?}\n", inst7.duration_since(inst6)).as_bytes()).unwrap();
 
             println!("* Serializing proof to storage...");
+            let inst8 = Instant::now();
             let mut proof_file = File::create(output)
                 .expect("unable to create proof file");
             ProofDataHalo2 { proof }.serialize(&mut proof_file).expect("Proof serialization failed");
-
+            let inst9 = Instant::now();
+            file.write_all(format!("Serializing proof to storage time: {:?}\n\n", inst9.duration_since(inst8)).as_bytes()).unwrap();
             println!("* Proof generation success!");
+            //print total proof generation time
+            file.write_all(format!("Total proof generation time: {:?}\n", inst9.duration_since(inst0)).as_bytes()).unwrap();
         },
     }
 }
@@ -411,23 +472,34 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked }: &Prove) {
 fn verify_cmd(Verify { universal_params, circuit, proof, unchecked }: &Verify) {
     match circuit_format(circuit) {
         ProofSystems::Plonk => {
+            let mut file = File::create("verifying_time.txt").unwrap();
             println!("* Reading arithmetic circuit...");
+            let inst0 = Instant::now();
             let mut circuit_file = File::open(circuit)
                 .expect("unable to load circuit file");
             let PlonkCircuitData { pk_p: _pk_p, vk, circuit } =
                 PlonkCircuitData::read(&mut circuit_file).unwrap();
+            let inst1 = Instant::now();
+            file.write_all(format!("Reading arithmetic circuit time: {:?}\n", inst1.duration_since(inst0)).as_bytes()).unwrap();
 
             println!("* Reading zero-knowledge proof...");
+            let inst2 = Instant::now();
             let mut proof_file = File::open(proof)
                 .expect("unable to load proof file");
             let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
+            let inst3 = Instant::now();
+            file.write_all(format!("Reading zero-knowledge proof time: {:?}\n", inst3.duration_since(inst2)).as_bytes()).unwrap();
 
             println!("* Public inputs:");
+            let inst4 = Instant::now();
             for (var, val) in circuit.annotate_public_inputs(&vk.1, &pi).values() {
                 println!("{} = {}", var, val);
             }
+            let inst5 = Instant::now();
+            file.write_all(format!("Public inputs time: {:?}\n", inst5.duration_since(inst4)).as_bytes()).unwrap();
 
             println!("* Reading public parameters...");
+            let inst6 = Instant::now();
             let mut pp_file = File::open(universal_params)
                 .expect("unable to load public parameters file");
             let pp = if *unchecked {
@@ -435,9 +507,12 @@ fn verify_cmd(Verify { universal_params, circuit, proof, unchecked }: &Verify) {
             } else {
                 UniversalParams::deserialize(&mut pp_file)
             }.unwrap();
+            let inst7 = Instant::now();
+            file.write_all(format!("Reading public parameters time: {:?}\n", inst7.duration_since(inst6)).as_bytes()).unwrap();
 
             // Verifier POV
             println!("* Verifying proof validity...");
+            let inst8 = Instant::now();
             let verifier_data = VerifierData::new(vk.0, pi);
             let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
                 &pp,
@@ -446,36 +521,56 @@ fn verify_cmd(Verify { universal_params, circuit, proof, unchecked }: &Verify) {
                 &verifier_data.pi,
                 b"Test",
             );
+            let inst9 = Instant::now();
+            file.write_all(format!("Verifying proof validity time: {:?}\n", inst9.duration_since(inst8)).as_bytes()).unwrap();
             if let Ok(()) = verifier_result {
                 println!("* Zero-knowledge proof is valid");
             } else {
                 println!("* Result from verifier: {:?}", verifier_result);
             }
+            let inst10 = Instant::now();
+            file.write_all(format!("Total verifying time: {:?}\n", inst10.duration_since(inst0)).as_bytes()).unwrap();
         },
         ProofSystems::Halo2 => {
+            let mut file = File::create("verifying_time.txt").unwrap();
             println!("* Reading arithmetic circuit...");
+            let inst0 = Instant::now();
             let circuit_file = File::open(circuit)
                 .expect("unable to load circuit file");
             let HaloCircuitData { params, circuit} =
                 HaloCircuitData::read(&circuit_file).unwrap();
+            let inst1 = Instant::now();
+            file.write_all(format!("Reading arithmetic circuit time: {:?}\n", inst1.duration_since(inst0)).as_bytes()).unwrap();
 
             println!("* Generating verifying key...");
+            let inst2 = Instant::now();
             let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
+            let inst3 = Instant::now();
+            file.write_all(format!("Generating verifying key time: {:?}\n", inst3.duration_since(inst2)).as_bytes()).unwrap();
 
             println!("* Reading zero-knowledge proof...");
+            let inst4 = Instant::now();
             let mut proof_file = File::open(proof)
                 .expect("unable to load proof file");
             let ProofDataHalo2 { proof } = ProofDataHalo2::deserialize(&mut proof_file).unwrap();
+            let inst5 = Instant::now();
+            file.write_all(format!("Reading zero-knowledge proof time: {:?}\n", inst5.duration_since(inst4)).as_bytes()).unwrap();
 
             // Veryfing proof
             println!("* Verifying proof validity...");
+            let inst6 = Instant::now();
             let verifier_result = verifier(&params, &vk, &proof);
+            let inst7 = Instant::now();
+            file.write_all(format!("Verifying proof validity time: {:?}\n", inst7.duration_since(inst6)).as_bytes()).unwrap();
 
             if let Ok(()) = verifier_result {
                 println!("* Zero-knowledge proof is valid");
             } else {
                 println!("* Result from verifier: {:?}", verifier_result);
             }
+            // print total verifying time
+            let inst8 = Instant::now();MyCir
+            file.write_all(format!("Total verifying time: {:?}\n", inst8.duration_since(inst0)).as_bytes()).unwrap();
         }
     }
 }
