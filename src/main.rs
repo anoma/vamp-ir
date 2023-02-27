@@ -569,7 +569,7 @@ fn verify_cmd(Verify { universal_params, circuit, proof, unchecked }: &Verify) {
                 println!("* Result from verifier: {:?}", verifier_result);
             }
             // print total verifying time
-            let inst8 = Instant::now();MyCir
+            let inst8 = Instant::now();
             file.write_all(format!("Total verifying time: {:?}\n", inst8.duration_since(inst0)).as_bytes()).unwrap();
         }
     }
