@@ -232,6 +232,8 @@ w26: 0
 w27: 0
 ```
 ## Benchmarks
+These benchmarks are performed on a Lenovo ThinkPad X1 Carbon Gen 9 with 8.0 GiB RAM and 
+an 11th Gen Intel® Core™ i5-1135G7 @ 2.40GHz × 8 unless stated otherwise
 ### Halo2 backend
 
 #### SHA256 1 block message
@@ -255,6 +257,11 @@ w27: 0
 | Vamp-IR | `729.47 s` | Memory Failiure | X        |
 | Halo2   | //         | `160.36 s`      | `1.03 s` |
 
+We re-run the with a device that has 128GB of RAM and these are the reuslts:
+
+|         | `Compile` | `Prove`    | `Verify` |
+|:--------|:----------|:-----------|:---------|
+| Vamp-IR | `60 s`    | `81.983 s` | `0.6 s ` |
 
 ### ZK-garage plonk backend
 
