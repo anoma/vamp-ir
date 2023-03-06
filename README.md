@@ -257,7 +257,7 @@ an 11th Gen Intel® Core™ i5-1135G7 @ 2.40GHz × 8 unless stated otherwise
 | Vamp-IR | `729.47 s` | Memory Failiure | X        |
 | Halo2   | //         | `160.36 s`      | `1.03 s` |
 
-We re-run the with a device that has 128GB of RAM and these are the reuslts:
+We re-run the with a device that has 128GB of RAM and these are the results:
 
 |         | `Compile` | `Prove`    | `Verify` |
 |:--------|:----------|:-----------|:---------|
@@ -271,6 +271,19 @@ We re-run the with a device that has 128GB of RAM and these are the reuslts:
 |:----------|:----------|:----------|:---------|
 | Vamp-IR   | `76.30 s` | `57.59 s` | `0.22 s` |
 | ZK-Garage | //        | `32.48 s` | `0.10 s` |
+
+#### Blake2s using only fan-in 2 gates
+To have a more fair comparison between Vamp-IR and ZK-Garage, we can use only fan-in 2 gates in the Blake2s circuit.
+This is because the current version of Vamp-IR does not uses fan-in 3 gates, as the ZK-Garage backend does, which in a 
+speed-up.
+
+|           | `Compile` | `Prove`    | `Verify` |
+|:----------|:----------|:-----------|:---------|
+| Vamp-IR   | `76.30 s` | `57.59 s`  | `0.22 s` |
+| ZK-Garage | //        | `360.48 s` | `0.81 s` |
+
+The version of Blake2 used for the latter benchmark can be found here:
+https://github.com/heliaxdev/ark-plonk/blob/blake2s/examples/blake2s_circuit_fain2.rs
 
 
 ## License
