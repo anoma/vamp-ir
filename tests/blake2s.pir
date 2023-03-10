@@ -95,15 +95,24 @@ def r4 x = {
     combine32 (a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, a0, a1, a2, a3, a4, a5, a6, ())
 };
 
+// Reminder operation
+def rem32 x = {
+    def q = fresh(x \ 4294967296);
+    def r = fresh(x % 4294967296);
+    x = q * 4294967296 + r;
+    range32 q;
+    r
+};
+
 // BLAKE 2 mixer function
 def g_mixer (va,vb,vc,vd,x,y) = {
-    def va1 = fresh((va + vb + x) % 4294967296);
+    def va1 = rem32 (va + vb + x);
     def vd1 = r1 (xor32 vd va1);
-    def vc1 = fresh((vc + vd1) % 4294967296);
+    def vc1 = rem32 (vc + vd1);
     def vb1 = r2 (xor32 vb vc1);
-    def va2 = fresh((va1 + vb1 + y) % 4294967296);
+    def va2 = rem32 (va1 + vb1 + y);
     def vd2 = r3 (xor32 vd1 va2);
-    def vc2 = fresh((vc1 + vd2) % 4294967296);
+    def vc2 = rem32 (vc1 + vd2);
     def vb2 = r4 (xor32 vb1 vc2);
     (va2, vb2, vc2, vd2)
 };
@@ -144,7 +153,7 @@ def ll = 3;
 // Inizialize working vector v, first half from the state h, second half from IV.
 
 def (v0,v1,v2,v3,v4,v5,v6,v7,v8,v9,v10,v11,v12,v13,v14,v15) = (h0_0, h1_0, h2_0, h3_0, h4_0, h5_0, h6_0, h7_0, 1779033703, 3144134277 , 1013904242, 2773480762, 1359893119, 2600822924, 528734635, 1541459225);
-def v12 = xor32 v12 (fresh(ll % 4294967296));
+def v12 = xor32 v12 (rem32 ll);
 def v14 = xor32 v14 4294967295;
 def (v0_0,v1_0,v2_0,v3_0,v4_0,v5_0,v6_0,v7_0,v8_0,v9_0,v10_0,v11_0,v12_0,v13_0,v14_0,v15_0) = (v0,v1,v2,v3,v4,v5,v6,v7,v8,v9,v10,v11,v12,v13,v14,v15);
 // first check with reference
@@ -230,4 +239,4 @@ def xorhalves (h0,h1,h2,h3,h4,h5,h6,h7) (v0,v1,v2,v3,v4,v5,v6,v7,v8,v9,v10,v11,v
 
 def (h0_1,h1_1,h2_1,h3_1,h4_1,h5_1,h6_1,h7_1) = xorhalves (h0_0, h1_0, h2_0, h3_0, h4_0, h5_0, h6_0, h7_0)(v0_10,v1_10,v2_10,v3_10,v4_10,v5_10,v6_10,v7_10,v8_10,v9_10,v10_10,v11_10,v12_10,v13_10,v14_10,v15_10);
 // check from reference:
-// (2355006544,3792993330,2737547233,793111374,545998135,691721886,1285265741,2186897286) = (h0_1,h1_1,h2_1,h3_1,h4_1,h5_1,h6_1,h7_1) ;
+(2355006544,3792993330,2737547233,793111374,545998135,691721886,1285265741,2186897286) = (h0_1,h1_1,h2_1,h3_1,h4_1,h5_1,h6_1,h7_1);
