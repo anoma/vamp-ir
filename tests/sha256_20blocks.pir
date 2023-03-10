@@ -1,0 +1,759 @@
+/* An implementation of standard arithmetic logic unit operations in vampir. Run
+   as follows:
+   vamp-ir setup params.pp
+   vamp-ir compile tests/alu.pir params.pp circuit.plonk
+   vamp-ir prove circuit.plonk params.pp proof.plonk
+   vamp-ir verify circuit.plonk params.pp proof.plonk
+*/
+
+// Ensure that the given argument is 1 or 0, and returns it
+def bool x = { x*(x-1) = 0; x };
+
+// Extract the 32 bits from a number argument
+def range32 a = {
+    def a0 = bool (fresh ((a\1) % 2));
+    def a1 = bool (fresh ((a\2) % 2));
+    def a2 = bool (fresh ((a\4) % 2));
+    def a3 = bool (fresh ((a\8) % 2));
+    def a4 = bool (fresh ((a\16) % 2));
+    def a5 = bool (fresh ((a\32) % 2));
+    def a6 = bool (fresh ((a\64) % 2));
+    def a7 = bool (fresh ((a\128) % 2));
+    def a8 = bool (fresh ((a\256) % 2));
+    def a9 = bool (fresh ((a\512) % 2));
+    def a10 = bool (fresh ((a\1024) % 2));
+    def a11 = bool (fresh ((a\2048) % 2));
+    def a12 = bool (fresh ((a\4096) % 2));
+    def a13 = bool (fresh ((a\8192) % 2));
+    def a14 = bool (fresh ((a\16384) % 2));
+    def a15 = bool (fresh ((a\32768) % 2));
+    def a16 = bool (fresh ((a\65536) % 2));
+    def a17 = bool (fresh ((a\131072) % 2));
+    def a18 = bool (fresh ((a\262144) % 2));
+    def a19 = bool (fresh ((a\524288) % 2));
+    def a20 = bool (fresh ((a\1048576) % 2));
+    def a21 = bool (fresh ((a\2097152) % 2));
+    def a22 = bool (fresh ((a\4194304) % 2));
+    def a23 = bool (fresh ((a\8388608) % 2));
+    def a24 = bool (fresh ((a\16777216) % 2));
+    def a25 = bool (fresh ((a\33554432) % 2));
+    def a26 = bool (fresh ((a\67108864) % 2));
+    def a27 = bool (fresh ((a\134217728) % 2));
+    def a28 = bool (fresh ((a\268435456) % 2));
+    def a29 = bool (fresh ((a\536870912) % 2));
+    def a30 = bool (fresh ((a\1073741824) % 2));
+    def a31 = bool (fresh ((a\2147483648) % 2));
+    a = a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7 + 256*a8 + 512*a9 + 1024*a10 + 2048*a11 + 4096*a12 + 8192*a13 + 16384*a14 + 32768*a15 + 65536*a16 + 131072*a17 + 262144*a18 + 524288*a19 + 1048576*a20 + 2097152*a21 + 4194304*a22 + 8388608*a23 + 16777216*a24 + 33554432*a25 + 67108864*a26 + 134217728*a27 + 268435456*a28 + 536870912*a29 + 1073741824*a30 + 2147483648*a31;
+    (a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24, a25, a26, a27, a28, a29, a30, a31, ())
+};
+
+// Pair up corresponding elements of each tuple
+def zip32 (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,ar) (b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,b10,b11,b12,b13,b14,b15,b16,b17,b18,b19,b20,b21,b22,b23,b24,b25,b26,b27,b28,b29,b30,b31,br) = {
+    ((a0,b0),(a1,b1),(a2,b2),(a3,b3),(a4,b4),(a5,b5),(a6,b6),(a7,b7),(a8,b8),(a9,b9),(a10,b10),(a11,b11),(a12,b12),(a13,b13),(a14,b14),(a15,b15),(a16,b16),(a17,b17),(a18,b18),(a19,b19),(a20,b20),(a21,b21),(a22,b22),(a23,b23),(a24,b24),(a25,b25),(a26,b26),(a27,b27),(a28,b28),(a29,b29),(a30,b30),(a31,b31),())
+};
+
+// Apply function to each element of tuple
+def map f (g0,g1,g2,g3,g4,g5,g6,g7,g8,g9,g10,g11,g12,g13,g14,g15,g16,g17,g18,g19,g20,g21,g22,g23,g24,g25,g26,g27,g28,g29,g30,g31,gr) = {
+    (f g0, f g1, f g2, f g3, f g4, f g5, f g6, f g7, f g8, f g9, f g10, f g11, f g12, f g13, f g14, f g15, f g16, f g17, f g18, f g19, f g20, f g21, f g22, f g23, f g24, f g25, f g26, f g27, f g28, f g29, f g30, f g31, ())
+};
+
+// Multiply each tuple element by corresponding unit
+def combine32 (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31, ar) = {
+    a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7 + 256*a8 + 512*a9 + 1024*a10 + 2048*a11 + 4096*a12 + 8192*a13 + 16384*a14 + 32768*a15 + 65536*a16 + 131072*a17 + 262144*a18 + 524288*a19 + 1048576*a20 + 2097152*a21 + 4194304*a22 + 8388608*a23 + 16777216*a24 + 33554432*a25 + 67108864*a26 + 134217728*a27 + 268435456*a28 + 536870912*a29 + 1073741824*a30 + 2147483648*a31
+};
+
+
+// Apply given function to corresponding bit-pairs in bit representation
+def bitwise32 g a b = {
+    def zipped = zip32 (range32 a) (range32 b);
+    def new_bits = map g zipped;
+    combine32 new_bits
+};
+
+def bitwise_single g a = {
+    def a_bits = range32 a;
+    def new_bits = map g a_bits;
+    combine32 new_bits
+};
+
+// Definition of xor for domain {0, 1}^2
+def bit_xor (a,b) = { a*(1-b)+(1-a)*b };
+
+// Definition of and for domain {0, 1}^2
+def bit_and (a,b) = { a*b };
+
+// Definition of not for domain {0, 1}
+def bit_not a = { 1-a };
+
+// Definition of bitwise xor for 32 bit values
+def xor32 = bitwise32 bit_xor;
+
+// Definition of bitwise and for 32 bit values
+def and32 = bitwise32 bit_and;
+
+// Definition of bitwise not for 32 bit values
+def not32 = bitwise_single bit_not;
+// 3284400724 = not32 1010566571;
+
+// Reminder operation
+def rem32 x = {
+    def q = fresh(x \ 4294967296);
+    def r = fresh(x % 4294967296);
+    x = q * 4294967296 + r;
+    range32 q;
+    r
+};
+
+def rem2 x = {
+    def q = fresh(x \ 2);
+    def r = fresh(x % 2);
+    x = q * 4294967296 + r;
+    range32 q;
+    r
+};
+
+
+// SHA256 constants
+def K0 = 0x428a2f98;
+def K1 = 0x71374491;
+def K2 = 0xb5c0fbcf;
+def K3 = 0xe9b5dba5;
+def K4 = 0x3956c25b;
+def K5 = 0x59f111f1;
+def K6 = 0x923f82a4;
+def K7 = 0xab1c5ed5;
+def K8 = 0xd807aa98;
+def K9 = 0x12835b01;
+def K10 = 0x243185be;
+def K11 = 0x550c7dc3;
+def K12 = 0x72be5d74;
+def K13 = 0x80deb1fe;
+def K14 = 0x9bdc06a7;
+def K15 = 0xc19bf174;
+def K16 = 0xe49b69c1;
+def K17 = 0xefbe4786;
+def K18 = 0x0fc19dc6;
+def K19 = 0x240ca1cc;
+def K20 = 0x2de92c6f;
+def K21 = 0x4a7484aa;
+def K22 = 0x5cb0a9dc;
+def K23 = 0x76f988da;
+def K24 = 0x983e5152;
+def K25 = 0xa831c66d;
+def K26 = 0xb00327c8;
+def K27 = 0xbf597fc7;
+def K28 = 0xc6e00bf3;
+def K29 = 0xd5a79147;
+def K30 = 0x06ca6351;
+def K31 = 0x14292967;
+def K32 = 0x27b70a85;
+def K33 = 0x2e1b2138;
+def K34 = 0x4d2c6dfc;
+def K35 = 0x53380d13;
+def K36 = 0x650a7354;
+def K37 = 0x766a0abb;
+def K38 = 0x81c2c92e;
+def K39 = 0x92722c85;
+def K40 = 0xa2bfe8a1;
+def K41 = 0xa81a664b;
+def K42 = 0xc24b8b70;
+def K43 = 0xc76c51a3;
+def K44 = 0xd192e819;
+def K45 = 0xd6990624;
+def K46 = 0xf40e3585;
+def K47 = 0x106aa070;
+def K48 = 0x19a4c116;
+def K49 = 0x1e376c08;
+def K50 = 0x2748774c;
+def K51 = 0x34b0bcb5;
+def K52 = 0x391c0cb3;
+def K53 = 0x4ed8aa4a;
+def K54 = 0x5b9cca4f;
+def K55 = 0x682e6ff3;
+def K56 = 0x748f82ee;
+def K57 = 0x78a5636f;
+def K58 = 0x84c87814;
+def K59 = 0x8cc70208;
+def K60 = 0x90befffa;
+def K61 = 0xa4506ceb;
+def K62 = 0xbef9a3f7;
+def K63 = 0xc67178f2;
+
+// Sigma 0
+def sigma0 x = {
+    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,ar) = range32 x;
+    def (x0,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22,x23,x24,x25,x26,x27,x28,x29,x30,x31,xr) = (a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,());
+    def (y0,y1,y2,y3,y4,y5,y6,y7,y8,y9,y10,y11,y12,y13,y14,y15,y16,y17,y18,y19,y20,y21,y22,y23,y24,y25,y26,y27,y28,y29,y30,y31,yr) = (a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,());
+    def (z0,z1,z2,z3,z4,z5,z6,z7,z8,z9,z10,z11,z12,z13,z14,z15,z16,z17,z18,z19,z20,z21,z22,z23,z24,z25,z26,z27,z28,z29,z30,z31,zr) = (a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,0,0,0,());
+    combine32 (rem2((x0+y0+z0)%2), rem2((x1+y1+z1)%2), rem2((x2+y2+z2)%2), rem2((x3+y3+z3)%2), rem2((x4+y4+z4)%2), rem2((x5+y5+z5)%2), rem2((x6+y6+z6)%2), rem2((x7+y7+z7)%2), rem2((x8+y8+z8)%2), rem2((x9+y9+z9)%2), rem2((x10+y10+z10)%2), rem2((x11+y11+z11)%2), rem2((x12+y12+z12)%2), rem2((x13+y13+z13)%2), rem2((x14+y14+z14)%2), rem2((x15+y15+z15)%2), rem2((x16+y16+z16)%2), rem2((x17+y17+z17)%2), rem2((x18+y18+z18)%2), rem2((x19+y19+z19)%2), rem2((x20+y20+z20)%2), rem2((x21+y21+z21)%2), rem2((x22+y22+z22)%2), rem2((x23+y23+z23)%2), rem2((x24+y24+z24)%2), rem2((x25+y25+z25)%2), rem2((x26+y26+z26)%2), rem2((x27+y27+z27)%2), rem2((x28+y28+z28)%2), rem2((x29+y29+z29)%2), rem2((x30+y30+z30)%2), rem2((x31+y31+z31)%2), ())
+    };
+
+def sigma1 x = {
+    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,ar) = range32 x;
+    def (x0,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22,x23,x24,x25,x26,x27,x28,x29,x30,x31,xr) = (a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,());
+    def (y0,y1,y2,y3,y4,y5,y6,y7,y8,y9,y10,y11,y12,y13,y14,y15,y16,y17,y18,y19,y20,y21,y22,y23,y24,y25,y26,y27,y28,y29,y30,y31,yr) = (a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,());
+    def (z0,z1,z2,z3,z4,z5,z6,z7,z8,z9,z10,z11,z12,z13,z14,z15,z16,z17,z18,z19,z20,z21,z22,z23,z24,z25,z26,z27,z28,z29,z30,z31,zr) = (a10, a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,0,0,0,0,0,0,0,0,0,0,());
+    combine32 (rem2((x0+y0+z0)%2), rem2((x1+y1+z1)%2), rem2((x2+y2+z2)%2), rem2((x3+y3+z3)%2), rem2((x4+y4+z4)%2), rem2((x5+y5+z5)%2), rem2((x6+y6+z6)%2), rem2((x7+y7+z7)%2), rem2((x8+y8+z8)%2), rem2((x9+y9+z9)%2), rem2((x10+y10+z10)%2), rem2((x11+y11+z11)%2), rem2((x12+y12+z12)%2), rem2((x13+y13+z13)%2), rem2((x14+y14+z14)%2), rem2((x15+y15+z15)%2), rem2((x16+y16+z16)%2), rem2((x17+y17+z17)%2), rem2((x18+y18+z18)%2), rem2((x19+y19+z19)%2), rem2((x20+y20+z20)%2), rem2((x21+y21+z21)%2), rem2((x22+y22+z22)%2), rem2((x23+y23+z23)%2), rem2((x24+y24+z24)%2), rem2((x25+y25+z25)%2), rem2((x26+y26+z26)%2), rem2((x27+y27+z27)%2), rem2((x28+y28+z28)%2), rem2((x29+y29+z29)%2), rem2((x30+y30+z30)%2), rem2((x31+y31+z31)%2), ())
+    };
+
+def SIGMA0 x = {
+    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,ar) = range32 x;
+    def (x0,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22,x23,x24,x25,x26,x27,x28,x29,x30,x31,xr) = (a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,());
+    def (y0,y1,y2,y3,y4,y5,y6,y7,y8,y9,y10,y11,y12,y13,y14,y15,y16,y17,y18,y19,y20,y21,y22,y23,y24,y25,y26,y27,y28,y29,y30,y31,yr) = (a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,());
+    def (z0,z1,z2,z3,z4,z5,z6,z7,z8,z9,z10,z11,z12,z13,z14,z15,z16,z17,z18,z19,z20,z21,z22,z23,z24,z25,z26,z27,z28,z29,z30,z31,zr) = (a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,());
+    combine32 (rem2((x0+y0+z0)%2), rem2((x1+y1+z1)%2), rem2((x2+y2+z2)%2), rem2((x3+y3+z3)%2), rem2((x4+y4+z4)%2), rem2((x5+y5+z5)%2), rem2((x6+y6+z6)%2), rem2((x7+y7+z7)%2), rem2((x8+y8+z8)%2), rem2((x9+y9+z9)%2), rem2((x10+y10+z10)%2), rem2((x11+y11+z11)%2), rem2((x12+y12+z12)%2), rem2((x13+y13+z13)%2), rem2((x14+y14+z14)%2), rem2((x15+y15+z15)%2), rem2((x16+y16+z16)%2), rem2((x17+y17+z17)%2), rem2((x18+y18+z18)%2), rem2((x19+y19+z19)%2), rem2((x20+y20+z20)%2), rem2((x21+y21+z21)%2), rem2((x22+y22+z22)%2), rem2((x23+y23+z23)%2), rem2((x24+y24+z24)%2), rem2((x25+y25+z25)%2), rem2((x26+y26+z26)%2), rem2((x27+y27+z27)%2), rem2((x28+y28+z28)%2), rem2((x29+y29+z29)%2), rem2((x30+y30+z30)%2), rem2((x31+y31+z31)%2), ())
+    };
+
+def SIGMA1 x = {
+    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,ar) = range32 x;
+    def (x0,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22,x23,x24,x25,x26,x27,x28,x29,x30,x31,xr) = (a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,());
+    def (y0,y1,y2,y3,y4,y5,y6,y7,y8,y9,y10,y11,y12,y13,y14,y15,y16,y17,y18,y19,y20,y21,y22,y23,y24,y25,y26,y27,y28,y29,y30,y31,yr) = (a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,());
+    def (z0,z1,z2,z3,z4,z5,z6,z7,z8,z9,z10,z11,z12,z13,z14,z15,z16,z17,z18,z19,z20,z21,z22,z23,z24,z25,z26,z27,z28,z29,z30,z31,zr) = (a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,());
+    combine32 (rem2((x0+y0+z0)%2), rem2((x1+y1+z1)%2), rem2((x2+y2+z2)%2), rem2((x3+y3+z3)%2), rem2((x4+y4+z4)%2), rem2((x5+y5+z5)%2), rem2((x6+y6+z6)%2), rem2((x7+y7+z7)%2), rem2((x8+y8+z8)%2), rem2((x9+y9+z9)%2), rem2((x10+y10+z10)%2), rem2((x11+y11+z11)%2), rem2((x12+y12+z12)%2), rem2((x13+y13+z13)%2), rem2((x14+y14+z14)%2), rem2((x15+y15+z15)%2), rem2((x16+y16+z16)%2), rem2((x17+y17+z17)%2), rem2((x18+y18+z18)%2), rem2((x19+y19+z19)%2), rem2((x20+y20+z20)%2), rem2((x21+y21+z21)%2), rem2((x22+y22+z22)%2), rem2((x23+y23+z23)%2), rem2((x24+y24+z24)%2), rem2((x25+y25+z25)%2), rem2((x26+y26+z26)%2), rem2((x27+y27+z27)%2), rem2((x28+y28+z28)%2), rem2((x29+y29+z29)%2), rem2((x30+y30+z30)%2), rem2((x31+y31+z31)%2), ())
+    };
+
+
+// Choose function
+def ch x y z = {
+    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,ar) = range32 x;
+    def (b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,b10,b11,b12,b13,b14,b15,b16,b17,b18,b19,b20,b21,b22,b23,b24,b25,b26,b27,b28,b29,b30,b31,br) = range32 y;
+    def (c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c16,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,c31,cr) = range32 z;
+    combine32 (rem2((a0*b0)+(1-a0)*(c0)), rem2((a1*b1)+(1-a1)*(c1)), rem2((a2*b2)+(1-a2)*(c2)), rem2((a3*b3)+(1-a3)*(c3)), rem2((a4*b4)+(1-a4)*(c4)), rem2((a5*b5)+(1-a5)*(c5)), rem2((a6*b6)+(1-a6)*(c6)), rem2((a7*b7)+(1-a7)*(c7)), rem2((a8*b8)+(1-a8)*(c8)), rem2((a9*b9)+(1-a9)*(c9)), rem2((a10*b10)+(1-a10)*(c10)), rem2((a11*b11)+(1-a11)*(c11)), rem2((a12*b12)+(1-a12)*(c12)), rem2((a13*b13)+(1-a13)*(c13)), rem2((a14*b14)+(1-a14)*(c14)), rem2((a15*b15)+(1-a15)*(c15)), rem2((a16*b16)+(1-a16)*(c16)), rem2((a17*b17)+(1-a17)*(c17)), rem2((a18*b18)+(1-a18)*(c18)), rem2((a19*b19)+(1-a19)*(c19)), rem2((a20*b20)+(1-a20)*(c20)), rem2((a21*b21)+(1-a21)*(c21)), rem2((a22*b22)+(1-a22)*(c22)), rem2((a23*b23)+(1-a23)*(c23)), rem2((a24*b24)+(1-a24)*(c24)), rem2((a25*b25)+(1-a25)*(c25)), rem2((a26*b26)+(1-a26)*(c26)), rem2((a27*b27)+(1-a27)*(c27)), rem2((a28*b28)+(1-a28)*(c28)), rem2((a29*b29)+(1-a29)*(c29)), rem2((a30*b30)+(1-a30)*(c30)), rem2((a31*b31)+(1-a31)*(c31)), ())
+    };
+// 528861580 = ch 0x510e527f 0x9b05688c 0x1f83d9ab;
+
+// Majority function
+def maj x y z = {
+    xor32 (xor32 (and32 x y) (and32 x z)) (and32 y z)
+    };
+// 269374079 = maj 0x510e527f 0x2a0e527f 0x149fbc13;
+
+
+// Convert input in pure binary form. The message we are going to hash is "abc".
+// The binary representation of "abc" is 01100001 01100010 01100011.
+// We need to order in rows of for elements so that we have rows of 32 bits.
+
+
+// Preprocessing
+// The input needs to be a multiple of 512, and at the moment is 24.
+// We are going to round up to 512.
+// The "abc" message we are going to use is:
+def H0 = 0x6a09e667;
+def H1 = 0xbb67ae85;
+def H2 = 0x3c6ef372;
+def H3 = 0xa54ff53a;
+def H4 = 0x510e527f;
+def H5 = 0x9b05688c;
+def H6 = 0x1f83d9ab;
+def H7 = 0x5be0cd19;
+
+// PARSING THE MESSAGE
+// We need to parse the message into 32 bit words.
+def parsing m0 m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 = {
+    // from 0 to 15 wi = mi
+    def w0 = m0;
+    def w1 = m1;
+    def w2 = m2;
+    def w3 = m3;
+    def w4 = m4;
+    def w5 = m5;
+    def w6 = m6;
+    def w7 = m7;
+    def w8 = m8;
+    def w9 = m9;
+    def w10 = m10;
+    def w11 = m11;
+    def w12 = m12;
+    def w13 = m13;
+    def w14 = m14;
+    def w15 = m15;
+// from 16 to 63 wi = sigma1(wi-2) + wi-7 + sigma0(wi-15) + wi-16
+def w16 = rem32( (sigma1 w14 + w9 + sigma0 w1 + w0));
+def w17 = rem32( (sigma1 w15 + w10 + sigma0 w2 + w1));
+def w18 = rem32( (sigma1 w16 + w11 + sigma0 w3 + w2));
+def w19 = rem32( (sigma1 w17 + w12 + sigma0 w4 + w3));
+def w20 = rem32( (sigma1 w18 + w13 + sigma0 w5 + w4));
+def w21 = rem32( (sigma1 w19 + w14 + sigma0 w6 + w5));
+def w22 = rem32( (sigma1 w20 + w15 + sigma0 w7 + w6));
+def w23 = rem32( (sigma1 w21 + w16 + sigma0 w8 + w7));
+def w24 = rem32( (sigma1 w22 + w17 + sigma0 w9 + w8));
+def w25 = rem32( (sigma1 w23 + w18 + sigma0 w10 + w9));
+def w26 = rem32( (sigma1 w24 + w19 + sigma0 w11 + w10));
+def w27 = rem32( (sigma1 w25 + w20 + sigma0 w12 + w11));
+def w28 = rem32( (sigma1 w26 + w21 + sigma0 w13 + w12));
+def w29 = rem32( (sigma1 w27 + w22 + sigma0 w14 + w13));
+def w30 = rem32( (sigma1 w28 + w23 + sigma0 w15 + w14));
+def w31 = rem32( (sigma1 w29 + w24 + sigma0 w16 + w15));
+def w32 = rem32( (sigma1 w30 + w25 + sigma0 w17 + w16));
+def w33 = rem32( (sigma1 w31 + w26 + sigma0 w18 + w17));
+def w34 = rem32( (sigma1 w32 + w27 + sigma0 w19 + w18));
+def w35 = rem32( (sigma1 w33 + w28 + sigma0 w20 + w19));
+def w36 = rem32( (sigma1 w34 + w29 + sigma0 w21 + w20));
+def w37 = rem32( (sigma1 w35 + w30 + sigma0 w22 + w21));
+def w38 = rem32( (sigma1 w36 + w31 + sigma0 w23 + w22));
+def w39 = rem32( (sigma1 w37 + w32 + sigma0 w24 + w23));
+def w40 = rem32( (sigma1 w38 + w33 + sigma0 w25 + w24));
+def w41 = rem32( (sigma1 w39 + w34 + sigma0 w26 + w25));
+def w42 = rem32( (sigma1 w40 + w35 + sigma0 w27 + w26));
+def w43 = rem32( (sigma1 w41 + w36 + sigma0 w28 + w27));
+def w44 = rem32( (sigma1 w42 + w37 + sigma0 w29 + w28));
+def w45 = rem32( (sigma1 w43 + w38 + sigma0 w30 + w29));
+def w46 = rem32( (sigma1 w44 + w39 + sigma0 w31 + w30));
+def w47 = rem32( (sigma1 w45 + w40 + sigma0 w32 + w31));
+def w48 = rem32( (sigma1 w46 + w41 + sigma0 w33 + w32));
+def w49 = rem32( (sigma1 w47 + w42 + sigma0 w34 + w33));
+def w50 = rem32( (sigma1 w48 + w43 + sigma0 w35 + w34));
+def w51 = rem32( (sigma1 w49 + w44 + sigma0 w36 + w35));
+def w52 = rem32( (sigma1 w50 + w45 + sigma0 w37 + w36));
+def w53 = rem32( (sigma1 w51 + w46 + sigma0 w38 + w37));
+def w54 = rem32( (sigma1 w52 + w47 + sigma0 w39 + w38));
+def w55 = rem32( (sigma1 w53 + w48 + sigma0 w40 + w39));
+def w56 = rem32( (sigma1 w54 + w49 + sigma0 w41 + w40));
+def w57 = rem32( (sigma1 w55 + w50 + sigma0 w42 + w41));
+def w58 = rem32( (sigma1 w56 + w51 + sigma0 w43 + w42));
+def w59 = rem32( (sigma1 w57 + w52 + sigma0 w44 + w43));
+def w60 = rem32( (sigma1 w58 + w53 + sigma0 w45 + w44));
+def w61 = rem32( (sigma1 w59 + w54 + sigma0 w46 + w45));
+def w62 = rem32( (sigma1 w60 + w55 + sigma0 w47 + w46));
+def w63 = rem32( (sigma1 w61 + w56 + sigma0 w48 + w47));
+
+def H0 = 0x6a09e667;
+def H1 = 0xbb67ae85;
+def H2 = 0x3c6ef372;
+def H3 = 0xa54ff53a;
+def H4 = 0x510e527f;
+def H5 = 0x9b05688c;
+def H6 = 0x1f83d9ab;
+def H7 = 0x5be0cd19;
+
+def step a b c d e f g h K w = {
+    def t1 = rem32 ( h + (SIGMA1 e) + (ch e f g) + K + w);
+    def t2 = rem32 (SIGMA0 a + (maj a b c));
+    def h = g;
+    def g = f;
+    def f = e;
+    def e = rem32 (d + t1);
+    def d = c;
+    def c = b;
+    def b = a;
+    def a = rem32 (t1 + t2);
+    (a, b, c, d, e, f, g, h)
+};
+
+def process_block H0 H1 H2 H3 H4 H5 H6 H7 m0 m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 = {
+    def (w0,w1,w2,w3,w4,w5,w6,w7,w8,w9,w10,w11,w12,w13,w14,w15,w16,w17,w18,w19,w20,w21,w22,w23,w24,w25,w26,w27,w28,w29,w30,w31,w32,w33,w34,w35,w36,w37,w38,w39,w40,w41,w42,w43,w44,w45,w46,w47,w48,w49,w50,w51,w52,w53,w54,w55,w56,w57,w58,w59,w60,w61,w62,w63) = parsing m0 m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15;
+    def (a_0, b_0, c_0, d_0, e_0, f_0, g_0, h_0) = step H0 H1 H2 H3 H4 H5 H6 H7 K0 w0;
+    def (a_1, b_1, c_1, d_1, e_1, f_1, g_1, h_1) = step a_0 b_0 c_0 d_0 e_0 f_0 g_0 h_0 K1 w1;
+    def (a_2, b_2, c_2, d_2, e_2, f_2, g_2, h_2) = step a_1 b_1 c_1 d_1 e_1 f_1 g_1 h_1 K2 w2;
+    def (a_3, b_3, c_3, d_3, e_3, f_3, g_3, h_3) = step a_2 b_2 c_2 d_2 e_2 f_2 g_2 h_2 K3 w3;
+    def (a_4, b_4, c_4, d_4, e_4, f_4, g_4, h_4) = step a_3 b_3 c_3 d_3 e_3 f_3 g_3 h_3 K4 w4;
+    def (a_5, b_5, c_5, d_5, e_5, f_5, g_5, h_5) = step a_4 b_4 c_4 d_4 e_4 f_4 g_4 h_4 K5 w5;
+    def (a_6, b_6, c_6, d_6, e_6, f_6, g_6, h_6) = step a_5 b_5 c_5 d_5 e_5 f_5 g_5 h_5 K6 w6;
+    def (a_7, b_7, c_7, d_7, e_7, f_7, g_7, h_7) = step a_6 b_6 c_6 d_6 e_6 f_6 g_6 h_6 K7 w7;
+    def (a_8, b_8, c_8, d_8, e_8, f_8, g_8, h_8) = step a_7 b_7 c_7 d_7 e_7 f_7 g_7 h_7 K8 w8;
+    def (a_9, b_9, c_9, d_9, e_9, f_9, g_9, h_9) = step a_8 b_8 c_8 d_8 e_8 f_8 g_8 h_8 K9 w9;
+    def (a_10, b_10, c_10, d_10, e_10, f_10, g_10, h_10) = step a_9 b_9 c_9 d_9 e_9 f_9 g_9 h_9 K10 w10;
+    def (a_11, b_11, c_11, d_11, e_11, f_11, g_11, h_11) = step a_10 b_10 c_10 d_10 e_10 f_10 g_10 h_10 K11 w11;
+    def (a_12, b_12, c_12, d_12, e_12, f_12, g_12, h_12) = step a_11 b_11 c_11 d_11 e_11 f_11 g_11 h_11 K12 w12;
+    def (a_13, b_13, c_13, d_13, e_13, f_13, g_13, h_13) = step a_12 b_12 c_12 d_12 e_12 f_12 g_12 h_12 K13 w13;
+    def (a_14, b_14, c_14, d_14, e_14, f_14, g_14, h_14) = step a_13 b_13 c_13 d_13 e_13 f_13 g_13 h_13 K14 w14;
+    def (a_15, b_15, c_15, d_15, e_15, f_15, g_15, h_15) = step a_14 b_14 c_14 d_14 e_14 f_14 g_14 h_14 K15 w15;
+    def (a_16, b_16, c_16, d_16, e_16, f_16, g_16, h_16) = step a_15 b_15 c_15 d_15 e_15 f_15 g_15 h_15 K16 w16;
+    def (a_17, b_17, c_17, d_17, e_17, f_17, g_17, h_17) = step a_16 b_16 c_16 d_16 e_16 f_16 g_16 h_16 K17 w17;
+    def (a_18, b_18, c_18, d_18, e_18, f_18, g_18, h_18) = step a_17 b_17 c_17 d_17 e_17 f_17 g_17 h_17 K18 w18;
+    def (a_19, b_19, c_19, d_19, e_19, f_19, g_19, h_19) = step a_18 b_18 c_18 d_18 e_18 f_18 g_18 h_18 K19 w19;
+    def (a_20, b_20, c_20, d_20, e_20, f_20, g_20, h_20) = step a_19 b_19 c_19 d_19 e_19 f_19 g_19 h_19 K20 w20;
+    def (a_21, b_21, c_21, d_21, e_21, f_21, g_21, h_21) = step a_20 b_20 c_20 d_20 e_20 f_20 g_20 h_20 K21 w21;
+    def (a_22, b_22, c_22, d_22, e_22, f_22, g_22, h_22) = step a_21 b_21 c_21 d_21 e_21 f_21 g_21 h_21 K22 w22;
+    def (a_23, b_23, c_23, d_23, e_23, f_23, g_23, h_23) = step a_22 b_22 c_22 d_22 e_22 f_22 g_22 h_22 K23 w23;
+    def (a_24, b_24, c_24, d_24, e_24, f_24, g_24, h_24) = step a_23 b_23 c_23 d_23 e_23 f_23 g_23 h_23 K24 w24;
+    def (a_25, b_25, c_25, d_25, e_25, f_25, g_25, h_25) = step a_24 b_24 c_24 d_24 e_24 f_24 g_24 h_24 K25 w25;
+    def (a_26, b_26, c_26, d_26, e_26, f_26, g_26, h_26) = step a_25 b_25 c_25 d_25 e_25 f_25 g_25 h_25 K26 w26;
+    def (a_27, b_27, c_27, d_27, e_27, f_27, g_27, h_27) = step a_26 b_26 c_26 d_26 e_26 f_26 g_26 h_26 K27 w27;
+    def (a_28, b_28, c_28, d_28, e_28, f_28, g_28, h_28) = step a_27 b_27 c_27 d_27 e_27 f_27 g_27 h_27 K28 w28;
+    def (a_29, b_29, c_29, d_29, e_29, f_29, g_29, h_29) = step a_28 b_28 c_28 d_28 e_28 f_28 g_28 h_28 K29 w29;
+    def (a_30, b_30, c_30, d_30, e_30, f_30, g_30, h_30) = step a_29 b_29 c_29 d_29 e_29 f_29 g_29 h_29 K30 w30;
+    def (a_31, b_31, c_31, d_31, e_31, f_31, g_31, h_31) = step a_30 b_30 c_30 d_30 e_30 f_30 g_30 h_30 K31 w31;
+    def (a_32, b_32, c_32, d_32, e_32, f_32, g_32, h_32) = step a_31 b_31 c_31 d_31 e_31 f_31 g_31 h_31 K32 w32;
+    def (a_33, b_33, c_33, d_33, e_33, f_33, g_33, h_33) = step a_32 b_32 c_32 d_32 e_32 f_32 g_32 h_32 K33 w33;
+    def (a_34, b_34, c_34, d_34, e_34, f_34, g_34, h_34) = step a_33 b_33 c_33 d_33 e_33 f_33 g_33 h_33 K34 w34;
+    def (a_35, b_35, c_35, d_35, e_35, f_35, g_35, h_35) = step a_34 b_34 c_34 d_34 e_34 f_34 g_34 h_34 K35 w35;
+    def (a_36, b_36, c_36, d_36, e_36, f_36, g_36, h_36) = step a_35 b_35 c_35 d_35 e_35 f_35 g_35 h_35 K36 w36;
+    def (a_37, b_37, c_37, d_37, e_37, f_37, g_37, h_37) = step a_36 b_36 c_36 d_36 e_36 f_36 g_36 h_36 K37 w37;
+    def (a_38, b_38, c_38, d_38, e_38, f_38, g_38, h_38) = step a_37 b_37 c_37 d_37 e_37 f_37 g_37 h_37 K38 w38;
+    def (a_39, b_39, c_39, d_39, e_39, f_39, g_39, h_39) = step a_38 b_38 c_38 d_38 e_38 f_38 g_38 h_38 K39 w39;
+    def (a_40, b_40, c_40, d_40, e_40, f_40, g_40, h_40) = step a_39 b_39 c_39 d_39 e_39 f_39 g_39 h_39 K40 w40;
+    def (a_41, b_41, c_41, d_41, e_41, f_41, g_41, h_41) = step a_40 b_40 c_40 d_40 e_40 f_40 g_40 h_40 K41 w41;
+    def (a_42, b_42, c_42, d_42, e_42, f_42, g_42, h_42) = step a_41 b_41 c_41 d_41 e_41 f_41 g_41 h_41 K42 w42;
+    def (a_43, b_43, c_43, d_43, e_43, f_43, g_43, h_43) = step a_42 b_42 c_42 d_42 e_42 f_42 g_42 h_42 K43 w43;
+    def (a_44, b_44, c_44, d_44, e_44, f_44, g_44, h_44) = step a_43 b_43 c_43 d_43 e_43 f_43 g_43 h_43 K44 w44;
+    def (a_45, b_45, c_45, d_45, e_45, f_45, g_45, h_45) = step a_44 b_44 c_44 d_44 e_44 f_44 g_44 h_44 K45 w45;
+    def (a_46, b_46, c_46, d_46, e_46, f_46, g_46, h_46) = step a_45 b_45 c_45 d_45 e_45 f_45 g_45 h_45 K46 w46;
+    def (a_47, b_47, c_47, d_47, e_47, f_47, g_47, h_47) = step a_46 b_46 c_46 d_46 e_46 f_46 g_46 h_46 K47 w47;
+    def (a_48, b_48, c_48, d_48, e_48, f_48, g_48, h_48) = step a_47 b_47 c_47 d_47 e_47 f_47 g_47 h_47 K48 w48;
+    def (a_49, b_49, c_49, d_49, e_49, f_49, g_49, h_49) = step a_48 b_48 c_48 d_48 e_48 f_48 g_48 h_48 K49 w49;
+    def (a_50, b_50, c_50, d_50, e_50, f_50, g_50, h_50) = step a_49 b_49 c_49 d_49 e_49 f_49 g_49 h_49 K50 w50;
+    def (a_51, b_51, c_51, d_51, e_51, f_51, g_51, h_51) = step a_50 b_50 c_50 d_50 e_50 f_50 g_50 h_50 K51 w51;
+    def (a_52, b_52, c_52, d_52, e_52, f_52, g_52, h_52) = step a_51 b_51 c_51 d_51 e_51 f_51 g_51 h_51 K52 w52;
+    def (a_53, b_53, c_53, d_53, e_53, f_53, g_53, h_53) = step a_52 b_52 c_52 d_52 e_52 f_52 g_52 h_52 K53 w53;
+    def (a_54, b_54, c_54, d_54, e_54, f_54, g_54, h_54) = step a_53 b_53 c_53 d_53 e_53 f_53 g_53 h_53 K54 w54;
+    def (a_55, b_55, c_55, d_55, e_55, f_55, g_55, h_55) = step a_54 b_54 c_54 d_54 e_54 f_54 g_54 h_54 K55 w55;
+    def (a_56, b_56, c_56, d_56, e_56, f_56, g_56, h_56) = step a_55 b_55 c_55 d_55 e_55 f_55 g_55 h_55 K56 w56;
+    def (a_57, b_57, c_57, d_57, e_57, f_57, g_57, h_57) = step a_56 b_56 c_56 d_56 e_56 f_56 g_56 h_56 K57 w57;
+    def (a_58, b_58, c_58, d_58, e_58, f_58, g_58, h_58) = step a_57 b_57 c_57 d_57 e_57 f_57 g_57 h_57 K58 w58;
+    def (a_59, b_59, c_59, d_59, e_59, f_59, g_59, h_59) = step a_58 b_58 c_58 d_58 e_58 f_58 g_58 h_58 K59 w59;
+    def (a_60, b_60, c_60, d_60, e_60, f_60, g_60, h_60) = step a_59 b_59 c_59 d_59 e_59 f_59 g_59 h_59 K60 w60;
+    def (a_61, b_61, c_61, d_61, e_61, f_61, g_61, h_61) = step a_60 b_60 c_60 d_60 e_60 f_60 g_60 h_60 K61 w61;
+    def (a_62, b_62, c_62, d_62, e_62, f_62, g_62, h_62) = step a_61 b_61 c_61 d_61 e_61 f_61 g_61 h_61 K62 w62;
+    def (a_63, b_63, c_63, d_63, e_63, f_63, g_63, h_63) = step a_62 b_62 c_62 d_62 e_62 f_62 g_62 h_62 K63 w63;
+    def H0_f = rem32 ((H0 + a_63));
+    def H1_f = rem32 ((H1 + b_63));
+    def H2_f = rem32 ((H2 + c_63));
+    def H3_f = rem32 ((H3 + d_63));
+    def H4_f = rem32 ((H4 + e_63));
+    def H5_f = rem32 ((H5 + f_63));
+    def H6_f = rem32 ((H6 + g_63));
+    def H7_f = rem32 ((H7 + h_63));
+    (H0_f, H1_f, H2_f, H3_f, H4_f, H5_f, H6_f, H7_f)
+};
+def m0 = 0x00000000;
+def m1 = 0x00000000;
+def m2 = 0x00000000;
+def m3 = 0x00000000;
+def m4 = 0x00000000;
+def m5 = 0x00000000;
+def m6 = 0x00000000;
+def m7 = 0x00000000;
+def m8 = 0x00000000;
+def m9 = 0x00000000;
+def m10 = 0x00000000;
+def m11 = 0x00000000;
+def m12 = 0x00000000;
+def m13 = 0x00000000;
+def m14 = 0x00000000;
+def m15 = 0x00000000;
+def (H0_0, H1_0, H2_0, H3_0, H4_0, H5_0, H6_0, H7_0) = process_block H0 H1 H2 H3 H4 H5 H6 H7 m0 m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15;
+
+def m16 = 0x00000000;
+def m17 = 0x00000000;
+def m18 = 0x00000000;
+def m19 = 0x00000000;
+def m20 = 0x00000000;
+def m21 = 0x00000000;
+def m22 = 0x00000000;
+def m23 = 0x00000000;
+def m24 = 0x00000000;
+def m25 = 0x00000000;
+def m26 = 0x00000000;
+def m27 = 0x00000000;
+def m28 = 0x00000000;
+def m29 = 0x00000000;
+def m30 = 0x00000000;
+def m31 = 0x00000000;
+def (H0_1, H1_1, H2_1, H3_1, H4_1, H5_1, H6_1, H7_1) = process_block H0_0 H1_0 H2_0 H3_0 H4_0 H5_0 H6_0 H7_0 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31;
+def m32 = 0x00000000;
+def m33 = 0x00000000;
+def m34 = 0x00000000;
+def m35 = 0x00000000;
+def m36 = 0x00000000;
+def m37 = 0x00000000;
+def m38 = 0x00000000;
+def m39 = 0x00000000;
+def m40 = 0x00000000;
+def m41 = 0x00000000;
+def m42 = 0x00000000;
+def m43 = 0x00000000;
+def m44 = 0x00000000;
+def m45 = 0x00000000;
+def m46 = 0x00000000;
+def m47 = 0x00000000;
+def (H0_2, H1_2, H2_2, H3_2, H4_2, H5_2, H6_2, H7_2) = process_block H0_1 H1_1 H2_1 H3_1 H4_1 H5_1 H6_1 H7_1 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47;
+def m48 = 0x00000000;
+def m49 = 0x00000000;
+def m50 = 0x00000000;
+def m51 = 0x00000000;
+def m52 = 0x00000000;
+def m53 = 0x00000000;
+def m54 = 0x00000000;
+def m55 = 0x00000000;
+def m56 = 0x00000000;
+def m57 = 0x00000000;
+def m58 = 0x00000000;
+def m59 = 0x00000000;
+def m60 = 0x00000000;
+def m61 = 0x00000000;
+def m62 = 0x00000000;
+def m63 = 0x00000000;
+def (H0_3, H1_3, H2_3, H3_3, H4_3, H5_3, H6_3, H7_3) = process_block H0_2 H1_2 H2_2 H3_2 H4_2 H5_2 H6_2 H7_2 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63;
+def m64 = 0x00000000;
+def m65 = 0x00000000;
+def m66 = 0x00000000;
+def m67 = 0x00000000;
+def m68 = 0x00000000;
+def m69 = 0x00000000;
+def m70 = 0x00000000;
+def m71 = 0x00000000;
+def m72 = 0x00000000;
+def m73 = 0x00000000;
+def m74 = 0x00000000;
+def m75 = 0x00000000;
+def m76 = 0x00000000;
+def m77 = 0x00000000;
+def m78 = 0x00000000;
+def m79 = 0x00000000;
+def (H0_4, H1_4, H2_4, H3_4, H4_4, H5_4, H6_4, H7_4) = process_block H0_3 H1_3 H2_3 H3_3 H4_3 H5_3 H6_3 H7_3 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79;
+def m80 = 0x00000000;
+def m81 = 0x00000000;
+def m82 = 0x00000000;
+def m83 = 0x00000000;
+def m84 = 0x00000000;
+def m85 = 0x00000000;
+def m86 = 0x00000000;
+def m87 = 0x00000000;
+def m88 = 0x00000000;
+def m89 = 0x00000000;
+def m90 = 0x00000000;
+def m91 = 0x00000000;
+def m92 = 0x00000000;
+def m93 = 0x00000000;
+def m94 = 0x00000000;
+def m95 = 0x00000000;
+def (H0_5, H1_5, H2_5, H3_5, H4_5, H5_5, H6_5, H7_5) = process_block H0_4 H1_4 H2_4 H3_4 H4_4 H5_4 H6_4 H7_4 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94 m95;
+def m96 = 0x00000000;
+def m97 = 0x00000000;
+def m98 = 0x00000000;
+def m99 = 0x00000000;
+def m100 = 0x00000000;
+def m101 = 0x00000000;
+def m102 = 0x00000000;
+def m103 = 0x00000000;
+def m104 = 0x00000000;
+def m105 = 0x00000000;
+def m106 = 0x00000000;
+def m107 = 0x00000000;
+def m108 = 0x00000000;
+def m109 = 0x00000000;
+def m110 = 0x00000000;
+def m111 = 0x00000000;
+def (H0_6, H1_6, H2_6, H3_6, H4_6, H5_6, H6_6, H7_6) = process_block H0_5 H1_5 H2_5 H3_5 H4_5 H5_5 H6_5 H7_5 m96 m97 m98 m99 m100 m101 m102 m103 m104 m105 m106 m107 m108 m109 m110 m111;
+def m112 = 0x00000000;
+def m113 = 0x00000000;
+def m114 = 0x00000000;
+def m115 = 0x00000000;
+def m116 = 0x00000000;
+def m117 = 0x00000000;
+def m118 = 0x00000000;
+def m119 = 0x00000000;
+def m120 = 0x00000000;
+def m121 = 0x00000000;
+def m122 = 0x00000000;
+def m123 = 0x00000000;
+def m124 = 0x00000000;
+def m125 = 0x00000000;
+def m126 = 0x00000000;
+def m127 = 0x00000000;
+def (H0_7, H1_7, H2_7, H3_7, H4_7, H5_7, H6_7, H7_7) = process_block H0_6 H1_6 H2_6 H3_6 H4_6 H5_6 H6_6 H7_6 m112 m113 m114 m115 m116 m117 m118 m119 m120 m121 m122 m123 m124 m125 m126 m127;
+def m128 = 0x00000000;
+def m129 = 0x00000000;
+def m130 = 0x00000000;
+def m131 = 0x00000000;
+def m132 = 0x00000000;
+def m133 = 0x00000000;
+def m134 = 0x00000000;
+def m135 = 0x00000000;
+def m136 = 0x00000000;
+def m137 = 0x00000000;
+def m138 = 0x00000000;
+def m139 = 0x00000000;
+def m140 = 0x00000000;
+def m141 = 0x00000000;
+def m142 = 0x00000000;
+def m143 = 0x00000000;
+def (H0_8, H1_8, H2_8, H3_8, H4_8, H5_8, H6_8, H7_8) = process_block H0_7 H1_7 H2_7 H3_7 H4_7 H5_7 H6_7 H7_7 m128 m129 m130 m131 m132 m133 m134 m135 m136 m137 m138 m139 m140 m141 m142 m143;
+def m144 = 0x00000000;
+def m145 = 0x00000000;
+def m146 = 0x00000000;
+def m147 = 0x00000000;
+def m148 = 0x00000000;
+def m149 = 0x00000000;
+def m150 = 0x00000000;
+def m151 = 0x00000000;
+def m152 = 0x00000000;
+def m153 = 0x00000000;
+def m154 = 0x00000000;
+def m155 = 0x00000000;
+def m156 = 0x00000000;
+def m157 = 0x00000000;
+def m158 = 0x00000000;
+def m159 = 0x00000000;
+def (H0_9, H1_9, H2_9, H3_9, H4_9, H5_9, H6_9, H7_9) = process_block H0_8 H1_8 H2_8 H3_8 H4_8 H5_8 H6_8 H7_8 m144 m145 m146 m147 m148 m149 m150 m151 m152 m153 m154 m155 m156 m157 m158 m159;
+def m160 = 0x00000000;
+def m161 = 0x00000000;
+def m162 = 0x00000000;
+def m163 = 0x00000000;
+def m164 = 0x00000000;
+def m165 = 0x00000000;
+def m166 = 0x00000000;
+def m167 = 0x00000000;
+def m168 = 0x00000000;
+def m169 = 0x00000000;
+def m170 = 0x00000000;
+def m171 = 0x00000000;
+def m172 = 0x00000000;
+def m173 = 0x00000000;
+def m174 = 0x00000000;
+def m175 = 0x00000000;
+def (H0_10, H1_10, H2_10, H3_10, H4_10, H5_10, H6_10, H7_10) = process_block H0_9 H1_9 H2_9 H3_9 H4_9 H5_9 H6_9 H7_9 m160 m161 m162 m163 m164 m165 m166 m167 m168 m169 m170 m171 m172 m173 m174 m175;
+def m176 = 0x00000000;
+def m177 = 0x00000000;
+def m178 = 0x00000000;
+def m179 = 0x00000000;
+def m180 = 0x00000000;
+def m181 = 0x00000000;
+def m182 = 0x00000000;
+def m183 = 0x00000000;
+def m184 = 0x00000000;
+def m185 = 0x00000000;
+def m186 = 0x00000000;
+def m187 = 0x00000000;
+def m188 = 0x00000000;
+def m189 = 0x00000000;
+def m190 = 0x00000000;
+def m191 = 0x00000000;
+def (H0_11, H1_11, H2_11, H3_11, H4_11, H5_11, H6_11, H7_11) = process_block H0_10 H1_10 H2_10 H3_10 H4_10 H5_10 H6_10 H7_10 m176 m177 m178 m179 m180 m181 m182 m183 m184 m185 m186 m187 m188 m189 m190 m191;
+def m192 = 0x00000000;
+def m193 = 0x00000000;
+def m194 = 0x00000000;
+def m195 = 0x00000000;
+def m196 = 0x00000000;
+def m197 = 0x00000000;
+def m198 = 0x00000000;
+def m199 = 0x00000000;
+def m200 = 0x00000000;
+def m201 = 0x00000000;
+def m202 = 0x00000000;
+def m203 = 0x00000000;
+def m204 = 0x00000000;
+def m205 = 0x00000000;
+def m206 = 0x00000000;
+def m207 = 0x00000000;
+def (H0_12, H1_12, H2_12, H3_12, H4_12, H5_12, H6_12, H7_12) = process_block H0_11 H1_11 H2_11 H3_11 H4_11 H5_11 H6_11 H7_11 m192 m193 m194 m195 m196 m197 m198 m199 m200 m201 m202 m203 m204 m205 m206 m207;
+def m208 = 0x00000000;
+def m209 = 0x00000000;
+def m210 = 0x00000000;
+def m211 = 0x00000000;
+def m212 = 0x00000000;
+def m213 = 0x00000000;
+def m214 = 0x00000000;
+def m215 = 0x00000000;
+def m216 = 0x00000000;
+def m217 = 0x00000000;
+def m218 = 0x00000000;
+def m219 = 0x00000000;
+def m220 = 0x00000000;
+def m221 = 0x00000000;
+def m222 = 0x00000000;
+def m223 = 0x00000000;
+def (H0_13, H1_13, H2_13, H3_13, H4_13, H5_13, H6_13, H7_13) = process_block H0_12 H1_12 H2_12 H3_12 H4_12 H5_12 H6_12 H7_12 m208 m209 m210 m211 m212 m213 m214 m215 m216 m217 m218 m219 m220 m221 m222 m223;
+def m224 = 0x00000000;
+def m225 = 0x00000000;
+def m226 = 0x00000000;
+def m227 = 0x00000000;
+def m228 = 0x00000000;
+def m229 = 0x00000000;
+def m230 = 0x00000000;
+def m231 = 0x00000000;
+def m232 = 0x00000000;
+def m233 = 0x00000000;
+def m234 = 0x00000000;
+def m235 = 0x00000000;
+def m236 = 0x00000000;
+def m237 = 0x00000000;
+def m238 = 0x00000000;
+def m239 = 0x00000000;
+def (H0_14, H1_14, H2_14, H3_14, H4_14, H5_14, H6_14, H7_14) = process_block H0_13 H1_13 H2_13 H3_13 H4_13 H5_13 H6_13 H7_13 m224 m225 m226 m227 m228 m229 m230 m231 m232 m233 m234 m235 m236 m237 m238 m239;
+def m240 = 0x00000000;
+def m241 = 0x00000000;
+def m242 = 0x00000000;
+def m243 = 0x00000000;
+def m244 = 0x00000000;
+def m245 = 0x00000000;
+def m246 = 0x00000000;
+def m247 = 0x00000000;
+def m248 = 0x00000000;
+def m249 = 0x00000000;
+def m250 = 0x00000000;
+def m251 = 0x00000000;
+def m252 = 0x00000000;
+def m253 = 0x00000000;
+def m254 = 0x00000000;
+def m255 = 0x00000000;
+def (H0_15, H1_15, H2_15, H3_15, H4_15, H5_15, H6_15, H7_15) = process_block H0_14 H1_14 H2_14 H3_14 H4_14 H5_14 H6_14 H7_14 m240 m241 m242 m243 m244 m245 m246 m247 m248 m249 m250 m251 m252 m253 m254 m255;
+def m256 = 0x00000000;
+def m257 = 0x00000000;
+def m258 = 0x00000000;
+def m259 = 0x00000000;
+def m260 = 0x00000000;
+def m261 = 0x00000000;
+def m262 = 0x00000000;
+def m263 = 0x00000000;
+def m264 = 0x00000000;
+def m265 = 0x00000000;
+def m266 = 0x00000000;
+def m267 = 0x00000000;
+def m268 = 0x00000000;
+def m269 = 0x00000000;
+def m270 = 0x00000000;
+def m271 = 0x00000000;
+def (H0_16, H1_16, H2_16, H3_16, H4_16, H5_16, H6_16, H7_16) = process_block H0_15 H1_15 H2_15 H3_15 H4_15 H5_15 H6_15 H7_15 m256 m257 m258 m259 m260 m261 m262 m263 m264 m265 m266 m267 m268 m269 m270 m271;
+def m272 = 0x00000000;
+def m273 = 0x00000000;
+def m274 = 0x00000000;
+def m275 = 0x00000000;
+def m276 = 0x00000000;
+def m277 = 0x00000000;
+def m278 = 0x00000000;
+def m279 = 0x00000000;
+def m280 = 0x00000000;
+def m281 = 0x00000000;
+def m282 = 0x00000000;
+def m283 = 0x00000000;
+def m284 = 0x00000000;
+def m285 = 0x00000000;
+def m286 = 0x00000000;
+def m287 = 0x00000000;
+def (H0_17, H1_17, H2_17, H3_17, H4_17, H5_17, H6_17, H7_17) = process_block H0_16 H1_16 H2_16 H3_16 H4_16 H5_16 H6_16 H7_16 m272 m273 m274 m275 m276 m277 m278 m279 m280 m281 m282 m283 m284 m285 m286 m287;
+def m288 = 0x00000000;
+def m289 = 0x00000000;
+def m290 = 0x00000000;
+def m291 = 0x00000000;
+def m292 = 0x00000000;
+def m293 = 0x00000000;
+def m294 = 0x00000000;
+def m295 = 0x00000000;
+def m296 = 0x00000000;
+def m297 = 0x00000000;
+def m298 = 0x00000000;
+def m299 = 0x00000000;
+def m300 = 0x00000000;
+def m301 = 0x00000000;
+def m302 = 0x00000000;
+def m303 = 0x00000000;
+def (H0_18, H1_18, H2_18, H3_18, H4_18, H5_18, H6_18, H7_18) = process_block H0_17 H1_17 H2_17 H3_17 H4_17 H5_17 H6_17 H7_17 m288 m289 m290 m291 m292 m293 m294 m295 m296 m297 m298 m299 m300 m301 m302 m303;
+def m304 = 0x00000000;
+def m305 = 0x00000000;
+def m306 = 0x00000000;
+def m307 = 0x00000000;
+def m308 = 0x00000000;
+def m309 = 0x00000000;
+def m310 = 0x00000000;
+def m311 = 0x00000000;
+def m312 = 0x00000000;
+def m313 = 0x00000000;
+def m314 = 0x00000000;
+def m315 = 0x00000000;
+def m316 = 0x00000000;
+def m317 = 0x00000000;
+def m318 = 0x00000000;
+def m319 = 0x00000000;
+def (H0_19, H1_19, H2_19, H3_19, H4_19, H5_19, H6_19, H7_19) = process_block H0_18 H1_18 H2_18 H3_18 H4_18 H5_18 H6_18 H7_18 m304 m305 m306 m307 m308 m309 m310 m311 m312 m313 m314 m315 m316 m317 m318 m319;
