@@ -79,6 +79,10 @@ fn evaluate_expr<F>(
         Expr::Infix(InfixOp::Divide, a, b) =>
             evaluate_expr(&a, defs, assigns) /
             evaluate_expr(&b, defs, assigns),
+        Expr::Infix(InfixOp::DivideZ, a, b) => {
+            let denom = evaluate_expr(&b, defs, assigns);
+            if denom == F::zero() { F::zero() } else { evaluate_expr(&a, defs, assigns) / denom }    
+        },
         Expr::Infix(InfixOp::IntDivide, a, b) =>
             (Into::<BigUint>::into(evaluate_expr(&a, defs, assigns)) /
             Into::<BigUint>::into(evaluate_expr(&b, defs, assigns))).into(),
@@ -114,6 +118,7 @@ impl<F> FieldOps for PrimeFieldOps<F> where F: PrimeField {
             InfixOp::Subtract => Into::<BigUint>::into(c - d).to_bigint().unwrap(),
             InfixOp::Multiply => Into::<BigUint>::into(c * d).to_bigint().unwrap(),
             InfixOp::Divide => Into::<BigUint>::into(c / d).to_bigint().unwrap(),
+            InfixOp::DivideZ => Into::<BigUint>::into(if d == F::zero() { F::zero() } else { c / d }).to_bigint().unwrap(),
             InfixOp::IntDivide => a / b,
             InfixOp::Modulo => a % b,
             InfixOp::Exponentiate => {
@@ -423,6 +428,7 @@ where
                         });
                         true
                     }) => {},
+                    
                     // v1 = c2 / c3
                     (
                         Expr::Variable(v1),
@@ -486,6 +492,71 @@ where
                         });
                         true
                     }) => {},
+                    
+                    // v1 = c2 | c3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(c2);
+                        let op2: F = make_constant(c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(-(if op2 == F::zero() { F::zero() } else { op1/op2 }))
+                        });
+                        true
+                    }) => {},
+                    // v1 = v2 | c3
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op2: F = make_constant(c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
+                                .add(F::one(), -(if op2 == F::zero() { F::zero() } else { F::one()/op2 }))
+                        });
+                        true
+                    }) => {},
+                    // v1 = c2 | v3 ***
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        let op1: F = make_constant(c2);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
+                                .mul(F::one())
+                                .constant(-op1)
+                        });
+                        true
+                    }) => {},
+                    // v1 = v2 | v3 ***
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v1.id], inputs[&v3.id], Some(inputs[&v2.id]))
+                                .mul(F::one())
+                                .out(-F::one())
+                        });
+                        true
+                    }) => {},
+                    
                     // v1 = c2 * c3
                     (
                         Expr::Variable(v1),
@@ -715,6 +786,7 @@ where
                         });
                         true
                     }) => {},
+                    
                     // c1 = c2 / c3
                     (
                         Expr::Constant(c1),
@@ -781,6 +853,74 @@ where
                         });
                         true
                     }) => {},
+                    
+                    // c1 = c2 | c3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(c1);
+                        let op2: F = make_constant(c2);
+                        let op3: F = make_constant(c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(zero, zero, Some(zero))
+                                .add(F::zero(), F::zero())
+                                .constant(op1-(if op3 == F::zero() { F::zero() } else { op2/op3 }))
+                        });
+                        true
+                    }) => {},
+                    // c1 = v2 | c3
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(c1);
+                        let op3: F = make_constant(c3);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], zero, Some(zero))
+                                .add(F::one(), F::zero())
+                                .constant(-(op1*op3))
+                        });
+                        true
+                    }) => {},
+                    // c1 = c2 | v3 ***
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        let op1: F = make_constant(c1);
+                        let op2: F = make_constant(c2);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v3.id], zero, Some(zero))
+                                .constant(-(if op1 == F::zero() { F::zero() } else { op2/op1 }))
+                        });
+                        true
+                    }) => {},
+                    // c1 = v2 | v3 ***
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        let op1: F = make_constant(c1);
+                        composer.arithmetic_gate(|gate| {
+                            gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
+                                .add(F::one(), -op1)
+                        });
+                        true
+                    }) => {},
+                    
                     // c1 = c2 * c3
                     (
                         Expr::Constant(c1),

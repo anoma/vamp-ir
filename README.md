@@ -231,6 +231,60 @@ w25: 0
 w26: 0
 w27: 0
 ```
+## Benchmarks
+These benchmarks are performed on a Lenovo ThinkPad X1 Carbon Gen 9 with 8.0 GiB RAM and 
+an 11th Gen Intel® Core™ i5-1135G7 @ 2.40GHz × 8 unless stated otherwise
+### Halo2 backend
+
+#### SHA256 1 block message
+
+|         | `Compile`  | `Prove`    | `Verify` |
+|:--------|:-----------|:-----------|:---------|
+| Vamp-IR | `172.05 s` | `26.72 s`  | `0.61 s` |
+| Halo2   | //         | `161.05 s` | `1.06 s` |
+
+#### SHA256 2 block message
+
+|         | `Compile`  | `Prove`    | `Verify` |
+|:--------|:-----------|:-----------|:---------|
+| Vamp-IR | `353.76 s` | `46.91 s`  | `1.09 s` |
+| Halo2   | //         | `160.03 s` | `1.05 s` |
+
+#### SHA256 4 block message
+
+|         | `Compile`  | `Prove`         | `Verify` |
+|:--------|:-----------|:----------------|:---------|
+| Vamp-IR | `729.47 s` | Memory Failiure | X        |
+| Halo2   | //         | `160.36 s`      | `1.03 s` |
+
+We re-run the with a device that has 128GB of RAM and these are the results:
+
+|         | `Compile` | `Prove`    | `Verify` |
+|:--------|:----------|:-----------|:---------|
+| Vamp-IR | `60 s`    | `81.983 s` | `0.6 s ` |
+
+### ZK-garage plonk backend
+
+#### Blake2s
+
+|           | `Compile` | `Prove`   | `Verify` |
+|:----------|:----------|:----------|:---------|
+| Vamp-IR   | `76.30 s` | `57.59 s` | `0.22 s` |
+| ZK-Garage | //        | `32.48 s` | `0.10 s` |
+
+#### Blake2s using only fan-in 2 gates
+To have a more fair comparison between Vamp-IR and ZK-Garage, we can use only fan-in 2 gates in the Blake2s circuit.
+This is because the current version of Vamp-IR does not uses fan-in 3 gates, as the ZK-Garage backend does, which in a 
+speed-up.
+
+|           | `Compile` | `Prove`    | `Verify` |
+|:----------|:----------|:-----------|:---------|
+| Vamp-IR   | `76.30 s` | `57.59 s`  | `0.22 s` |
+| ZK-Garage | //        | `360.48 s` | `0.81 s` |
+
+The version of Blake2 used for the latter benchmark can be found here:
+https://github.com/heliaxdev/ark-plonk/blob/blake2s/examples/blake2s_circuit_fain2.rs
+
 
 ## License
 

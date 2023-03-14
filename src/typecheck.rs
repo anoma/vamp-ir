@@ -480,7 +480,7 @@ fn infer_expr_types(
         },
         Expr::Infix(
             InfixOp::Add | InfixOp::Subtract | InfixOp::Multiply |
-            InfixOp::Divide | InfixOp::Exponentiate | InfixOp::IntDivide |
+            InfixOp::Divide | InfixOp::DivideZ | InfixOp::Exponentiate | InfixOp::IntDivide |
             InfixOp::Modulo,
             expr1,
             expr2
