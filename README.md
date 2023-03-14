@@ -27,25 +27,25 @@ cargo build
 ### Setup
 Creates public parameters for proving and verifying and saves to `params.pp`:
 ```
-./target/debug/vamp-ir setup params.pp
+./target/debug/vamp-ir setup -o params.pp --unchecked
 ```
 
 ### Compile
 Compiles `./tests/alu.pir` to `alu.plonk` using the setup:
 ```
-./target/debug/vamp-ir compile ./tests/alu.pir params.pp alu.plonk
+./target/debug/vamp-ir compile -s ./tests/alu.pir -u params.pp -o alu.plonk --unchecked
 ```
 
 ### Prove
 Create proof from `alu.plonk` and save to `proof.plonk`:
 ```
- ./target/debug/vamp-ir prove alu.plonk params.pp proof.plonk
+ ./target/debug/vamp-ir prove -c alu.plonk -u params.pp -o proof.plonk --unchecked
 ```
 
 ### Verify
 Verify `proof.plonk`:
 ```
-./target/debug/vamp-ir verify alu.plonk params.pp proof.plonk
+./target/debug/vamp-ir verify -c alu.plonk -u params.pp -p proof.plonk --unchecked
 ```
 
 ## Interface
