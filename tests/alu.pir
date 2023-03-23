@@ -16,11 +16,9 @@ def nth lst n = hd (iter n tl lst);
 
 // Append two lists together
 
-def append_base [] lst = lst;
+def cons x y = x:y;
 
-def append_ind append (h:t) lst = h:(append t lst);
-
-def append n = iter n append_ind append_base;
+def append xs = fold xs cons;
 
 // Take the given prefix of a given list
 
@@ -50,36 +48,34 @@ def range_base 0 = [];
 
 def range n = iter n range_ind range_base;
 
+// Make function that always returns constant
+
+def const x y = x;
+
 // Pair up corresponding elements of each tuple
 
-def zip_base [] [] = [];
+def zip_aux x z (y:ys) = (x, y):(z ys);
 
-def zip_ind zip (ah:ar) (bh:br) = (ah,bh):(zip ar br);
-
-def zip n = iter n zip_ind zip_base;
+def zip xs = fold xs zip_aux (const []);
 
 // Apply function to each element of tuple
 
-def map_base f [] = [];
+def map_ind f x acc = (f x):acc;
 
-def map_ind map f (h:t) = (f h):(map f t);
-
-def map n = iter n map_ind map_base;
+def map f xs = fold xs (map_ind f) [];
 
 // Multiply each tuple element by corresponding unit
 
-def combine_base [] = 0;
+def combine_aux x y = x + 2*y;
 
-def combine_ind combine (h:t) = h + 2*(combine t);
-
-def combine n = iter n combine_ind combine_base;
+def combine xs = fold xs combine_aux 0;
 
 // Apply given function to corresponding bit-pairs in bit representation
 
 def bitwise n g a b = {
-    def zipped = zip n (range n a) (range n b);
-    def new_bits = map n g zipped;
-    combine n new_bits
+    def zipped = zip (range n a) (range n b);
+    def new_bits = map g zipped;
+    combine new_bits
 };
 
 // Definition of xor for domain {0, 1}^2
@@ -108,48 +104,30 @@ def and n = bitwise n bit_and;
 
 // Definition of bitwise not for n bit values
 
-def not n y = combine n (map n (fun x { 1-x }) (range n y));
-
-// Repeated function applications, useful for big-step rotations/shifts
-
-def c0 f x = x;
-
-def c1 f x = f (c0 f x);
-
-def c2 f x = f (c1 f x);
-
-def c3 f x = f (c2 f x);
-
-def c4 f x = f (c3 f x);
-
-def c5 f x = f (c4 f x);
-
-def c6 f x = f (c5 f x);
-
-def c7 f x = f (c6 f x);
+def not n y = combine (map (fun x { 1-x }) (range n y));
 
 // Arithmetic shift right for 8 bit values
 
 def ashr n x = {
     def a = range n x;
     def msb = nth a (n-1);
-    def new_bits = append (n-1) (tl a) (msb:[]);
-    combine n new_bits
+    def new_bits = append (tl a) (msb:[]);
+    combine new_bits
 };
 
 // Logical shift right for 8 bit values
 
 def lshr n x = {
     def a = range n x;
-    def new_bits = append (n-1) (tl a) (0:[]);
-    combine n new_bits
+    def new_bits = append (tl a) (0:[]);
+    combine new_bits
 };
 
 // Shift left for 8 bit values
 
 def shl n x = {
     def a = range n x;
-    combine n (0:(take (n-1) a))
+    combine (0:(take (n-1) a))
 };
 
 // Rotate right for 8 bit values
@@ -157,8 +135,8 @@ def shl n x = {
 def ror n x = {
     def a = range n x;
     def msb = hd a;
-    def new_bits = append (n-1) (tl a) (msb:[]);
-    combine n new_bits
+    def new_bits = append (tl a) (msb:[]);
+    combine new_bits
 };
 
 // Rotate left for 8 bit values
@@ -167,21 +145,21 @@ def rol n x = {
     def a = range n x;
     def lsb = nth a (n-1);
     def msbs = take (n-1) a;
-    combine n (lsb:msbs)
+    combine (lsb:msbs)
 };
 
 // Add two 8-bit values modulo 2^8
 
 def add n a b = {
     def a = range (n+1) (a+b);
-    combine n (take n a)
+    combine (take n a)
 };
 
 // Subtract two 8-bit values modulo 8
 
 def sub n a b = {
     def a = range (n+1) (a+(2^n)-b);
-    combine n (take n a)
+    combine (take n a)
 };
 
 // Unsigned less than or equal to for 8 bits. 1 if true, 0 otherwise
@@ -240,7 +218,7 @@ def divrem n a b = {
     // Do the division, doubling space for inequalities
     def (quot, rem) = div a b (2*n) n [];
     // Combine the bits into a number again
-    (combine n quot, rem)
+    (combine quot, rem)
 };
 
 def div n a b = fst (divrem n a b);

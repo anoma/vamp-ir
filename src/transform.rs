@@ -1171,6 +1171,7 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps) -> Module {
     let mut global_types = HashMap::new();
     register_fresh_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     register_iter_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
+    register_fold_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
     infer_module_types(&mut module, &globals, &mut global_types, &mut prog_types, &mut vg);
     println!("** Inferring types...");
@@ -1418,7 +1419,7 @@ fn expand_iter_intrinsic(
             };
             let mut body = TExpr {
                 v: Expr::Variable(iter_arg.clone()),
-                t: Some(Type::Variable(iter_arg.clone()))
+                t: Some(iter_arg_typ.clone())
             };
             let val = if let Expr::Constant(c) = &bindings[&param_var.id].v {
                 c
@@ -1450,5 +1451,134 @@ fn expand_iter_intrinsic(
             }
         },
         _ => panic!("unexpected arguments to iter: {:?}", params),
+    }
+}
+
+/* Register the fold intrinsic in the compilation environment. */
+fn register_fold_intrinsic(
+    globals: &mut HashMap<String, VariableId>,
+    global_types: &mut HashMap<VariableId, Type>,
+    bindings: &mut HashMap<VariableId, TExpr>,
+    gen: &mut VarGen,
+) {
+    let fold_id = gen.generate_id();
+    let fold_elt = Variable::new(gen.generate_id());
+    let fold_list = Type::List(Box::new(Type::Variable(fold_elt.clone())));
+    let fold_arg = Variable::new(gen.generate_id());
+    let fold_arg_pat = Pat::Variable(fold_arg.clone())
+        .type_pat(Some(fold_list.clone()));
+    let fold_acc = Variable::new(gen.generate_id());
+    let fold_func_func = Type::Function(
+        Box::new(Type::Variable(fold_acc.clone())),
+        Box::new(Type::Variable(fold_acc.clone())),
+    );
+    let fold_func = Type::Function(
+        Box::new(Type::Function(
+            Box::new(Type::Variable(fold_elt.clone())),
+            Box::new(fold_func_func.clone()),
+        )),
+        Box::new(fold_func_func),
+    );
+    // Register the iter function in global namespace
+    globals.insert("fold".to_string(), fold_id);
+    // Describe the intrinsic's type, arity, and implementation
+    let fold_intrinsic = Intrinsic::new(
+        vec![fold_arg_pat],
+        expand_fold_intrinsic,
+    );
+    let imp_typ = Type::Function(
+        Box::new(fold_list),
+        Box::new(fold_func),
+    );
+    // Register the intrinsic descriptor with the global binding
+    global_types.insert(
+        fold_id,
+        Type::Forall(
+            fold_elt,
+            Box::new(Type::Forall(
+                fold_acc,
+                Box::new(imp_typ.clone()),
+            )),
+        ),
+    );
+    // Register the intrinsic descriptor with the global binding
+    bindings.insert(
+        fold_id,
+        Expr::Intrinsic(fold_intrinsic)
+            .type_expr(Some(imp_typ)),
+    );
+}
+
+/* fold [a0, a1, ..., aN] f b = f a0 (f a1 (... (f aN b) ...)). */
+fn expand_fold_intrinsic(
+    params: &Vec<TPat>,
+    bindings: &HashMap<VariableId, TExpr>,
+    _prover_defs: &mut HashSet<VariableId>,
+    gen: &mut VarGen,
+) -> TExpr {
+    match &params[..] {
+        [TPat { v: Pat::Variable(param_var), .. }] => {
+            let fold_arg = Variable::new(gen.generate_id());
+            let fold_arg_typ = Type::Variable(fold_arg.clone());
+            let fold_func_var = Variable::new(gen.generate_id());
+            let fold_func_func = Type::Function(
+                Box::new(fold_arg_typ.clone()),
+                Box::new(fold_arg_typ.clone()),
+            );
+            let fold_elt = Variable::new(gen.generate_id());
+            let fold_func = TExpr {
+                v: Expr::Variable(fold_func_var.clone()),
+                t: Some(Type::Function(
+                    Box::new(Type::Variable(fold_elt)),
+                    Box::new(fold_func_func.clone()),
+                ))
+            };
+            let mut param_val = &bindings[&param_var.id];
+            let mut param_list = Vec::new();
+            let param_list = loop {
+                if let Expr::Cons(hd, tl) = &param_val.v {
+                    param_list.push(hd.clone());
+                    param_val = tl;
+                } else if let Expr::Nil = &param_val.v {
+                    break param_list;
+                } else {
+                    panic!("only list arguments to fold supported")
+                };
+            };
+            let mut body = TExpr {
+                v: Expr::Variable(fold_arg.clone()),
+                t: Some(fold_arg_typ.clone())
+            };
+            for param_elt in param_list.into_iter().rev() {
+                body = TExpr {
+                    v: Expr::Application(
+                        Box::new(TExpr {
+                            v: Expr::Application(
+                                Box::new(fold_func.clone()),
+                                param_elt,
+                            ),
+                            t: Some(fold_func_func.clone()),
+                        }),
+                        Box::new(body.clone()),
+                    ),
+                    t: body.t,
+                };
+            };
+            TExpr {
+                t: Some(Type::Function(
+                    Box::new(fold_func.t.clone().unwrap()),
+                    Box::new(fold_func_func),
+                )),
+                v: Expr::Function(Function {
+                    params: vec![
+                        Pat::Variable(fold_func_var).type_pat(fold_func.t),
+                        Pat::Variable(fold_arg).type_pat(Some(fold_arg_typ)),
+                    ],
+                    body: Box::new(body),
+                    env: HashMap::new(),
+                }),
+            }
+        },
+        _ => panic!("unexpected arguments to fold: {:?}", params),
     }
 }
