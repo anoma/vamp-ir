@@ -518,7 +518,7 @@ fn infer_expr_types(
         },
         Expr::Infix(
             InfixOp::Add | InfixOp::Subtract | InfixOp::Multiply |
-            InfixOp::Divide | InfixOp::Exponentiate | InfixOp::IntDivide |
+            InfixOp::Divide | InfixOp::DivideZ | InfixOp::Exponentiate | InfixOp::IntDivide |
             InfixOp::Modulo,
             expr1,
             expr2
@@ -740,6 +740,7 @@ pub fn expand_pattern_variables(
             pat.v = Pat::Product(Box::new(var1), Box::new(var2));
             map.insert(curr_id, pat.clone());
         },
+
         (Pat::Variable(var), Expr::Cons(expr1, expr2)) => {
             let mut new_var1 = Variable::new(gen.generate_id());
             new_var1.name = var

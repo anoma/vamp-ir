@@ -850,6 +850,8 @@ fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
         (InfixOp::Multiply, Expr::Constant(c), _) if c.is_zero() => e1,
         (InfixOp::Multiply, _, Expr::Constant(c)) if c.is_zero() => e2,
         (InfixOp::Divide, _, Expr::Constant(c)) if c.is_one() => e1,
+        (InfixOp::DivideZ, _, Expr::Constant(c)) if c.is_one() => e1,
+        (InfixOp::DivideZ, Expr::Constant(c), _) if c.is_zero() => e1,
         (InfixOp::IntDivide, _, Expr::Constant(c)) if c.is_one() => e1,
         (InfixOp::Modulo, _, Expr::Constant(c)) if c.is_one() =>
             TExpr { v: Expr::Constant(Zero::zero()), t: Some(Type::Int) },
@@ -861,7 +863,7 @@ fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
                 v: Expr::Infix(op, Box::new(e1), Box::new(e2)),
                 t: Some(Type::Unit),
             },
-        (InfixOp::Multiply | InfixOp::Divide | InfixOp::Add |
+        (InfixOp::Multiply | InfixOp::Divide | InfixOp::DivideZ | InfixOp::Add |
          InfixOp::Subtract | InfixOp::Exponentiate | InfixOp::IntDivide |
          InfixOp::Modulo, _, _) =>
             TExpr {

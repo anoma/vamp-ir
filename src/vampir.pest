@@ -8,7 +8,7 @@ keyword = { "fun" | "def" | "pub" }
 
 valueName = { !keyword ~ ident }
 
-infixOp = { "/" | "*" | "+" | "-" | "=" | "^" | "\\" | "%" }
+infixOp = { "/" | "|" | "*" | "+" | "-" | "=" | "^" | "\\" | "%" }
 
 binary = @{ '0'..'1' }
 
@@ -42,7 +42,7 @@ expr4 = { expr5 ~ ( ":" ~ expr5 )* }
 
 expr5 = { expr6 ~ ( &("+" | "-") ~ infixOp ~ expr6 )* }
 
-expr6 = { expr7 ~ ( &("*" | "/" | "\\" | "%") ~ infixOp ~ expr7 )* }
+expr6 = { expr7 ~ ( &("*" | "/" | "|" | "\\" | "%") ~ infixOp ~ expr7 )* }
 
 expr7 = { expr8 ~ ( &"^" ~ infixOp ~ expr8 )* }
 
