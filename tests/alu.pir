@@ -6,6 +6,30 @@
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
 
+// Access elements of a list
+
+def hd (h:t) = h;
+
+def tl (h:t) = t;
+
+def nth lst n = hd (iter n tl lst);
+
+// Append two lists together
+
+def append_base [] lst = lst;
+
+def append_ind append (h:t) lst = h:(append t lst);
+
+def append n = iter n append_ind append_base;
+
+// Take the given prefix of a given list
+
+def take_base lst = [];
+
+def take_ind take (h:t) = h:(take t);
+
+def take n = iter n take_ind take_base;
+
 // Ensure that the given argument is 1 or 0, and returns it
 
 def bool x = { x*(x-1) = 0; x };
@@ -13,174 +37,174 @@ def bool x = { x*(x-1) = 0; x };
 // Extract the n+1 bits from a number argument
 // given a range function for n bits
 
-def next_range range a = {
+def range_ind range a = {
     def a0 = bool (fresh (a%2));
     def a1 = fresh (a\2);
     a = a0 + 2*a1;
-    (a0, range a1)
+    (a0 : range a1)
 };
 
 // Inductively define range for each bit width
 
-def range0 0 = ();
+def range_base 0 = [];
 
-def range1 = next_range range0;
-
-def range2 = next_range range1;
-
-def range3 = next_range range2;
-
-def range4 = next_range range3;
-
-def range5 = next_range range4;
-
-def range6 = next_range range5;
-
-def range7 = next_range range6;
-
-def range8 = next_range range7;
-
-def range9 = next_range range8;
+def range n = iter n range_ind range_base;
 
 // Pair up corresponding elements of each tuple
 
-def zip8 (a0,a1,a2,a3,a4,a5,a6,a7,ar) (b0,b1,b2,b3,b4,b5,b6,b7,br) =
-    ((a0,b0),(a1,b1),(a2,b2),(a3,b3),(a4,b4),(a5,b5),(a6,b6),(a7,b7),());
+def zip_base [] [] = [];
+
+def zip_ind zip (ah:ar) (bh:br) = (ah,bh):(zip ar br);
+
+def zip n = iter n zip_ind zip_base;
 
 // Apply function to each element of tuple
 
-def map f (g0,g1,g2,g3,g4,g5,g6,g7,gr) =
-    (f g0, f g1, f g2, f g3, f g4, f g5, f g6, f g7, ());
+def map_base f [] = [];
+
+def map_ind map f (h:t) = (f h):(map f t);
+
+def map n = iter n map_ind map_base;
 
 // Multiply each tuple element by corresponding unit
 
-def combine8 (a0,a1,a2,a3,a4,a5,a6,a7,ar) =
-    a0 + 2*a1 + 4*a2 + 8*a3 + 16*a4 + 32*a5 + 64*a6 + 128*a7;
+def combine_base [] = 0;
+
+def combine_ind combine (h:t) = h + 2*(combine t);
+
+def combine n = iter n combine_ind combine_base;
 
 // Apply given function to corresponding bit-pairs in bit representation
 
-def bitwise8 g a b = {
-    def zipped = zip8 (range8 a) (range8 b);
-    def new_bits = map g zipped;
-    combine8 new_bits
+def bitwise n g a b = {
+    def zipped = zip n (range n a) (range n b);
+    def new_bits = map n g zipped;
+    combine n new_bits
 };
 
 // Definition of xor for domain {0, 1}^2
 
 def bit_xor (a,b) = a*(1-b)+(1-a)*b;
 
-// Definition of bitwise xor for 8 bit values
+// Definition of bitwise xor for n bit values
 
-def xor8 = bitwise8 bit_xor;
+def xor n = bitwise n bit_xor;
 
 // Definition of or for domain {0, 1}^2
 
 def bit_or (a,b) = a + b - a*b;
 
-// Definition of bitwise or for 8 bit values
+// Definition of bitwise or for n bit values
 
-def or8 = bitwise8 bit_or;
+def or n = bitwise n bit_or;
 
 // Definition of and for domain {0, 1}^2
 
 def bit_and (a,b) = a*b;
 
-// Definition of bitwise and for 8 bit values
+// Definition of bitwise and for n bit values
 
-def and8 = bitwise8 bit_and;
+def and n = bitwise n bit_and;
 
-// Definition of bitwise not for 8 bit values
+// Definition of bitwise not for n bit values
 
-def not8 y = combine8 (map (fun x { 1-x }) (range8 y));
+def not n y = combine n (map n (fun x { 1-x }) (range n y));
 
 // Repeated function applications, useful for big-step rotations/shifts
 
-def apply0 f x = x;
+def c0 f x = x;
 
-def apply1 f x = f (apply0 f x);
+def c1 f x = f (c0 f x);
 
-def apply2 f x = f (apply1 f x);
+def c2 f x = f (c1 f x);
 
-def apply3 f x = f (apply2 f x);
+def c3 f x = f (c2 f x);
 
-def apply4 f x = f (apply3 f x);
+def c4 f x = f (c3 f x);
 
-def apply5 f x = f (apply4 f x);
+def c5 f x = f (c4 f x);
 
-def apply6 f x = f (apply5 f x);
+def c6 f x = f (c5 f x);
 
-def apply7 f x = f (apply6 f x);
+def c7 f x = f (c6 f x);
 
 // Arithmetic shift right for 8 bit values
 
-def ashr8 x = {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range8 x;
-    combine8 (a1, a2, a3, a4, a5, a6, a7, a7, ())
+def ashr n x = {
+    def a = range n x;
+    def msb = nth a (n-1);
+    def new_bits = append (n-1) (tl a) (msb:[]);
+    combine n new_bits
 };
 
 // Logical shift right for 8 bit values
 
-def lshr8 x = {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range8 x;
-    combine8 (a1, a2, a3, a4, a5, a6, a7, 0, ())
+def lshr n x = {
+    def a = range n x;
+    def new_bits = append (n-1) (tl a) (0:[]);
+    combine n new_bits
 };
 
 // Shift left for 8 bit values
 
-def shl8 x = {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range8 x;
-    combine8 (0, a0, a1, a2, a3, a4, a5, a6, ())
+def shl n x = {
+    def a = range n x;
+    combine n (0:(take (n-1) a))
 };
 
 // Rotate right for 8 bit values
 
-def ror8 x = {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range8 x;
-    combine8 (a1, a2, a3, a4, a5, a6, a7, a0, ())
+def ror n x = {
+    def a = range n x;
+    def msb = hd a;
+    def new_bits = append (n-1) (tl a) (msb:[]);
+    combine n new_bits
 };
 
 // Rotate left for 8 bit values
 
-def rol8 x = {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,ar) = range8 x;
-    combine8 (a7, a0, a1, a2, a3, a4, a5, a6, ())
+def rol n x = {
+    def a = range n x;
+    def lsb = nth a (n-1);
+    def msbs = take (n-1) a;
+    combine n (lsb:msbs)
 };
 
-// Add two 8-bit values modulo 8
+// Add two 8-bit values modulo 2^8
 
-def add8 a b = {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,ar) = range9 (a+b);
-    combine8 (a0, a1, a2, a3, a4, a5, a6, a7, ())
+def add n a b = {
+    def a = range (n+1) (a+b);
+    combine n (take n a)
 };
 
 // Subtract two 8-bit values modulo 8
 
-def sub8 a b = {
-    def (a0,a1,a2,a3,a4,a5,a6,a7,a8,ar) = range9 (a+256-b);
-    combine8 (a0, a1, a2, a3, a4, a5, a6, a7, ())
+def sub n a b = {
+    def a = range (n+1) (a+(2^n)-b);
+    combine n (take n a)
 };
 
 // Unsigned less than or equal to for 8 bits. 1 if true, 0 otherwise
 
-def ule8 a b = {
-    def (c0,c1,c2,c3,c4,c5,c6,c7,c8, ar) = range9 (256+b-a);
-    c8
+def ule n a b = {
+    def c = range (n+1) ((2^n)+b-a);
+    nth c n
 };
 
 // Unsigned less than for 8 bits
 
-def ult8 a b = ule8 a (b-1);
+def ult n a b = ule n a (b-1);
 
 // Signed less than or equal to for 8 bits
 
-def slt8 a b = {
-    def (c0,c1,c2,c3,c4,c5,c6,c7,c8,ar) = range9 (a+256-b);
-    c7
+def slt n a b = {
+    def c = range (n+1) (a+(2^n)-b);
+    nth c (n-1)
 };
 
 // Signed less than for 8 bits
 
-def sle8 a b = slt8 a (b+1);
+def sle n a b = slt n a (b+1);
 
 // Extract the first element of any supplied pair
 
@@ -190,47 +214,59 @@ def fst (a,b) = a;
 
 def snd (a,b) = b;
 
-// 4 bit unsigned Euclidean division
+// Single round of n bit unsigned Euclidean division
 
-def divrem a3 b0 = {
-    def b1 = b0*2;
-    def b2 = b1*2;
-    def b3 = b2*2;
-    def c3 = ult8 b3 a3;
-    def a2 = a3 - c3*b3;
-    def c2 = ult8 b2 a2;
-    def a1 = a2 - c2*b2;
-    def c1 = ult8 b1 a1;
-    def a0 = a1 - c1*b1;
-    def c0 = ult8 b0 a0;
-    def rem = a0 - c0*b0;
-    (combine8 (c0, c1, c2, c3, 0, 0, 0, 0, ()), rem)
+def div_next prev a b m n acc = {
+    def n = n - 1;
+    // Shift the divisor
+    def c = b * (2^n);
+    // Check if shifting produces larger number
+    def d = ult m c a;
+    // Subtract the shifted value if it is smaller
+    def e = a - d * c;
+    // Move to the next round on the remainder
+    prev e b m n (d:acc)
 };
 
-def div a b = fst (divrem a b);
+// n bit unsigned Euclidean division base case
 
-def rem a b = snd (divrem a b);
+def div_base a b m n acc = (acc, a);
+
+// n bit unsigned Euclidean division
+
+def divrem n a b = {
+    // Inductively build up division function
+    def div = iter n div_next div_base;
+    // Do the division, doubling space for inequalities
+    def (quot, rem) = div a b (2*n) n [];
+    // Combine the bits into a number again
+    (combine n quot, rem)
+};
+
+def div n a b = fst (divrem n a b);
+
+def rem n a b = snd (divrem n a b);
 
 // Check the operations work correctly
 
-242 = xor8 13 255;
+242 = xor 8 13 255;
 
-254 = not8 1;
+254 = not 8 1;
 
-1 = ult8 2 3;
+1 = ult 8 2 3;
 
-1 = ult8 2 255;
+1 = ult 8 2 255;
 
-1 = ult8 0 255;
+1 = ult 8 0 255;
 
-1 = slt8 255 0;
+1 = slt 8 255 0;
 
-1 = slt8 255 127;
+1 = slt 8 255 127;
 
-1 = sle8 5 5;
+1 = sle 8 5 5;
 
-(4,1) = divrem 9 2;
+(25,21) = divrem 32 3846 153;
 
-range4 15;
+range 4 15;
 
 def D = 10;
