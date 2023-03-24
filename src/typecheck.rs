@@ -14,6 +14,9 @@ fn collect_free_type_vars(
         Type::Variable(var) => {
             map.insert(var.id, var.clone());
         },
+        Type::List(typ1) => {
+            collect_free_type_vars(typ1, map);
+        },
         Type::Function(typ1, typ2) | Type::Product(typ1, typ2) => {
             collect_free_type_vars(typ1, map);
             collect_free_type_vars(typ2, map);
@@ -38,14 +41,14 @@ fn allocate_pat_types(
     pat.t = Some(Type::Variable(Variable::new(new_var)));
     
     match &mut pat.v {
-        Pat::Product(pat1, pat2) => {
+        Pat::Product(pat1, pat2) | Pat::Cons(pat1, pat2) => {
             allocate_pat_types(pat1, gen);
             allocate_pat_types(pat2, gen);
         },
         Pat::As(pat1, _) => {
             allocate_pat_types(pat1, gen);
         },
-        Pat::Constant(_) | Pat::Variable(_) | Pat::Unit => {},
+        Pat::Constant(_) | Pat::Variable(_) | Pat::Unit | Pat::Nil => {},
     }
 }
 
@@ -64,7 +67,7 @@ fn allocate_expr_types(
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             allocate_expr_types(expr1, gen);
             allocate_expr_types(expr2, gen);
         },
@@ -92,7 +95,7 @@ fn allocate_expr_types(
             }
         },
         Expr::Constant(_) | Expr::Variable(_) | Expr::Unit |
-        Expr::Intrinsic(_) => {},
+        Expr::Intrinsic(_) | Expr::Nil => {},
     }
 }
 
@@ -124,6 +127,7 @@ pub enum Type {
     Unit,
     Int,
     Variable(Variable),
+    List(Box<Type>),
     Function(Box<Type>, Box<Type>),
     Product(Box<Type>, Box<Type>),
     Forall(Variable, Box<Type>),
@@ -134,6 +138,7 @@ impl Display for Type {
         match self {
             Type::Unit => write!(f, "()"),
             Type::Int => write!(f, "int"),
+            Type::List(a) => write!(f, "[{}]", a),
             Type::Variable(var) => write!(f, "{}", var),
             Type::Function(a, b) => write!(f, "({} -> {})", a, b),
             Type::Product(a, b) => write!(f, "({}, {})", a, b),
@@ -159,6 +164,7 @@ fn occurs_in(
         Type::Variable(var2) if types.contains_key(&var2.id) =>
             occurs_in(var1, &types[&var2.id].clone(), types),
         Type::Variable(_) | Type::Int | Type::Unit => false,
+        Type::List(a) => occurs_in(var1, a, types),
         Type::Function(a, b) | Type::Product(a, b) =>
             occurs_in(var1, a, types) || occurs_in(var1, b, types),
         Type::Forall(_, _) =>
@@ -199,6 +205,7 @@ pub fn unify_types(
     match (type1, type2) {
         (Type::Int, Type::Int) |
         (Type::Unit, Type::Unit) => {},
+        (Type::List(a), Type::List(b)) => unify_types(a, b, types, inserts),
         (Type::Function(a1, b1), Type::Function(a2, b2)) |
         (Type::Product(a1, b1), Type::Product(a2, b2)) => {
             unify_types(&*a1, &*a2, types, inserts);
@@ -221,6 +228,7 @@ pub fn expand_type(
         Type::Variable(var) if types.contains_key(&var.id) =>
             expand_type(&types[&var.id], types),
         Type::Variable(_) => typ.clone(),
+        Type::List(a) => Type::List(Box::new(expand_type(a, types))),
         Type::Function(a, b) => Type::Function(
             Box::new(expand_type(a, types)),
             Box::new(expand_type(b, types))
@@ -267,6 +275,9 @@ fn instantiate_type_vars(
                 var.id = *target;
             }
         },
+        Type::List(a) => {
+            instantiate_type_vars(a, map, gen);
+        },
         Type::Function(a, b) | Type::Product(a, b) => {
             instantiate_type_vars(a, map, gen);
             instantiate_type_vars(b, map, gen);
@@ -286,11 +297,11 @@ pub fn strip_pat_types(pat: &mut TPat) {
         Pat::As(pat1, _) => {
             strip_pat_types(pat1);
         },
-        Pat::Product(pat1, pat2) => {
+        Pat::Product(pat1, pat2) | Pat::Cons(pat1, pat2) => {
             strip_pat_types(pat1);
             strip_pat_types(pat2);
         },
-        Pat::Constant(_) | Pat::Unit | Pat::Variable(_) => {},
+        Pat::Constant(_) | Pat::Unit | Pat::Variable(_) | Pat::Nil => {},
     }
 }
 
@@ -304,7 +315,7 @@ pub fn strip_expr_types(expr: &mut TExpr) {
             }
         },
         Expr::Infix(_, expr1, expr2) | Expr::Application(expr1, expr2) |
-        Expr::Product(expr1, expr2) => {
+        Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
             strip_expr_types(expr1);
             strip_expr_types(expr2);
         },
@@ -317,7 +328,7 @@ pub fn strip_expr_types(expr: &mut TExpr) {
         Expr::Negate(expr) => {
             strip_expr_types(expr);
         },
-        Expr::Constant(_) | Expr::Unit | Expr::Variable(_) => {},
+        Expr::Constant(_) | Expr::Unit | Expr::Variable(_) | Expr::Nil => {},
         Expr::Intrinsic(Intrinsic { env, .. }) => {
             for val in env.values_mut() {
                 strip_expr_types(val);
@@ -405,6 +416,12 @@ pub fn infer_pat_types(
     gen: &mut VarGen,
 ) {
     match &pat.v {
+        Pat::Nil => {
+            let pat_var = pat_type_var(pat);
+            let poly_var = Type::Variable(Variable::new(gen.generate_id()));
+            // []: [a]
+            unify_types(pat_var, &Type::List(Box::new(poly_var)), types, &mut None);
+        },
         Pat::Unit => {
             let pat_var = pat_type_var(pat);
             // (): ()
@@ -443,6 +460,21 @@ pub fn infer_pat_types(
             infer_pat_types(pat1, vars, types, gen);
             infer_pat_types(pat2, vars, types, gen);
         },
+        Pat::Cons(pat1, pat2) => {
+            let pat1_var = pat_type_var(pat1);
+            let pat2_var = pat_type_var(pat2);
+            let pat_var = pat_type_var(pat);
+            // a1: t1, a2: [t1] |- (a1:a2): [t1]
+            unify_types(
+                &pat2_var,
+                &Type::List(Box::new(pat1_var.clone())),
+                types,
+                &mut None,
+            );
+            unify_types(&pat_var, &pat2_var, types, &mut None);
+            infer_pat_types(pat1, vars, types, gen);
+            infer_pat_types(pat2, vars, types, gen);
+        },
     }
 }
 
@@ -457,6 +489,12 @@ fn infer_expr_types(
     gen: &mut VarGen,
 ) {
     match &expr.v {
+        Expr::Nil => {
+            let expr_var = expr_type_var(expr);
+            let poly_var = Type::Variable(Variable::new(gen.generate_id()));
+            // []: [a]
+            unify_types(expr_var, &Type::List(Box::new(poly_var)), types, &mut None);
+        },
         Expr::Unit => {
             let expr_var = expr_type_var(expr);
             // (): ()
@@ -520,13 +558,28 @@ fn infer_expr_types(
             let expr1_var = expr_type_var(expr1);
             let expr2_var = expr_type_var(expr2);
             let expr_var = expr_type_var(expr);
-            // a1: t1, ... aN: tN |- (a1, ..., aN): (t1, ..., tN)
+            // a1: t1, a2: t2 |- (a1, a2): (t1, t2)
             unify_types(
                 &expr_var,
                 &Type::Product(Box::new(expr1_var.clone()), Box::new(expr2_var.clone())),
                 types,
                 &mut None,
             );
+            infer_expr_types(expr1, env, vars, types, gen);
+            infer_expr_types(expr2, env, vars, types, gen);
+        },
+        Expr::Cons(expr1, expr2) => {
+            let expr1_var = expr_type_var(expr1);
+            let expr2_var = expr_type_var(expr2);
+            let expr_var = expr_type_var(expr);
+            // a1: t1, a2: [t1] |- (a1:a2): [t1]
+            unify_types(
+                &expr2_var,
+                &Type::List(Box::new(expr1_var.clone())),
+                types,
+                &mut None,
+            );
+            unify_types(&expr_var, &expr2_var, types, &mut None);
             infer_expr_types(expr1, env, vars, types, gen);
             infer_expr_types(expr2, env, vars, types, gen);
         },
@@ -687,8 +740,34 @@ pub fn expand_pattern_variables(
             pat.v = Pat::Product(Box::new(var1), Box::new(var2));
             map.insert(curr_id, pat.clone());
         },
+
+        (Pat::Variable(var), Expr::Cons(expr1, expr2)) => {
+            let mut new_var1 = Variable::new(gen.generate_id());
+            new_var1.name = var
+                .name
+                .as_ref()
+                .map(|x| x.to_owned() + ".0");
+            let mut var1 = Pat::Variable(new_var1).type_pat(expr1.t.clone());
+            expand_pattern_variables(&mut var1, &expr1, map, gen);
+            
+            let mut new_var2 = Variable::new(gen.generate_id());
+            new_var2.name = var
+                .name
+                .as_ref()
+                .map(|x| x.to_owned() + ".1");
+            let mut var2 = Pat::Variable(new_var2).type_pat(expr2.t.clone());
+            expand_pattern_variables(&mut var2, &expr2, map, gen);
+
+            let curr_id = var.id;
+            pat.v = Pat::Cons(Box::new(var1), Box::new(var2));
+            map.insert(curr_id, pat.clone());
+        },
         (Pat::Variable(var), Expr::Unit) => {
             map.insert(var.id, Pat::Unit.type_pat(Some(Type::Unit)));
+            *pat = map[&var.id].clone();
+        },
+        (Pat::Variable(var), Expr::Nil) => {
+            map.insert(var.id, Pat::Nil.type_pat(None));
             *pat = map[&var.id].clone();
         },
         (Pat::Variable(_), _) => {},
@@ -696,8 +775,13 @@ pub fn expand_pattern_variables(
             expand_pattern_variables(pat1, &expr1, map, gen);
             expand_pattern_variables(pat2, &expr2, map, gen);
         },
+        (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
+            expand_pattern_variables(pat1, &expr1, map, gen);
+            expand_pattern_variables(pat2, &expr2, map, gen);
+        },
         (Pat::Constant(_), _) => {},
         (Pat::Unit, _) => {},
+        (Pat::Nil, Expr::Nil) => {},
         (Pat::As(pat1, _name), _) => {
             expand_pattern_variables(pat1, expr, map, gen);
         },
@@ -746,6 +830,8 @@ pub fn expand_expr_variables(
         (Expr::Variable(_), Type::Int) => {},
         (Expr::Variable(var), Type::Function(_, _)) =>
             panic!("the global function {} is undefined", var),
+        (Expr::Variable(var), Type::List(_)) =>
+            panic!("the global list {} is undefined", var),
         (Expr::Variable(var), Type::Variable(_)) =>
             panic!("unable to determine type of global variable {}", var),
         (Expr::Product(expr1, expr2), _) => {

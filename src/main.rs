@@ -50,7 +50,6 @@ enum ProofSystems {
 /* Read satisfying inputs to the given program from a file. */
 fn read_inputs_from_file<F>(annotated: &Module, path_to_inputs: &PathBuf) -> HashMap<VariableId, F>
 where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug {
-    println!("* Reading inputs from file: {}", path_to_inputs.to_str().unwrap());
     let inputs = File::open(path_to_inputs)
         .expect("Could not open inputs file");
 
