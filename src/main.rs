@@ -221,7 +221,6 @@ struct ProofDataHalo2 {
 /* Read satisfying inputs to the given program from a file. */
 fn read_inputs_from_file<F>(annotated: &Module, path_to_inputs: &PathBuf) -> HashMap<VariableId, F>
 where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug {
-    println!("* Reading inputs from file: {}", path_to_inputs.to_str().unwrap());
     let inputs = File::open(path_to_inputs)
         .expect("Could not open inputs file");
 
@@ -383,9 +382,13 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked, inputs }: &Pr
 
             // Prompt for program inputs
             let var_assignments_ints = match inputs {
-                Some(path_to_inputs) => read_inputs_from_file(&circuit.module, path_to_inputs),
+                Some(path_to_inputs) => {
+                    println!("* Reading inputs from file: {}", path_to_inputs.to_str().unwrap());
+                    read_inputs_from_file(&circuit.module, path_to_inputs)
+                },
                 None => {
                     if expected_path_to_inputs.exists() {
+                        println!("* Reading inputs from file: {}", expected_path_to_inputs.to_str().unwrap());
                         read_inputs_from_file(&circuit.module, &expected_path_to_inputs)
                     } else {
                         println!("* Soliciting circuit witnesses...");
@@ -395,7 +398,6 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked, inputs }: &Pr
                 },
             };
 
-            //let var_assignments_ints = prompt_inputs(&circuit.module);
             let mut var_assignments = HashMap::new();
             for (k, v) in var_assignments_ints {
                 var_assignments.insert(k, plonk_synth::make_constant(&v));
@@ -427,17 +429,36 @@ fn prove_cmd(Prove { universal_params, circuit, output, unchecked, inputs }: &Pr
             println!("* Reading arithmetic circuit...");
             let mut circuit_file = File::open(circuit)
                 .expect("unable to load circuit file");
+
+            let mut expected_path_to_inputs = circuit.clone();
+            expected_path_to_inputs.set_extension("inputs");
+
             let HaloCircuitData { params, mut circuit} =
                 HaloCircuitData::read(&mut circuit_file).unwrap();
 
-            // Prover POV
-            println!("* Soliciting circuit witnesses...");
             // Prompt for program inputs
-            let var_assignments_ints = prompt_inputs(&circuit.module);
+            let var_assignments_ints = match inputs {
+                Some(path_to_inputs) => {
+                    println!("* Reading inputs from file: {}", path_to_inputs.to_str().unwrap());
+                    read_inputs_from_file(&circuit.module, path_to_inputs)
+                },
+                None => {
+                    if expected_path_to_inputs.exists() {
+                        println!("* Reading inputs from file: {}", expected_path_to_inputs.to_str().unwrap());
+                        read_inputs_from_file(&circuit.module, &expected_path_to_inputs)
+                    } else {
+                        println!("* Soliciting circuit witnesses...");
+                        prompt_inputs(&circuit.module)
+                    }
+                    
+                },
+            };
+
             let mut var_assignments = HashMap::new();
             for (k, v) in var_assignments_ints {
                 var_assignments.insert(k, halo_synth::make_constant(v));
             }
+
             // Populate variable definitions
             circuit.populate_variables(var_assignments);
 
