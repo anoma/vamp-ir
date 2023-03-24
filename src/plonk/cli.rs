@@ -216,9 +216,13 @@ fn setup_plonk_cmd(Setup { max_degree, output, unchecked }: &Setup) {
 
     // Prompt for program inputs
     let var_assignments_ints = match inputs {
-        Some(path_to_inputs) => read_inputs_from_file(&circuit.module, path_to_inputs),
+        Some(path_to_inputs) => {
+            println!("* Reading inputs from file {}...", path_to_inputs.to_string_lossy());
+            read_inputs_from_file(&circuit.module, path_to_inputs)
+        },
         None => {
             if expected_path_to_inputs.exists() {
+                println!("* Reading inputs from file {}...", expected_path_to_inputs.to_string_lossy());
                 read_inputs_from_file(&circuit.module, &expected_path_to_inputs)
             } else {
                 println!("* Soliciting circuit witnesses...");
