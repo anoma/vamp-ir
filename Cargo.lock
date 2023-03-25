@@ -622,6 +622,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "itoa"
+version = "1.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "453ad9f582a441959e5f0d088b02ce04cfe8d51a8eaf077f12ac6d3e94164ca6"
+
+[[package]]
 name = "keccak"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -803,7 +809,7 @@ checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
 [[package]]
 name = "plonk"
 version = "0.8.2"
-source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd3#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
+source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
 dependencies = [
  "plonk-core",
  "plonk-hashing",
@@ -812,7 +818,7 @@ dependencies = [
 [[package]]
 name = "plonk-core"
 version = "0.1.0"
-source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd3#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
+source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
@@ -834,7 +840,7 @@ dependencies = [
 [[package]]
 name = "plonk-hashing"
 version = "0.8.2"
-source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd3#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
+source = "git+https://github.com/ZK-Garage/plonk?rev=ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4#ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4"
 dependencies = [
  "plonk-core",
 ]
@@ -957,6 +963,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ryu"
+version = "1.0.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f91339c0467de62360649f8d3e185ca8de4224ff281f66000de5eb2a77a79041"
+
+[[package]]
 name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -978,6 +990,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00b0bef5b7f9e0df16536d3961cfb6e84331c065b4066afb39768d0e319411f7"
 dependencies = [
  "pest",
+]
+
+[[package]]
+name = "serde"
+version = "1.0.158"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "771d4d9c4163ee138805e12c710dd365e4f44be8be0503cb1bb9eb989425d9c9"
+
+[[package]]
+name = "serde_json"
+version = "1.0.94"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c533a59c9d8a93a09c6ab31f0fd5e5f4dd1b8fc9434804029839884765d04ea"
+dependencies = [
+ "itoa",
+ "ryu",
+ "serde",
 ]
 
 [[package]]
@@ -1156,6 +1185,7 @@ dependencies = [
  "plonk",
  "plonk-core",
  "rand_core",
+ "serde_json",
 ]
 
 [[package]]
