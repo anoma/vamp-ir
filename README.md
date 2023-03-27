@@ -1,19 +1,10 @@
 # Vamp-IR
 
-Vamp-IR is a language for specifying arithmetic circuits. The Vamp-IR compiler can transform an arithmetic circuit into a form that is compatible with any proving system backend.
+Vamp-IR is a language for arithmetic circuits. The Vamp-IR compiler can transform an arithmetic circuit into a form that is compatible with any proving system backend.
 
-- [Design rationale](https://specs.anoma.net/master/architecture/language/j-group/vampir/ir_design.html) / [Spec](https://specs.anoma.net/master/architecture/language/j-group/vampir/ir_spec.html)
+## Docs
 
-VAMP-IR stands for:
-
-**V**amp-IR
-**A**liased
-**M**ultivariate
-**P**olynomial
-**I**ntermediate
-**R**epresentation
-
-The Vamp-IR language consists of *alias definitions* and *expressions* defining an arithmetic circuit.
+[Vamp-IR book (WIP)](https://github.com/anoma/VampIR-Book)
 
 ## Trying Vamp-IR
 
@@ -24,213 +15,60 @@ cd vamp-ir
 cargo build
 ```
 
-### Setup
-Creates public parameters for proving and verifying and saves to `params.pp`:
+### Hello World!
+
+We will build a circuit in Vamp-IR that checks if a pair $(x, y)$ is a point on a circle of a certain radius, $R$, which is given publicly.
+
+In a file `pyth.pir` :
 ```
-./target/debug/vamp-ir setup -o params.pp --unchecked
+// declare R to be public
+pub R;
+
+// define the Pythagorean relation we are checking
+def pyth a b c = {
+  a^2 + b^2 = c^2
+};
+
+// appends constraint x^2 + y^2 = R^2 to the circuit
+pyth x y R;
 ```
 
 ### Compile
-Compiles `./tests/alu.pir` to `alu.plonk` using the setup:
-```
-./target/debug/vamp-ir compile -s ./tests/alu.pir -u params.pp -o alu.plonk --unchecked
-```
-
-### Prove
-Create proof from `alu.plonk` and save to `proof.plonk`:
-```
- ./target/debug/vamp-ir prove -c alu.plonk -u params.pp -o proof.plonk --unchecked
-```
-
-### Verify
-Verify `proof.plonk`:
-```
-./target/debug/vamp-ir verify -c alu.plonk -u params.pp -p proof.plonk --unchecked
-```
-
-## Interface
-The Vamp-IR compiler takes as input:
-- A Vamp-IR document consisting of alias definitions and a circuit written with those aliases. (The alias definitions may come from Vamp-IR's standard library inwhich they don't need to included in the document itself, or they be written as custom aliases and included in the Vamp-IR document.)
-- Target backend parameters, which may include a specification of the constraint system (R1CS, 3-Plonk, 4-Plonk, etc.), the order of the scalar field, elliptic curve parameters, and so on. These parameters help the Vamp-IR compiler transform the given circuit into an optimized form targetting the backend proving system and give important information that is needed to compute the values during prover runtime (for instance, field division requries knowledge of the order of the scalar field).
-- (optionally) A precomputed prover input map which allows the Vamp-IR compiler to skip the prover runtime step.
-
-The Vamp-IR compiler outputs:
-- A portable, canonical form of the circuit as a `.vampir` document
-
-Additionally, if connected to a backend proving system implementation that has a Vamp-IR -> Backend compiler and parameters for the backend, Vamp-IR can invoke the backend proving system and output:
-- A proof in the backend proving system
-- A verification of a proof provided in the backend proving system
-
-## Components
-Vamp-IR consists of a parser, compiler, and a prover runtime. 
-- The parser parses the text input into an abstract structure tree. 
-- The compiler transforms the data in the tree in various ways, eventually arriving at a form that is compatible with some backend proving system implementation, according to *target backend parameters* which are supplied alongside the text input.
-- The prover runtime takes the circuit IR and the prover's private *initial inputs* and executes the circuit steps to produce the intermediate values of the computation. These are organized and sent to the backend prover in the *prover input map*.
-
-## Vamp-IR language
-
-Vamp-IR is a language for specifying arithmetic circuits. Circuits in Vamp-IR are written as a set of multivariable polynomial expressions. Vamp-IR allows a circuit writer to define their own custom, reusable circuits called *aliases*. Vamp-IR will also ship with a standard library of pre-defined aliases which are commonly needed. 
-
-A Vamp-IR document consists of a set of *aliases* and a *circuit*.
-
-## Circuit
-A Vamp-IR *circuit* is a set of *expressions*.
-
-### Expressions
-An *expression*  in Vamp-IR is a multivariable polynomial constraint written with variables, constants, and the symbols `+`, `-`, `*`, `^`, `(`, `)`, and `=`. 
-
-This constraint (which checks that $(x,y)$ is a point on a certain elliptic curve) is a Vamp-IR expression:
-
-`y^2 = x^3 + 3`
-
-Every expression is implicitly an equation in Vamp-IR. An expression written with no `=` is considered to be constrained to be equal to 0. Therefore, the equation above could be rewritten without the `=` as:
-
-`y^2 - (x^3 + 3)` 
-
-These two forms of expressions are equivalent in Vamp-IR. 
-
-### An example circuit
-
-Here is a small circuit written in Vamp-IR. This circuit checks that two twisted Edwards elliptic curve points $(x_1, y_1)$ and $(x_2, y_2)$ add to a third point $(x_3, y_3)$ on the curve. (This curve uses twisted Edwards parameters $A=3$ and $D=2$.)
+Compile source `pyth.pir` to a circuit that can be used in Halo2 and serialize it to the file `pyth.halo2`.
 
 ```
-(1 + 2*x1*x2*y1*y2)*x3 = x1*y2 + y1*x2
-(1 - 2*x1*x2*y1*y2)*y3 = y1*y2 - 3*x1*x2
+vamp-ir halo2 compile -s pyth.pir -o pyth.halo2
 ```
 
-## Aliases
-Since this circuit is likely to be used often, we can define an *alias* for it so it can be reused. An alias can include a *signature* which allows it to be used as a function by designating which internal wires can be considered inputs and outputs. The compiler then knows how to compose circuits together.
+### Create a proof
+
+Suppose the target radius $R$ is $25$, and we come up with $(x, y) = (15, 20)$. We can use `vamp-ir` to create a Halo2 proof using these inputs.
+
+First create a file `pyth.inputs` in JSON format which contains our solution.
 
 ```
-def alias_name[param1, param2, ...] input1 input2 ... -> output1 output2 ... {
-  expression1
-  expression2
-  ...
+{
+  "x": "15",
+  "y": "20",
+  "R": "25"
 }
 ```
-
-Here is the circuit from earlier written as an alias:
-```
-def twisted_edwards_add[A, D] x1 y1 x2 y2 -> x3 y3 {
-  (1 + D*x1*x2*y1*y2)*x3 = x1*y2 + y1*x2
-  (1 - D*x1*x2*y1*y2)*y3 = y1*y2 - A*x1*x2
-}
-```
-
-Then this alias can be called like a function inside a circuit:
-```
-twisted_edwards_add[3, 2] p1 q1 p2 q2
-```
-
-### Example with expansion
-Here is a collection of aliases constraining $x$ to be a 1, 2, 4, or 8 bit integer. Then a circuit checks that a triple $(a,b,c)$ satisfies the Pythagorean theorem and that both $a$ and $b$ are bytes.
+Then run the Halo2 prover using our compiled circuit and our inputs, outputting a Halo2 proof to `pyth.proof`.
 
 ```
-// aliases
-
-def range[1] x {
-  x*x - x
-}
-
-def range[2] x {
-  range[1] hi
-  range[1] lo
-  2*hi + lo - x
-}
-
-def range[4] x {
-  range[2] hi
-  range[2] lo
-  4*hi + lo - x
-}
-
-def range[8] x {
-  range[4] hi
-  range[4] lo
-  16*hi + lo - x
-}
-
-
-// circuit
-
-a^2 + b^2 = c^2
-range[8] a
-range[8] b
+vamp-ir halo2 prove -c pyth.halo2 -i pyth.inputs -o pyth.proof
 ```
 
+### Verify the proof
 
-### Expanded form
-The circuit above is expanded by the compiler into a set of polynomial constraints, using $w_k$ to stand in for auxiliary variables required by the invoked aliases.
-```
-a*a + b*b - c*c
-w0*w0 - w0
-w1*w1 - w1
-2*w1 + w0 - w2
-w3*w3 - w3
-w4*w4 - w4
-2*w4 + w3 - w5
-4*w5 + w2 - w6
-w7*w7 - w7
-w8*w8 - w8
-2*w8 + w7 - w9
-w10*w10 - w10
-w11*w11 - w11
-2*w11 + w10 - w12
-4*w12 + w9 - w13
-8*w13 + w6 - a
-w14*w14 - w14
-w15*w15 - w15
-2*w15 + w14 - w16
-w17*w17 - w17
-w18*w18 - w18
-2*w18 + w17 - w19
-4*w19 + w16 - w20
-w21*w21 - w21
-w22*w22 - w22
-2*w22 + w21 - w23
-w24*w24 - w24
-w25*w25 - w25
-2*w25 + w24 - w26
-4*w26 + w23 - w27
-8*w27 + w20 - b
-```
-
-### Prover Input Map
-The compiler can use the expanded list of constraints to compute the values of all variables including the auxiliary variables, from the initial inputs $(a, b, c)$ during the *prover runtime* process.
+Run the Halo2 verifier using the compiled circuit and the proof.
 
 ```
-  a: 3    // b00000011
-  b: 4    // b00000100
-  c: 5    // b00000101
- w0: 1
- w1: 1
- w2: 3
- w3: 0
- w4: 0
- w5: 0
- w6: 3
- w7: 0
- w8: 0
- w9: 0
-w10: 0
-w11: 0
-w12: 0
-w13: 0
-w14: 1
-w15: 0
-w16: 1
-w17: 1
-w18: 0
-w19: 1
-w20: 5
-w21: 0
-w22: 0
-w23: 0
-w24: 0
-w25: 0
-w26: 0
-w27: 0
+vamp-ir halo2 verify -c pyth.halo2 -p pyth.proof
 ```
+
+### 
+
 ## Benchmarks
 These benchmarks are performed on a Lenovo ThinkPad X1 Carbon Gen 9 with 8.0 GiB RAM and 
 an 11th Gen Intel® Core™ i5-1135G7 @ 2.40GHz × 8 unless stated otherwise
