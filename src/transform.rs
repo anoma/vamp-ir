@@ -880,7 +880,7 @@ fn flatten_binding(
     flattened: &mut Module,
 ) {
     match (&pat.v, &expr.v) {
-        (Pat::Variable(_), Expr::Function(_)) => {},
+        (Pat::Variable(_), Expr::Function(_) | Expr::Intrinsic(_)) => {},
         (Pat::Variable(_),
          Expr::Variable(_) | Expr::Constant(_) |
          Expr::Infix(_, _, _) | Expr::Negate(_)) => {
