@@ -565,19 +565,16 @@ where
                         true
                     }) => {},
                     // v1 = c2 / v3 ***
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Divide, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Variable(v3),
-                        ) if {
-                            let op1: F = make_constant(c2);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
-                                    .mul(F::one())
-                                    .constant(-op1)
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_cvv(c2, v1, v3)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = v2 / v3 ***
                     (
                         Expr::Variable(v1),
@@ -598,14 +595,7 @@ where
                         Expr::Constant(c2),
                         Expr::Constant(c3),
                     ) if {
-                        let op1: F = make_constant(c2);
-                        let op2: F = make_constant(c3);
-                        let c = if op2 == F::zero() { 
-                            BigInt::from(0)
-                        } else {
-                            (op1/op2).into_repr().into().into()
-                        };
-                        Self::eq_vc(v1, &c)(composer, &inputs);
+                        Self::mul_cvc(c2, v1, c3)(composer, &inputs);
                         true
                     }) => {},
                     // v1 = v2 | c3
@@ -626,19 +616,16 @@ where
                         true
                     }) => {},
                     // v1 = c2 | v3 ***
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::DivideZ, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Variable(v3),
-                        ) if {
-                            let op1: F = make_constant(c2);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
-                                    .mul(F::one())
-                                    .constant(-op1)
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_cvv(c2, v1, v3)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = v2 | v3 ***
                     (
                         Expr::Variable(v1),
@@ -659,10 +646,7 @@ where
                         Expr::Constant(c2),
                         Expr::Constant(c3),
                     ) if {
-                        let op1: F = make_constant(c2);
-                        let op2: F = make_constant(c3);
-                        let c = (op1*op2).into_repr().into().into();
-                        Self::eq_vc(v1, &c)(composer, &inputs);
+                        Self::eq_vc(v1, &(c2*c3))(composer, &inputs);
                         true
                     }) => {},
                     // v1 = v2 * c3
@@ -877,7 +861,7 @@ where
                         } else { 
                             op3.inverse().unwrap().into_repr().into().into()
                         };
-                        Self::eq_cc(c1, &(c2*c3))(composer, &inputs);
+                        Self::eq_cc(c1, &(c2*c))(composer, &inputs);
                         true
                     }) => {},
                     // c1 = v2 | c3
