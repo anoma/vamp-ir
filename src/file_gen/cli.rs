@@ -6,13 +6,21 @@ use serde_json::Map;
 
 use std::fs; 
 
-use clap::Args;
+use clap::{Args, Subcommand};
 use std::path::PathBuf;
 
 use num_bigint::BigInt;
 
+
+#[derive(Subcommand)]
+pub enum GenerateCommands {
+    // Export witnesses into a template JSON file
+    WitnessFile(JSONWitnessFile),
+}
+
+
 #[derive(Args)]
-pub struct Generate {
+pub struct JSONWitnessFile {
     /// Path to source file that witnesses come from
     #[arg(short, long)]
     source: PathBuf,
@@ -29,12 +37,13 @@ impl FieldOps for () {
 }
 
 /* Implements the subcommand that writes witnesses to a JSON file. */
-pub fn witness_file_cmd(Generate { source, output }: &Generate) {
-    println!("* Type Checking...");
+pub fn witness_file_cmd(JSONWitnessFile { source, output }: &JSONWitnessFile) {
+    println!("** Reading file...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
     let module_3ac = compile(module.clone(), &());
     
+    println!("** Collecting variables...");
     // Collect unbound variables from module
     let mut input_variables = HashMap::new();
     collect_module_variables(&module_3ac, &mut input_variables);
@@ -55,12 +64,19 @@ pub fn witness_file_cmd(Generate { source, output }: &Generate) {
       }
     }
     
-    println!("* Writing witnesses to file...");
+    println!("** Writing witnesses to file...");
     std::fs::write(
         output,
         serde_json::to_string_pretty(&input_variables_m).unwrap(),
     ).unwrap();
 
-    println!("* Witnesses file generation success!");
+    println!("** Witnesses file generation success!");
+}
+
+
+pub fn generate(generate_commands: &GenerateCommands) {
+    match generate_commands {
+        GenerateCommands::WitnessFile(args) => witness_file_cmd(args),
+    }
 }
 

@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::halo2::cli::{Halo2Commands, halo2};
 use crate::plonk::cli::{PlonkCommands, plonk};
-use crate::file_gen::cli::{Generate, witness_file_cmd};
+use crate::file_gen::cli::{GenerateCommands, generate};
 use std::io::Write;
 
 use std::fs::File;
@@ -35,7 +35,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Backend {
-    Generate(Generate),
+    #[command(subcommand)]
+    Generate(GenerateCommands),
     #[command(subcommand)]
     Plonk(PlonkCommands),
     #[command(subcommand)]
@@ -127,7 +128,7 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Num +
 fn main() {
     let cli = Cli::parse();
     match &cli.backend {
-        Backend::Generate(args) => witness_file_cmd(args),
+        Backend::Generate(generate_commands) => generate(generate_commands),
         Backend::Plonk(plonk_commands) => plonk(plonk_commands),
         Backend::Halo2(halo2_commands) => halo2(halo2_commands),
     }
