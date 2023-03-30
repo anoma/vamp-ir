@@ -14,7 +14,7 @@ use num_bigint::BigInt;
 
 #[derive(Subcommand)]
 pub enum GenerateCommands {
-    // Export witnesses into a template JSON file
+    /// Export witnesses into a template JSON file
     WitnessFile(JSONWitnessFile),
 }
 
