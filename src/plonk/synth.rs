@@ -217,7 +217,7 @@ where
     }
 }
 
-impl<F, P> PlonkModule<F, P>
+impl<'a, F, P> PlonkModule<F, P>
 where
     F: PrimeField,
     P: TEModelParameters<BaseField = F>,
@@ -274,6 +274,127 @@ where
         }
         annotated
     }
+
+    // v1 = v2 + v3
+    fn add_vvv(v1: &'a Variable, v2: &'a Variable, v3: &'a Variable) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
+        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
+            composer.arithmetic_gate(|gate| {
+                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(inputs[&v3.id]))
+                    .add(F::one(), -F::one())
+                    .out(-F::one())
+            });
+        })
+    }
+
+    // v1 = v2 + c3
+    fn add_vvc(v1: &'a Variable, v2: &'a Variable, c3: &'a BigInt) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
+        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
+            let zero = composer.zero_var();
+            composer.arithmetic_gate(|gate| {
+                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
+                    .add(F::one(), -F::one())
+                    .constant(make_constant(&-c3.clone()))
+            });
+        })
+    }
+
+    // c1 = v2 + v3
+    fn add_cvv(c1: &'a BigInt, v2: &'a Variable, v3: &'a Variable) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
+        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
+            let zero = composer.zero_var();
+            composer.arithmetic_gate(|gate| {
+                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
+                    .add(F::one(), F::one())
+                    .constant(make_constant(&-c1.clone()))
+            });
+        })
+    }
+
+    // v1 = c2
+    fn eq_vc(v1: &'a Variable, c2: &'a BigInt) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
+        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
+            let zero = composer.zero_var();
+            composer.arithmetic_gate(|gate| {
+                gate.witness(inputs[&v1.id], zero, Some(zero))
+                    .add(F::one(), F::zero())
+                    .constant(make_constant(&-c2.clone()))
+            });
+        })
+    }
+
+    // v1 = v2
+    fn eq_vv(v1: &'a Variable, v2: &'a Variable) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
+        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
+            let zero = composer.zero_var();
+            composer.arithmetic_gate(|gate| {
+                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
+                    .add(F::one(), -F::one())
+            });
+
+        })
+    }
+
+    // c1 = c2
+    fn eq_cc(c1: &'a BigInt, c2: &'a BigInt) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
+        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
+            let zero = composer.zero_var();
+            composer.arithmetic_gate(|gate| {
+                gate.witness(zero, zero, Some(zero))
+                    .add(F::zero(), F::zero())
+                    .constant(make_constant(&(c2.clone()-c1.clone())))
+            });
+        })
+    }
+
+    // v1 = v2 * v3
+    fn mul_vvv(v1: &'a Variable, v2: &'a Variable, v3: &'a Variable) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
+        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
+            composer.arithmetic_gate(|gate| {
+                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(inputs[&v1.id]))
+                    .mul(F::one())
+                    .out(-F::one())
+            });
+        })
+    }
+
+    // v1 = v2 * c3
+    fn mul_vvc(v1: &'a Variable, v2: &'a Variable, c3: &'a BigInt) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
+        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
+            let zero = composer.zero_var();
+            let op2: F = make_constant(c3);
+            composer.arithmetic_gate(|gate| {
+                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
+                    .add(F::one(), -op2)
+            });
+        })
+    }
+
+    // c1 = v2 * c3
+    fn mul_cvc(c1: &'a BigInt, v2: &'a Variable, c3: &'a BigInt) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
+        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
+            let zero = composer.zero_var();
+            let op1: F = make_constant(c1);
+            let op3: F = make_constant(c3);
+            composer.arithmetic_gate(|gate| {
+                gate.witness(inputs[&v2.id], zero, Some(zero))
+                    .add(op3, F::zero())
+                    .constant(-op1)
+            });
+        })
+    }
+
+    // c1 = v2 * v3
+    fn mul_cvv(c1: &'a BigInt, v2: &'a Variable, v3: &'a Variable) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
+        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
+            let zero = composer.zero_var();
+            let op1: F = make_constant(c1);
+            composer.arithmetic_gate(|gate| {
+                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
+                    .mul(F::one())
+                    .constant(-op1)
+            });
+        })
+    }
 }
 
 impl<F, P> Circuit<F, P> for PlonkModule<F, P>
@@ -303,172 +424,146 @@ where
                 match (&lhs.v, &rhs.v) {
                     // Variables on the LHS
                     // v1 = v2
-                    (Expr::Variable(v1), Expr::Variable(v2)) => {
-                        composer.arithmetic_gate(|gate| {
-                            gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
-                                .add(F::one(), -F::one())
-                        });
-                    }
+                    (
+                        Expr::Variable(v1),
+                        Expr::Variable(v2),
+                    ) => {
+                        Self::eq_vv(v1, v2)(composer, &inputs)
+                    },
                     // v1 = c2
-                    (Expr::Variable(v1), Expr::Constant(c2)) => {
-                        composer.arithmetic_gate(|gate| {
-                            gate.witness(inputs[&v1.id], zero, Some(zero))
-                                .add(F::one(), F::zero())
-                                .constant(make_constant(&-c2))
-                        });
-                    }
+                    (
+                        Expr::Variable(v1),
+                        Expr::Constant(c2),
+                    ) => {
+                        Self::eq_vc(v1, c2)(composer, &inputs)
+                    },
                     // v1 = -c2
-                    (Expr::Variable(v1), Expr::Negate(e2))
-                        if matches!(&e2.v, Expr::Constant(c2) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(make_constant(c2))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Negate(e2),
+                    ) if matches!(&e2.v, Expr::Constant(c2) if {
+                        Self::eq_vc(v1, &-c2)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = -v2
-                    (Expr::Variable(v1), Expr::Negate(e2))
-                        if matches!(&e2.v, Expr::Variable(v2) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
-                                    .add(F::one(), F::one())
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Negate(e2),
+                    ) if matches!(&e2.v, Expr::Variable(v2) if {
+                        Self::add_cvv(&BigInt::from(0), v1, v2)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = c2 + c3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Add, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Constant(c3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(make_constant(&(-c2-c3)))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::eq_vc(v1, &(c2+c3))(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = v2 + c3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Add, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Constant(c3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
-                                    .add(F::one(), -F::one())
-                                    .constant(make_constant(&-c3))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::add_vvc(v1, v2, c3)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = c2 + v3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Add, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
-                                    .add(F::one(), -F::one())
-                                    .constant(make_constant(&-c2))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::add_vvc(v1, v3, c2)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = v2 + v3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Add, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(inputs[&v3.id]))
-                                    .add(F::one(), -F::one())
-                                    .out(-F::one())
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::add_vvv(v1, v2, v3)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = c2 - c3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Constant(c3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(make_constant(&(-c2+c3)))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::eq_vc(v1, &(c2-c3))(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = v2 - c3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Constant(c3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
-                                    .add(F::one(), -F::one())
-                                    .constant(make_constant(c3))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::add_vvc(v2, v1, c3)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = c2 - v3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
-                                    .add(F::one(), F::one())
-                                    .constant(make_constant(&-c2))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::add_cvv(c2, v1, v3)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = v2 - v3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(inputs[&v3.id]))
-                                    .add(F::one(), -F::one())
-                                    .out(F::one())
-                            });
-                            true
-                        }) => {}
-
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::add_vvv(v2, v1, v3)(composer, &inputs);
+                        true
+                    }) => {},
+                    
                     // v1 = c2 / c3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Divide, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op1: F = make_constant(c2);
-                            let op2: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(-(op1/op2))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::mul_cvc(c2, v1, c3)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = v2 / c3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Divide, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op2: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
-                                    .add(F::one(), -(F::one()/op2))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::mul_vvc(v2, v1, c3)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = c2 / v3 ***
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Divide, e2, e3))
                         if matches!((&e2.v, &e3.v), (
@@ -484,47 +579,52 @@ where
                             true
                         }) => {}
                     // v1 = v2 / v3 ***
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Divide, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v3.id], Some(inputs[&v2.id]))
-                                    .mul(F::one())
-                                    .out(-F::one())
-                            });
-                            true
-                        }) => {}
-
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_vvv(v2, v1, v3)(composer, &inputs);
+                        true
+                    }) => {},
+                    
                     // v1 = c2 | c3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::DivideZ, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op1: F = make_constant(c2);
-                            let op2: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(-(if op2 == F::zero() { F::zero() } else { op1/op2 }))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(c2);
+                        let op2: F = make_constant(c3);
+                        let c = if op2 == F::zero() { 
+                            BigInt::from(0)
+                        } else {
+                            (op1/op2).into_repr().into().into()
+                        };
+                        Self::eq_vc(v1, &c)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = v2 | c3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::DivideZ, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op2: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
-                                    .add(F::one(), -(if op2 == F::zero() { F::zero() } else { F::one()/op2 }))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op2: F = make_constant(c3);
+                        let c = if op2 == F::zero() { 
+                            BigInt::from(0)
+                        } else {
+                            op2.inverse().unwrap().into_repr().into().into()
+                        };
+                        Self::mul_vvc(v2, v1, &c)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = c2 | v3 ***
                     (Expr::Variable(v1), Expr::Infix(InfixOp::DivideZ, e2, e3))
                         if matches!((&e2.v, &e3.v), (
@@ -540,394 +640,337 @@ where
                             true
                         }) => {}
                     // v1 = v2 | v3 ***
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::DivideZ, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v3.id], Some(inputs[&v2.id]))
-                                    .mul(F::one())
-                                    .out(-F::one())
-                            });
-                            true
-                        }) => {}
-
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_vvv(v2, v1, v3)(composer, &inputs);
+                        true
+                    }) => {},
+                    
                     // v1 = c2 * c3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op1: F = make_constant(c2);
-                            let op2: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(-(op1*op2))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op1: F = make_constant(c2);
+                        let op2: F = make_constant(c3);
+                        let c = (op1*op2).into_repr().into().into();
+                        Self::eq_vc(v1, &c)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = v2 * c3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op2: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
-                                    .add(F::one(), -op2)
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::mul_vvc(v1, v2, c3)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = c2 * v3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Variable(v3),
-                        ) if {
-                            let op2: F = make_constant(c2);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v1.id], inputs[&v3.id], Some(zero))
-                                    .add(F::one(), -op2)
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_vvc(v1, v3, c2)(composer, &inputs);
+                        true
+                    }) => {},
                     // v1 = v2 * v3
-                    (Expr::Variable(v1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(inputs[&v1.id]))
-                                    .mul(F::one())
-                                    .out(-F::one())
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Variable(v1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_vvv(v1, v2, v3)(composer, &inputs);
+                        true
+                    }) => {},
                     // Now for constants on the LHS
                     // c1 = v2
-                    (Expr::Constant(c1), Expr::Variable(v2)) => {
-                        composer.arithmetic_gate(|gate| {
-                            gate.witness(inputs[&v2.id], zero, Some(zero))
-                                .add(F::one(), F::zero())
-                                .constant(make_constant(&-c1))
-                        });
-                    }
+                    (
+                        Expr::Constant(c1),
+                        Expr::Variable(v2),
+                    ) => {
+                        Self::eq_vc(v2, c1)(composer, &inputs);
+                    },
                     // c1 = c2
-                    (Expr::Constant(c1), Expr::Constant(c2)) => {
-                        composer.arithmetic_gate(|gate| {
-                            gate.witness(zero, zero, Some(zero))
-                                .add(F::zero(), F::zero())
-                                .constant(make_constant(&(c2 - c1)))
-                        });
-                    }
+                    (
+                        Expr::Constant(c1),
+                        Expr::Constant(c2),
+                    ) => {
+                        Self::eq_cc(c1, c2)(composer, &inputs);
+                    },
                     // c1 = -c2
-                    (Expr::Constant(c1), Expr::Negate(e2))
-                        if matches!(&e2.v, Expr::Constant(c2) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(zero, zero, Some(zero))
-                                    .add(F::zero(), F::zero())
-                                    .constant(make_constant(&(c1+c2)))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Negate(e2),
+                    ) if matches!(&e2.v, Expr::Constant(c2) if {
+                        Self::eq_cc(c1, &(-c2))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = -v2
-                    (Expr::Constant(c1), Expr::Negate(e2))
-                        if matches!(&e2.v, Expr::Variable(v2) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(make_constant(c1))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Negate(e2),
+                    ) if matches!(&e2.v, Expr::Variable(v2) if {
+                        Self::eq_vc(v2, &(-c1))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = c2 + c3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Add, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Constant(c3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(zero, zero, Some(zero))
-                                    .add(F::zero(), F::zero())
-                                    .constant(make_constant(&(c1-c2-c3)))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::eq_cc(c1, &(c2+c3))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = v2 + c3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Add, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Constant(c3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(make_constant(&(c3-c1)))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::eq_vc(v2, &(c1-c3))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = c2 + v3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Add, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v3.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(make_constant(&(c2-c1)))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::eq_vc(v3, &(c1-c2))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = v2 + v3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Add, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
-                                    .add(F::one(), F::one())
-                                    .constant(make_constant(&-c1))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Add, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::add_cvv(c1, v2, v3)(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = c2 - c3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Constant(c3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(zero, zero, Some(zero))
-                                    .add(F::zero(), F::zero())
-                                    .constant(make_constant(&(c2-c3-c1)))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::eq_cc(c1, &(c2-c3))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = v2 - c3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Constant(c3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(make_constant(&(-c3-c1)))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::eq_vc(v2, &(c1+c3))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = c2 - v3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v3.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(make_constant(&(c1-c2)))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::eq_vc(v3, &(c2-c1))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = v2 - v3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Variable(v3),
-                        ) if {
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
-                                    .add(F::one(), -F::one())
-                                    .constant(make_constant(&-c1))
-                            });
-                            true
-                        }) => {}
-
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Subtract, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::add_vvc(v2, v3, c1)(composer, &inputs);
+                        true
+                    }) => {},
+                    
                     // c1 = c2 / c3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Divide, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            let op2: F = make_constant(c2);
-                            let op3: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(zero, zero, Some(zero))
-                                    .add(F::zero(), F::zero())
-                                    .constant(op1-(op2/op3))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::eq_cc(c2, &(c1*c3))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = v2 / c3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Divide, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            let op3: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(-(op1*op3))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::eq_vc(v2, &(c1*c3))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = c2 / v3 ***
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Divide, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Variable(v3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            let op2: F = make_constant(c2);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v3.id], zero, Some(zero))
-                                    .constant(-(op2/op1))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_cvc(c2, v3, c1)(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = v2 / v3 ***
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Divide, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Variable(v3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
-                                    .add(F::one(), -op1)
-                            });
-                            true
-                        }) => {}
-
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Divide, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_vvc(v2, v3, c1)(composer, &inputs);
+                        true
+                    }) => {},
+                    
                     // c1 = c2 | c3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::DivideZ, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            let op2: F = make_constant(c2);
-                            let op3: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(zero, zero, Some(zero))
-                                    .add(F::zero(), F::zero())
-                                    .constant(op1-(if op3 == F::zero() { F::zero() } else { op2/op3 }))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op3: F = make_constant(c3);
+                        let c = if op3 == F::zero() { 
+                            BigInt::from(0) 
+                        } else { 
+                            op3.inverse().unwrap().into_repr().into().into()
+                        };
+                        Self::eq_cc(c1, &(c2*c3))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = v2 | c3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::DivideZ, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            let op3: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], zero, Some(zero))
-                                    .add(F::one(), F::zero())
-                                    .constant(-(op1*op3))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        let op3: F = make_constant(c3);
+                        let c = if op3 == F::zero() { 
+                            BigInt::from(0) 
+                        } else { 
+                            op3.inverse().unwrap().into_repr().into().into()
+                        };
+                        Self::eq_vc(v2, &(c1*c))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = c2 | v3 ***
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::DivideZ, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Variable(v3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            let op2: F = make_constant(c2);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v3.id], zero, Some(zero))
-                                    .constant(-(if op1 == F::zero() { F::zero() } else { op2/op1 }))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        let op1: F = make_constant(c1);               
+                        let c = if op1 == F::zero() { 
+                            BigInt::from(0) 
+                        } else { 
+                            op1.inverse().unwrap().into_repr().into().into()
+                        };
+                        Self::eq_vc(v3, &(c2*c))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = v2 | v3 ***
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::DivideZ, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Variable(v3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
-                                    .add(F::one(), -op1)
-                            });
-                            true
-                        }) => {}
-
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::DivideZ, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_vvc(v2, v3, c1)(composer, &inputs);
+                        true
+                    }) => {},
+                    
                     // c1 = c2 * c3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            let op2: F = make_constant(c2);
-                            let op3: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(zero, zero, Some(zero))
-                                    .add(F::zero(), F::zero())
-                                    .constant(op1-(op2*op3))
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::eq_cc(c1, &(c2*c3))(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = v2 * c3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Constant(c3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            let op3: F = make_constant(c3);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], zero, Some(zero))
-                                    .add(op3, F::zero())
-                                    .constant(-op1)
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Constant(c3),
+                    ) if {
+                        Self::mul_cvc(c1, v2, c3)(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = c2 * v3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Constant(c2),
-                            Expr::Variable(v3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            let op2: F = make_constant(c2);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v3.id], zero, Some(zero))
-                                    .add(op2, F::zero())
-                                    .constant(-op1)
-                            });
-                            true
-                        }) => {}
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Constant(c2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_cvc(c1, v3, c2)(composer, &inputs);
+                        true
+                    }) => {},
                     // c1 = v2 * v3
-                    (Expr::Constant(c1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                        if matches!((&e2.v, &e3.v), (
-                            Expr::Variable(v2),
-                            Expr::Variable(v3),
-                        ) if {
-                            let op1: F = make_constant(c1);
-                            composer.arithmetic_gate(|gate| {
-                                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
-                                    .mul(F::one())
-                                    .constant(-op1)
-                            });
-                            true
-                        }) => {}
-                    _ => panic!("unsupported constraint encountered: {expr}"),
+                    (
+                        Expr::Constant(c1),
+                        Expr::Infix(InfixOp::Multiply, e2, e3),
+                    ) if matches!((&e2.v, &e3.v), (
+                        Expr::Variable(v2),
+                        Expr::Variable(v3),
+                    ) if {
+                        Self::mul_cvv(c1, v2, v3)(composer, &inputs);
+                        true
+                    }) => {},
+                    _ => panic!("unsupported constraint encountered: {}", expr)
                 }
             }
         }
