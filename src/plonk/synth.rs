@@ -1,6 +1,8 @@
 use crate::ast::Variable;
 use crate::ast::{Expr, InfixOp, Module, Pat, TExpr, VariableId};
 use crate::transform::{collect_module_variables, FieldOps};
+use crate::backend::BackendCompiler;
+use ark_ff::PrimeField;
 use ark_ec::TEModelParameters;
 use ark_ff::PrimeField;
 use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
@@ -217,11 +219,15 @@ where
     }
 }
 
-impl<'a, F, P> PlonkModule<F, P>
+impl<F, P> PlonkModule<F, P>
 where
     F: PrimeField,
     P: TEModelParameters<BaseField = F>,
 {
+    fn one() -> F {
+        F::one()
+    }
+
     /* Make new circuit with default assignments to all variables in module. */
     pub fn new(module: Rc<Module>) -> PlonkModule<F, P> {
         let mut variables = HashMap::new();
@@ -274,128 +280,188 @@ where
         }
         annotated
     }
+}
+
+impl<F, P> BackendCompiler<F, P> for PlonkModule<F, P> 
+where
+    F: PrimeField,
+    P: TEModelParameters<BaseField = F>,
+{
+    type Return = (
+        Option<VariableId>,
+        Option<VariableId>,
+        Option<VariableId>,
+        F,
+        F,
+        F,
+        F,
+        F, 
+    );
+
+    fn invert(x: F) -> F {
+        x.inverse().unwrap()
+    }
+
+    fn to_bigint(x: F) -> BigInt {
+        x.into_repr().into().into()
+    }
+
+    fn to_field(c: &BigInt) -> F {
+        let magnitude = F::from(c.magnitude().clone());
+        if c.is_positive() {
+            magnitude
+        } else {
+            -magnitude
+        }
+    }
 
     // v1 = v2 + v3
-    fn add_vvv(v1: &'a Variable, v2: &'a Variable, v3: &'a Variable) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
-        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
-            composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(inputs[&v3.id]))
-                    .add(F::one(), -F::one())
-                    .out(-F::one())
-            });
-        })
+    // 0 = 0*v2*v3 + 1*v2 + 1*v3 + (-1)*v1 + 0*c
+    fn add_vvv(v1: &Variable, v2: &Variable, v3: &Variable) -> Self::Return {
+        (
+            Some(v1.id),   // w_o
+            Some(v2.id),   // w_l
+            Some(v3.id),   // w_r
+            Self::zero(),  // q_m
+            Self::one(),   // q_l
+            Self::one(),   // q_r
+            -Self::one(),  // q_o
+            Self::zero(),  // q_c
+        )
     }
 
     // v1 = v2 + c3
-    fn add_vvc(v1: &'a Variable, v2: &'a Variable, c3: &'a BigInt) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
-        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
-            let zero = composer.zero_var();
-            composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
-                    .add(F::one(), -F::one())
-                    .constant(make_constant(&-c3.clone()))
-            });
-        })
+    fn add_vvc(v1: &Variable, v2: &Variable, c3: &BigInt) -> Self::Return {
+        (
+            Some(v1.id),        // w_o
+            Some(v2.id),        // w_l
+            None,               // w_r
+            Self::zero(),       // q_m
+            Self::one(),        // q_l
+            Self::zero(),       // q_r
+            -Self::one(),       // q_o
+            Self::to_field(c3), // q_c
+        )
     }
 
     // c1 = v2 + v3
-    fn add_cvv(c1: &'a BigInt, v2: &'a Variable, v3: &'a Variable) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
-        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
-            let zero = composer.zero_var();
-            composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
-                    .add(F::one(), F::one())
-                    .constant(make_constant(&-c1.clone()))
-            });
-        })
+    fn add_cvv(c1: &BigInt, v2: &Variable, v3: &Variable) -> Self::Return {
+        (
+            None,               // w_o
+            Some(v2.id),        // w_l
+            Some(v3.id),        // w_r
+            Self::zero(),       // q_m
+            Self::one(),        // q_l
+            Self::one(),        // q_r
+            Self::zero(),       // q_o
+            -Self::to_field(c1),// q_c
+        )
     }
 
     // v1 = c2
-    fn eq_vc(v1: &'a Variable, c2: &'a BigInt) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
-        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
-            let zero = composer.zero_var();
-            composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&v1.id], zero, Some(zero))
-                    .add(F::one(), F::zero())
-                    .constant(make_constant(&-c2.clone()))
-            });
-        })
+    fn eq_vc(v1: &Variable, c2: &BigInt) -> Self::Return {
+        (
+            Some(v1.id),        // w_o
+            None,               // w_l
+            None,               // w_r
+            Self::zero(),       // q_m
+            Self::zero(),       // q_l
+            Self::zero(),       // q_r
+            -Self::one(),       // q_o
+            Self::to_field(c2), // q_c
+        )
     }
 
     // v1 = v2
-    fn eq_vv(v1: &'a Variable, v2: &'a Variable) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
-        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
-            let zero = composer.zero_var();
-            composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
-                    .add(F::one(), -F::one())
-            });
-
-        })
+    fn eq_vv(v1: &Variable, v2: &Variable) -> Self::Return {
+        (
+            Some(v1.id),        // w_o
+            Some(v2.id),        // w_l
+            None,               // w_r
+            Self::zero(),       // q_m
+            Self::one(),        // q_l
+            Self::zero(),       // q_r
+            -Self::one(),       // q_o
+            Self::zero(),       // q_c
+        )
     }
 
     // c1 = c2
-    fn eq_cc(c1: &'a BigInt, c2: &'a BigInt) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
-        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
-            let zero = composer.zero_var();
-            composer.arithmetic_gate(|gate| {
-                gate.witness(zero, zero, Some(zero))
-                    .add(F::zero(), F::zero())
-                    .constant(make_constant(&(c2.clone()-c1.clone())))
-            });
-        })
+    fn eq_cc(c1: &BigInt, c2: &BigInt) -> Self::Return {
+        (
+            None,                      // w_o
+            None,                      // w_l
+            None,                      // w_r
+            Self::zero(),              // q_m
+            Self::zero(),              // q_l
+            Self::zero(),              // q_r
+            Self::zero(),              // q_o
+            Self::to_field(&(c2-c1)),  // q_c
+        )
     }
 
     // v1 = v2 * v3
-    fn mul_vvv(v1: &'a Variable, v2: &'a Variable, v3: &'a Variable) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
-        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
-            composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(inputs[&v1.id]))
-                    .mul(F::one())
-                    .out(-F::one())
-            });
-        })
+    fn mul_vvv(v1: &Variable, v2: &Variable, v3: &Variable) -> Self::Return {
+        (
+            Some(v1.id),   // w_o
+            Some(v2.id),   // w_l
+            Some(v3.id),   // w_r
+            Self::one(),   // q_m
+            Self::zero(),  // q_l
+            Self::zero(),  // q_r
+            -Self::one(),  // q_o
+            Self::zero(),  // q_c
+        )
     }
 
     // v1 = v2 * c3
-    fn mul_vvc(v1: &'a Variable, v2: &'a Variable, c3: &'a BigInt) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
-        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
-            let zero = composer.zero_var();
-            let op2: F = make_constant(c3);
-            composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&v1.id], inputs[&v2.id], Some(zero))
-                    .add(F::one(), -op2)
-            });
-        })
+    fn mul_vvc(v1: &Variable, v2: &Variable, c3: &BigInt) -> Self::Return {
+        (
+            Some(v1.id),       // w_o
+            Some(v2.id),       // w_l
+            None,              // w_r
+            Self::zero(),      // q_m
+            Self::to_field(c3),// q_l
+            Self::zero(),      // q_r
+            -Self::one(),      // q_o
+            Self::zero(),      // q_c
+        )
     }
 
     // c1 = v2 * c3
-    fn mul_cvc(c1: &'a BigInt, v2: &'a Variable, c3: &'a BigInt) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
-        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
-            let zero = composer.zero_var();
-            let op1: F = make_constant(c1);
-            let op3: F = make_constant(c3);
-            composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&v2.id], zero, Some(zero))
-                    .add(op3, F::zero())
-                    .constant(-op1)
-            });
-        })
+    fn mul_cvc(c1: &BigInt, v2: &Variable, c3: &BigInt) -> Self::Return {
+        (
+            None,                  // w_o
+            Some(v2.id),           // w_l
+            None,                  // w_r
+            Self::zero(),          // q_m
+            Self::to_field(c3),    // q_l
+            Self::zero(),          // q_r
+            Self::zero(),          // q_o
+            -Self::to_field(c1),   // q_c
+        )
     }
 
     // c1 = v2 * v3
-    fn mul_cvv(c1: &'a BigInt, v2: &'a Variable, v3: &'a Variable) -> Box<dyn Fn(&mut StandardComposer<F, P>, &BTreeMap<&u32, plonk_core::constraint_system::Variable>) -> () + 'a> {
-        Box::new(|composer: &mut StandardComposer<F, P>, inputs: &BTreeMap<&u32, plonk_core::constraint_system::Variable>| {
-            let zero = composer.zero_var();
-            let op1: F = make_constant(c1);
-            composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&v2.id], inputs[&v3.id], Some(zero))
-                    .mul(F::one())
-                    .constant(-op1)
-            });
-        })
+    fn mul_cvv(c1: &BigInt, v2: &Variable, v3: &Variable) -> Self::Return {
+        (
+            None,                  // w_o
+            Some(v2.id),           // w_l
+            Some(v3.id),           // w_r
+            Self::one(),           // q_m
+            Self::zero(),          // q_l
+            Self::zero(),          // q_r
+            Self::zero(),          // q_o
+            -Self::to_field(c1),   // q_c
+        )
     }
+
+    fn zero() -> F {
+        Self::to_field(&BigInt::from(0))
+    }
+
 }
+    
 
 impl<F, P> Circuit<F, P> for PlonkModule<F, P>
 where
@@ -414,549 +480,23 @@ where
         // order as this module's public variables
         for var in &self.module.pubs {
             composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&var.id], zero, Some(zero))
-                    .add(-F::one(), F::zero())
-                    .pi(self.variable_map[&var.id])
+                gate.witness(inputs[&var.id], zero, Some(zero)).add(-F::one(), F::zero()).pi(self.variable_map[&var.id])
             });
         }
         for expr in &self.module.exprs {
-            if let Expr::Infix(InfixOp::Equal, lhs, rhs) = &expr.v {
-                match (&lhs.v, &rhs.v) {
-                    // Variables on the LHS
-                    // v1 = v2
-                    (
-                        Expr::Variable(v1),
-                        Expr::Variable(v2),
-                    ) => {
-                        Self::eq_vv(v1, v2)(composer, &inputs)
-                    },
-                    // v1 = c2
-                    (
-                        Expr::Variable(v1),
-                        Expr::Constant(c2),
-                    ) => {
-                        Self::eq_vc(v1, c2)(composer, &inputs)
-                    },
-                    // v1 = -c2
-                    (
-                        Expr::Variable(v1),
-                        Expr::Negate(e2),
-                    ) if matches!(&e2.v, Expr::Constant(c2) if {
-                        Self::eq_vc(v1, &-c2)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = -v2
-                    (
-                        Expr::Variable(v1),
-                        Expr::Negate(e2),
-                    ) if matches!(&e2.v, Expr::Variable(v2) if {
-                        Self::add_cvv(&BigInt::from(0), v1, v2)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = c2 + c3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Add, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::eq_vc(v1, &(c2+c3))(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = v2 + c3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Add, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::add_vvc(v1, v2, c3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = c2 + v3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Add, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::add_vvc(v1, v3, c2)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = v2 + v3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Add, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::add_vvv(v1, v2, v3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = c2 - c3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Subtract, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::eq_vc(v1, &(c2-c3))(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = v2 - c3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Subtract, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::add_vvc(v2, v1, c3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = c2 - v3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Subtract, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::add_cvv(c2, v1, v3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = v2 - v3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Subtract, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::add_vvv(v2, v1, v3)(composer, &inputs);
-                        true
-                    }) => {},
-                    
-                    // v1 = c2 / c3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Divide, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::mul_cvc(c2, v1, c3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = v2 / c3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Divide, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::mul_vvc(v2, v1, c3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = c2 / v3 ***
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Divide, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_cvv(c2, v1, v3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = v2 / v3 ***
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Divide, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_vvv(v2, v1, v3)(composer, &inputs);
-                        true
-                    }) => {},
-                    
-                    // v1 = c2 | c3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::DivideZ, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::mul_cvc(c2, v1, c3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = v2 | c3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::DivideZ, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Constant(c3),
-                    ) if {
-                        let op2: F = make_constant(c3);
-                        let c = if op2 == F::zero() { 
-                            BigInt::from(0)
-                        } else {
-                            op2.inverse().unwrap().into_repr().into().into()
-                        };
-                        Self::mul_vvc(v2, v1, &c)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = c2 | v3 ***
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::DivideZ, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_cvv(c2, v1, v3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = v2 | v3 ***
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::DivideZ, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_vvv(v2, v1, v3)(composer, &inputs);
-                        true
-                    }) => {},
-                    
-                    // v1 = c2 * c3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Multiply, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::eq_vc(v1, &(c2*c3))(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = v2 * c3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Multiply, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::mul_vvc(v1, v2, c3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = c2 * v3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Multiply, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_vvc(v1, v3, c2)(composer, &inputs);
-                        true
-                    }) => {},
-                    // v1 = v2 * v3
-                    (
-                        Expr::Variable(v1),
-                        Expr::Infix(InfixOp::Multiply, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_vvv(v1, v2, v3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // Now for constants on the LHS
-                    // c1 = v2
-                    (
-                        Expr::Constant(c1),
-                        Expr::Variable(v2),
-                    ) => {
-                        Self::eq_vc(v2, c1)(composer, &inputs);
-                    },
-                    // c1 = c2
-                    (
-                        Expr::Constant(c1),
-                        Expr::Constant(c2),
-                    ) => {
-                        Self::eq_cc(c1, c2)(composer, &inputs);
-                    },
-                    // c1 = -c2
-                    (
-                        Expr::Constant(c1),
-                        Expr::Negate(e2),
-                    ) if matches!(&e2.v, Expr::Constant(c2) if {
-                        Self::eq_cc(c1, &(-c2))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = -v2
-                    (
-                        Expr::Constant(c1),
-                        Expr::Negate(e2),
-                    ) if matches!(&e2.v, Expr::Variable(v2) if {
-                        Self::eq_vc(v2, &(-c1))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = c2 + c3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Add, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::eq_cc(c1, &(c2+c3))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = v2 + c3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Add, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::eq_vc(v2, &(c1-c3))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = c2 + v3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Add, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::eq_vc(v3, &(c1-c2))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = v2 + v3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Add, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::add_cvv(c1, v2, v3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = c2 - c3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Subtract, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::eq_cc(c1, &(c2-c3))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = v2 - c3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Subtract, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::eq_vc(v2, &(c1+c3))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = c2 - v3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Subtract, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::eq_vc(v3, &(c2-c1))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = v2 - v3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Subtract, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::add_vvc(v2, v3, c1)(composer, &inputs);
-                        true
-                    }) => {},
-                    
-                    // c1 = c2 / c3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Divide, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::eq_cc(c2, &(c1*c3))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = v2 / c3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Divide, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::eq_vc(v2, &(c1*c3))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = c2 / v3 ***
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Divide, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_cvc(c2, v3, c1)(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = v2 / v3 ***
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Divide, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_vvc(v2, v3, c1)(composer, &inputs);
-                        true
-                    }) => {},
-                    
-                    // c1 = c2 | c3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::DivideZ, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Constant(c3),
-                    ) if {
-                        let op3: F = make_constant(c3);
-                        let c = if op3 == F::zero() { 
-                            BigInt::from(0) 
-                        } else { 
-                            op3.inverse().unwrap().into_repr().into().into()
-                        };
-                        Self::eq_cc(c1, &(c2*c))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = v2 | c3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::DivideZ, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Constant(c3),
-                    ) if {
-                        let op3: F = make_constant(c3);
-                        let c = if op3 == F::zero() { 
-                            BigInt::from(0) 
-                        } else { 
-                            op3.inverse().unwrap().into_repr().into().into()
-                        };
-                        Self::eq_vc(v2, &(c1*c))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = c2 | v3 ***
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::DivideZ, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Variable(v3),
-                    ) if {
-                        let op1: F = make_constant(c1);               
-                        let c = if op1 == F::zero() { 
-                            BigInt::from(0) 
-                        } else { 
-                            op1.inverse().unwrap().into_repr().into().into()
-                        };
-                        Self::eq_vc(v3, &(c2*c))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = v2 | v3 ***
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::DivideZ, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_vvc(v2, v3, c1)(composer, &inputs);
-                        true
-                    }) => {},
-                    
-                    // c1 = c2 * c3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Multiply, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::eq_cc(c1, &(c2*c3))(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = v2 * c3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Multiply, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Constant(c3),
-                    ) if {
-                        Self::mul_cvc(c1, v2, c3)(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = c2 * v3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Multiply, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Constant(c2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_cvc(c1, v3, c2)(composer, &inputs);
-                        true
-                    }) => {},
-                    // c1 = v2 * v3
-                    (
-                        Expr::Constant(c1),
-                        Expr::Infix(InfixOp::Multiply, e2, e3),
-                    ) if matches!((&e2.v, &e3.v), (
-                        Expr::Variable(v2),
-                        Expr::Variable(v3),
-                    ) if {
-                        Self::mul_cvv(c1, v2, v3)(composer, &inputs);
-                        true
-                    }) => {},
-                    _ => panic!("unsupported constraint encountered: {}", expr)
-                }
-            }
+            let (v1, v2, v3, q_m, q_l, q_r, q_o, q_c) = Self::arithmetic_synth(&expr);
+            let w_o = v1.map_or(composer.zero_var(), |id| inputs[&id]);
+            let w_l = v2.map_or(composer.zero_var(), |id| inputs[&id]);
+            let w_r = v3.map_or(composer.zero_var(), |id| inputs[&id]);
+            
+            composer.arithmetic_gate(|gate|
+                gate
+                    .witness(w_l, w_r, Some(w_o))
+                    .add(q_l, q_r)
+                    .mul(q_m)
+                    .out(q_o)
+                    .constant(q_c)
+            );
         }
         Ok(())
     }
