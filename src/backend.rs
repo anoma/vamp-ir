@@ -1,7 +1,7 @@
 use num_bigint::BigInt;
 use crate::ast::{TExpr, Variable, Expr, InfixOp};
 
-pub trait BackendCompiler<F, P> 
+pub trait BackendCompiler<F, P, R> 
 where
     F: PartialEq,
 {
@@ -12,23 +12,22 @@ where
     //     assigns: &mut HashMap<VariableId, F>,
     // ) -> F;
 
-    // fn synthesize_applications<R>(expr: &TExpr) -> R;
-    type Return;
+    // fn synthesize_applications(expr: &TExpr) -> R;
 
     fn invert(x: F) -> F;
     fn to_bigint(x: F)-> BigInt;
     fn to_field(c: &BigInt) -> F;
 
-    fn add_vvv(v1: &Variable, v2: &Variable, v3: &Variable) -> Self::Return;
-    fn add_vvc(v1: &Variable, v2: &Variable, c3: &BigInt) -> Self::Return;
-    fn add_cvv(c1: &BigInt, v2: &Variable, v3: &Variable) -> Self::Return;
-    fn eq_vc(v1: &Variable, c2: &BigInt) -> Self::Return;
-    fn eq_vv(v1: &Variable, v2: &Variable) -> Self::Return;
-    fn eq_cc(c1: &BigInt, c2: &BigInt) -> Self::Return;
-    fn mul_vvv(v1: &Variable, v2: &Variable, v3: &Variable) -> Self::Return;
-    fn mul_vvc(v1: &Variable, v2: &Variable, c3: &BigInt) -> Self::Return;
-    fn mul_cvc(c1: &BigInt, v2: &Variable, c3: &BigInt) -> Self::Return;
-    fn mul_cvv(c1: &BigInt, v2: &Variable, v3: &Variable) -> Self::Return;
+    fn add_vvv(v1: &Variable, v2: &Variable, v3: &Variable) -> R;
+    fn add_vvc(v1: &Variable, v2: &Variable, c3: &BigInt) -> R;
+    fn add_cvv(c1: &BigInt, v2: &Variable, v3: &Variable) -> R;
+    fn eq_vc(v1: &Variable, c2: &BigInt) -> R;
+    fn eq_vv(v1: &Variable, v2: &Variable) -> R;
+    fn eq_cc(c1: &BigInt, c2: &BigInt) -> R;
+    fn mul_vvv(v1: &Variable, v2: &Variable, v3: &Variable) -> R;
+    fn mul_vvc(v1: &Variable, v2: &Variable, c3: &BigInt) -> R;
+    fn mul_cvc(c1: &BigInt, v2: &Variable, c3: &BigInt) -> R;
+    fn mul_cvv(c1: &BigInt, v2: &Variable, v3: &Variable) -> R;
     
 
     fn zero() -> F {
@@ -36,7 +35,7 @@ where
     }
 
     // arith synth
-    fn arithmetic_synth(expr: & TExpr) -> Self::Return {
+    fn arithmetic_synth(expr: & TExpr) -> R {
         if let Expr::Infix(InfixOp::Equal, lhs, rhs) = &expr.v {
             match (&lhs.v, &rhs.v) {
                 // Variables on the LHS
