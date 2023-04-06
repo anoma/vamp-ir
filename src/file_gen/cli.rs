@@ -1,4 +1,4 @@
-use crate::ast::{InfixOp, Module, Pat, Expr};
+use crate::ast::{InfixOp, Module, Pat, Expr, Variable};
 use crate::error::Error;
 use crate::transform::{collect_module_variables, compile, FieldOps};
 
@@ -121,10 +121,17 @@ pub fn witness_file_cmd(
     Ok(())
 }
 
+fn var_to_string(var: &Variable) -> String {
+      match &var.name {
+          None => format!("Var{}", var.id),
+          Some(n) => format!("{}", n),
+      }
+}
+
 fn atom_to_string(expr: &Expr) -> String {
     match expr {
         Expr::Constant(c) => c.to_string(),
-        Expr::Variable(v) => format!("x{}", v.id),
+        Expr::Variable(v) => var_to_string(v),
         _ => "".to_string(),
     }
 }
@@ -140,28 +147,29 @@ pub fn dump_equations_three_addr(module_3ac: &Module, path: &PathBuf) -> std::io
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
             match (&left.v, &right.v) {
                 // a = c, for constant c and variables a
-                (Expr::Variable(a), Expr::Constant(c)) => {
+                (Expr::Variable(_), Expr::Constant(_)) => {
                     write!(
                         writer,
-                        "= x{} {},\n",
-                        a.id, c
+                        "= {} {},\n",
+                        atom_to_string(&left.v), atom_to_string(&right.v)
                     )?;
                 }
             
                 // a = c, for variables a and c
-                (Expr::Variable(a), Expr::Variable(c)) => {
+                (Expr::Variable(_), Expr::Variable(_)) => {
                     write!(
                         writer,
-                        "= x{} x{},\n",
-                        a.id, c.id
+                        "= {} {},\n",
+                        atom_to_string(&left.v), atom_to_string(&right.v)
                     )?;
                 }
             
-                (Expr::Variable(c), Expr::Infix(op, t1, t2)) => {
+                // a = b op c, for variable a
+                (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
                     write!(
                       writer,
-                      "{} {} {} x{},\n",
-                      op, atom_to_string(&t1.v), atom_to_string(&t2.v), c.id
+                      "{} {} {} {},\n",
+                      op, atom_to_string(&t1.v), atom_to_string(&t2.v), atom_to_string(&left.v)
                     )?;
                 }
                   
@@ -211,8 +219,8 @@ pub fn dump_equations_z3(module_3ac: &Module, path: &PathBuf, typ: &Option<Strin
     for var in input_variables.values() {
         write!(
             writer,
-            "(declare-const x{} {})\n",
-            var.id, tystr
+            "(declare-const {} {})\n",
+            var_to_string(var), tystr
         )?;
     }
     
@@ -220,28 +228,29 @@ pub fn dump_equations_z3(module_3ac: &Module, path: &PathBuf, typ: &Option<Strin
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
             match (&left.v, &right.v) {
                 // a = c, for constant c and variables a
-                (Expr::Variable(a), Expr::Constant(c)) => {
+                (Expr::Variable(_), Expr::Constant(_)) => {
                     write!(
                         writer,
-                        "(assert (= x{} {}))\n",
-                        a.id, c
+                        "(assert (= {} {}))\n",
+                        atom_to_string(&left.v), atom_to_string(&right.v)
                     )?;
                 }
             
                 // a = c, for variables a and c
-                (Expr::Variable(a), Expr::Variable(c)) => {
+                (Expr::Variable(_), Expr::Variable(_)) => {
                     write!(
                         writer,
-                        "(assert (= x{} x{}))\n",
-                        a.id, c.id
+                        "(assert (= {} {}))\n",
+                        atom_to_string(&left.v), atom_to_string(&right.v)
                     )?;
                 }
             
-                (Expr::Variable(c), Expr::Infix(op, t1, t2)) => {
+                // a = b op c, for variable a
+                (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
                     write!(
                       writer,
-                      "(assert (= ({} {} {}) x{}))\n",
-                      op, atom_to_string(&t1.v), atom_to_string(&t2.v), c.id
+                      "(assert (= ({} {} {}) {}))\n",
+                      op, atom_to_string(&t1.v), atom_to_string(&t2.v), atom_to_string(&left.v)
                     )?;
                 }
                   
