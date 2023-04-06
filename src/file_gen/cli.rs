@@ -19,12 +19,12 @@ use crate::util::Config;
 
 #[derive(Subcommand)]
 pub enum GenerateCommands {
-    /// Export witnesses into a template JSON file
+    /// Export witnesses into a template JSON file.
     WitnessFile(JSONWitnessFile),
-    /// Export circuit into a comma-separated three-address format
+    /// Export circuit into a comma-separated three-address format.
     ThreeAddressFile(ThreeAddressFile),
     /// Export circuit into a z3 compatable format.
-    Z3File(ThreeAddressFile),
+    Z3File(Z3File),
 }
 
 #[derive(Args)]
@@ -40,10 +40,10 @@ pub struct JSONWitnessFile {
 
 #[derive(Args)]
 pub struct ThreeAddressFile {
-    /// Path to source file that witnesses come from
+    /// Path to source file that witnesses come from.
     #[arg(short, long)]
     source: PathBuf,
-    /// Path to which the witness file is written
+    /// Path to which the witness file is written.
     #[arg(short, long)]
     output: PathBuf,
 }
@@ -51,12 +51,15 @@ pub struct ThreeAddressFile {
 
 #[derive(Args)]
 pub struct Z3File {
-    /// Path to source file that witnesses come from
+    /// Path to source file that witnesses come from.
     #[arg(short, long)]
     source: PathBuf,
-    /// Path to which the witness file is written
+    /// Path to which the witness file is written.
     #[arg(short, long)]
     output: PathBuf,
+    /// Type of elements within generated file. If unspecified, will be filed with "?".
+    #[arg(short, long)]
+    typ: Option<String>,
 }
 
 
@@ -186,12 +189,32 @@ pub fn three_addr_file_cmd(ThreeAddressFile { source, output }: &ThreeAddressFil
 }
 
 
-pub fn dump_equations_z3(module_3ac: &Module, path: &PathBuf) -> std::io::Result<()> {
+pub fn dump_equations_z3(module_3ac: &Module, path: &PathBuf, typ: &Option<String>) -> std::io::Result<()> {
     let file = OpenOptions::new()
         .write(true)
         .create(true)
         .open(path)?;
     let mut writer = BufWriter::new(file);
+    
+    let tystr =
+        match typ {
+            Some(s) => {s}
+            None => {"?"}
+        };
+    
+    
+    println!("** Collecting variables...");
+    // Collect unbound variables from module
+    let mut input_variables = HashMap::new();
+    collect_module_variables(&module_3ac, &mut input_variables);
+    
+    for var in input_variables.values() {
+        write!(
+            writer,
+            "(declare-const x{} {})\n",
+            var.id, tystr
+        )?;
+    }
     
     for expr in &module_3ac.exprs {
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
@@ -227,21 +250,26 @@ pub fn dump_equations_z3(module_3ac: &Module, path: &PathBuf) -> std::io::Result
         }
     }
 
+    write!(
+      writer,
+      "(check-sat)\n(get-model)\n"
+    )?;
+    
     writer.flush()?;
     Ok(())
 }
 
 /* Implements the subcommand that writes circuit into comma separated, three-address file. */
-pub fn z3_file_cmd(ThreeAddressFile { source, output }: &ThreeAddressFile, config: &Config) -> Result<(), Error> {
+pub fn z3_file_cmd(Z3File { source, output, typ }: &Z3File, config: &Config) -> Result<(), Error> {
     qprintln!(config, "** Reading file...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
     let module_3ac = compile(module.clone(), &(), config);
     
     qprintln!(config, "** Writing equations to file...");
-    dump_equations_z3(&module_3ac, output).map_err(|err| qprintln!(config, "{:?}", err)).ok();
+    dump_equations_z3(&module_3ac, output, typ).map_err(|err| qprintln!(config, "{:?}", err)).ok();
 
-    qprintln!(config, "** Three address file generation success!");
+    qprintln!(config, "** Z3 file generation success!");
 
     Ok(())
 }
