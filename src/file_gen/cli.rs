@@ -21,8 +21,10 @@ use crate::util::Config;
 pub enum GenerateCommands {
     /// Export witnesses into a template JSON file
     WitnessFile(JSONWitnessFile),
-    /// Export witnesses into a template JSON file
+    /// Export circuit into a comma-separated three-address format
     ThreeAddressFile(ThreeAddressFile),
+    /// Export circuit into a z3 compatable format.
+    Z3File(ThreeAddressFile),
 }
 
 #[derive(Args)]
@@ -45,6 +47,18 @@ pub struct ThreeAddressFile {
     #[arg(short, long)]
     output: PathBuf,
 }
+
+
+#[derive(Args)]
+pub struct Z3File {
+    /// Path to source file that witnesses come from
+    #[arg(short, long)]
+    source: PathBuf,
+    /// Path to which the witness file is written
+    #[arg(short, long)]
+    output: PathBuf,
+}
+
 
 // Trivial FieldOps for witness file generation
 impl FieldOps for () {
@@ -104,6 +118,14 @@ pub fn witness_file_cmd(
     Ok(())
 }
 
+fn atom_to_string(expr: &Expr) -> String {
+    match expr {
+        Expr::Constant(c) => c.to_string(),
+        Expr::Variable(v) => format!("x{}", v.id),
+        _ => "".to_string(),
+    }
+}
+
 pub fn dump_equations_three_addr(module_3ac: &Module, path: &PathBuf) -> std::io::Result<()> {
     let file = OpenOptions::new()
         .write(true)
@@ -133,49 +155,14 @@ pub fn dump_equations_three_addr(module_3ac: &Module, path: &PathBuf) -> std::io
                 }
             
                 (Expr::Variable(c), Expr::Infix(op, t1, t2)) => {
-                    match (&t1.v, &t2.v) {
-                        // a op b = c, for constant a an b and variables c
-                        // This case should be removable by an optimizer
-                        (Expr::Constant(a), Expr::Constant(b)) => {
-                            write!(
-                                writer,
-                                "{} {} {} x{},\n",
-                                op, a, b, c.id
-                            )?;
-                        }
-                    
-                        // a op b = c, for constant a and variables b and c
-                        (Expr::Constant(a), Expr::Variable(b)) => {
-                            write!(
-                                writer,
-                                "{} {} x{} x{},\n",
-                                op, a, b.id, c.id
-                            )?;
-                        }
-                        
-                        // a op b = c, for constant b and variables a and c
-                        (Expr::Variable(a), Expr::Constant(b)) => {
-                            write!(
-                                writer,
-                                "{} x{} {} x{},\n",
-                                op, a.id, b, c.id
-                            )?;
-                        }
-                        
-                        // a op b = c, for variables a, b and c
-                        (Expr::Variable(a), Expr::Variable(b)) => {
-                            write!(
-                                writer,
-                                "{} x{} x{} x{},\n",
-                                op, a.id, b.id, c.id
-                            )?;
-                        }
-                        
-                        _ => {}
-                     }
+                    write!(
+                      writer,
+                      "{} {} {} x{},\n",
+                      op, atom_to_string(&t1.v), atom_to_string(&t2.v), c.id
+                    )?;
                 }
                   
-            _ => {}
+                _ => {}
             }
         }
     }
@@ -186,17 +173,76 @@ pub fn dump_equations_three_addr(module_3ac: &Module, path: &PathBuf) -> std::io
 
 /* Implements the subcommand that writes circuit into comma separated, three-address file. */
 pub fn three_addr_file_cmd(ThreeAddressFile { source, output }: &ThreeAddressFile, config: &Config) -> Result<(), Error> {
-    println!("** Reading file...");
+    qprintln!(config, "** Reading file...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
     let module_3ac = compile(module.clone(), &(), config);
     
-    println!("{}", module_3ac);
-    
-    println!("** Writing witnesses to file...");
-    dump_equations_three_addr(&module_3ac, output).map_err(|err| println!("{:?}", err)).ok();
+    qprintln!(config, "** Writing equations to file...");
+    dump_equations_three_addr(&module_3ac, output).map_err(|err| qprintln!(config, "{:?}", err)).ok();
+    qprintln!(config, "** Three address file generation success!");
 
-    println!("** Witnesses file generation success!");
+    Ok(())
+}
+
+
+pub fn dump_equations_z3(module_3ac: &Module, path: &PathBuf) -> std::io::Result<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(path)?;
+    let mut writer = BufWriter::new(file);
+    
+    for expr in &module_3ac.exprs {
+        if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
+            match (&left.v, &right.v) {
+                // a = c, for constant c and variables a
+                (Expr::Variable(a), Expr::Constant(c)) => {
+                    write!(
+                        writer,
+                        "(assert (= x{} {}))\n",
+                        a.id, c
+                    )?;
+                }
+            
+                // a = c, for variables a and c
+                (Expr::Variable(a), Expr::Variable(c)) => {
+                    write!(
+                        writer,
+                        "(assert (= x{} x{}))\n",
+                        a.id, c.id
+                    )?;
+                }
+            
+                (Expr::Variable(c), Expr::Infix(op, t1, t2)) => {
+                    write!(
+                      writer,
+                      "(assert (= ({} {} {}) x{}))\n",
+                      op, atom_to_string(&t1.v), atom_to_string(&t2.v), c.id
+                    )?;
+                }
+                  
+                _ => {}
+            }
+        }
+    }
+
+    writer.flush()?;
+    Ok(())
+}
+
+/* Implements the subcommand that writes circuit into comma separated, three-address file. */
+pub fn z3_file_cmd(ThreeAddressFile { source, output }: &ThreeAddressFile, config: &Config) -> Result<(), Error> {
+    qprintln!(config, "** Reading file...");
+    let unparsed_file = fs::read_to_string(source).expect("cannot read file");
+    let module = Module::parse(&unparsed_file).unwrap();
+    let module_3ac = compile(module.clone(), &(), config);
+    
+    qprintln!(config, "** Writing equations to file...");
+    dump_equations_z3(&module_3ac, output).map_err(|err| qprintln!(config, "{:?}", err)).ok();
+
+    qprintln!(config, "** Three address file generation success!");
+
     Ok(())
 }
 
@@ -204,5 +250,6 @@ pub fn generate(generate_commands: &GenerateCommands, config: &Config) -> Result
     match generate_commands {
         GenerateCommands::WitnessFile(args) => witness_file_cmd(args, config),
         GenerateCommands::ThreeAddressFile(args) => three_addr_file_cmd(args, config),
+        GenerateCommands::Z3File(args) => z3_file_cmd(args, config),
     }
 }
