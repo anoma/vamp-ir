@@ -1,5 +1,7 @@
-use crate::{compile, read_inputs_from_file, prompt_inputs, Module};
+use crate::utilities::util::{read_inputs_from_file, prompt_inputs};
 use crate::halo2::synth::{Halo2Module, PrimeFieldOps, verifier, prover, keygen, make_constant};
+use crate::ast::Module;
+use crate::transform::compile;
 
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::pasta::{EqAffine, Fp};

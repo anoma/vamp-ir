@@ -1,5 +1,7 @@
-use crate::{read_inputs_from_file, prompt_inputs, compile, Module};
 use crate::plonk::synth::{PlonkModule, PrimeFieldOps, make_constant};
+use crate::ast::Module;
+use crate::transform::compile;
+use crate::utilities::util::{read_inputs_from_file, prompt_inputs};
 
 use plonk_core::prelude::VerifierData;
 use plonk_core::proof_system::{ProverKey, VerifierKey, Proof};
@@ -120,7 +122,7 @@ struct PlonkCircuitData {
 }
 
 impl PlonkCircuitData {
-    fn read<R>(mut reader: R) -> Result<Self, DecodeError>
+    pub fn read<R>(mut reader: R) -> Result<Self, DecodeError>
     where R: std::io::Read {
         let pk_p = ProverKey::<BlsScalar>::deserialize(&mut reader)
             .map_err(|x| DecodeError::OtherString(x.to_string()))?;
@@ -131,7 +133,7 @@ impl PlonkCircuitData {
         Ok(Self { pk_p, vk, circuit })
     }
 
-    fn write<W>(&self, mut writer: W) -> Result<(), EncodeError>
+    pub fn write<W>(&self, mut writer: W) -> Result<(), EncodeError>
     where W: std::io::Write {
         self.pk_p.serialize(&mut writer)
             .map_err(|x| EncodeError::OtherString(x.to_string()))?;
