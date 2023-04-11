@@ -1,7 +1,11 @@
 [package]
 name = "vamp-ir"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
+
+[lib]
+name = "vamp_ir"
+path = "src/lib.rs"
 
 [features]
 # Enable Standard Library

@@ -1,5 +1,7 @@
-use crate::halo2::synth::{keygen, make_constant, prover, verifier, Halo2Module, PrimeFieldOps};
-use crate::{compile, prompt_inputs, read_inputs_from_file, Module};
+use crate::ast::Module;
+use crate::transform::compile;
+use crate::halo2::synth::{Halo2Module, PrimeFieldOps, verifier, prover, keygen, make_constant};
+use crate::util::{read_inputs_from_file, prompt_inputs};
 
 use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::plonk::keygen_vk;
@@ -39,7 +41,7 @@ pub struct Halo2Compile {
 
 #[derive(Args)]
 pub struct Halo2Prove {
-    /// Path to circuit on which to construct proof
+    /// Path to circuit on which to construct proof[[bin]]
     #[arg(short, long)]
     circuit: PathBuf,
     /// Path to which the proof is written
