@@ -1,5 +1,7 @@
-use crate::plonk::synth::{make_constant, PlonkModule, PrimeFieldOps};
-use crate::{compile, prompt_inputs, read_inputs_from_file, Module};
+use crate::ast::Module;
+use crate::transform::compile;
+use crate::plonk::synth::{PlonkModule, PrimeFieldOps, make_constant};
+use crate::util::{read_inputs_from_file, prompt_inputs};
 
 use ark_bls12_381::{Bls12_381, Fr as BlsScalar};
 use ark_ec::PairingEngine;
