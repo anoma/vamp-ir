@@ -1,19 +1,19 @@
 mod ast;
-mod transform;
-mod plonk;
 mod halo2;
+mod plonk;
+mod transform;
 mod typecheck;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
 
-use crate::ast::{Module, VariableId, Pat, parse_prefixed_num};
-use crate::transform::{compile, collect_module_variables};
+use crate::ast::{parse_prefixed_num, Module, Pat, VariableId};
+use crate::transform::{collect_module_variables, compile};
 
 use std::collections::{HashMap, HashSet};
 
-use crate::halo2::cli::{Halo2Commands, halo2};
-use crate::plonk::cli::{PlonkCommands, plonk};
+use crate::halo2::cli::{halo2, Halo2Commands};
+use crate::plonk::cli::{plonk, PlonkCommands};
 use std::io::Write;
 
 use std::fs::File;
@@ -21,8 +21,8 @@ use std::fs::File;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
-use std::ops::Neg;
 use num_traits::Num;
+use std::ops::Neg;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -49,9 +49,11 @@ enum ProofSystems {
 
 /* Read satisfying inputs to the given program from a file. */
 fn read_inputs_from_file<F>(annotated: &Module, path_to_inputs: &PathBuf) -> HashMap<VariableId, F>
-where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug {
-    let inputs = File::open(path_to_inputs)
-        .expect("Could not open inputs file");
+where
+    F: Num + Neg<Output = F>,
+    <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug,
+{
+    let inputs = File::open(path_to_inputs).expect("Could not open inputs file");
 
     // Read the user-supplied inputs from the file
     let named_assignments: HashMap<String, String> = serde_json::from_reader(inputs).unwrap();
@@ -62,7 +64,7 @@ where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fm
 
     // Defined variables should not be requested from user
     for def in &annotated.defs {
-        if let Pat::Variable(var) = &def.0.0.v {
+        if let Pat::Variable(var) = &def.0 .0.v {
             input_variables.remove(&var.id);
         }
     }
@@ -74,21 +76,24 @@ where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fm
         variable_assignments.insert(
             id,
             parse_prefixed_num(&named_assignments[&expected_var.name.unwrap()].clone())
-                .expect("input not an integer")
+                .expect("input not an integer"),
         );
     }
 
     variable_assignments
-    
 }
 
 /* Prompt for satisfying inputs to the given program. */
-fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Num + Neg<Output = F>, <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug {
+fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F>
+where
+    F: Num + Neg<Output = F>,
+    <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug,
+{
     let mut input_variables = HashMap::new();
     collect_module_variables(&annotated, &mut input_variables);
     // Defined variables should not be requested from user
     for def in &annotated.defs {
-        if let Pat::Variable(var) = &def.0.0.v {
+        if let Pat::Variable(var) = &def.0 .0.v {
             input_variables.remove(&var.id);
         }
     }
@@ -113,8 +118,7 @@ fn prompt_inputs<F>(annotated: &Module) -> HashMap<VariableId, F> where F: Num +
         std::io::stdin()
             .read_line(&mut input_line)
             .expect("failed to read input");
-        let x = parse_prefixed_num(input_line.trim())
-            .expect("input not an integer");
+        let x = parse_prefixed_num(input_line.trim()).expect("input not an integer");
         var_assignments.insert(id, x);
     }
     var_assignments
