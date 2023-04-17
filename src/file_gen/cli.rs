@@ -27,6 +27,8 @@ pub enum GenerateCommands {
     Z3File(Z3File),
     /// Export circuit into a Mathematica compatable format.
     MathematicaFile(MathematicaFile),
+    /// Export circuit into a Prolog compatable format.
+    PrologFile(PrologFile),
 }
 
 #[derive(Args)]
@@ -77,6 +79,18 @@ pub struct MathematicaFile {
     #[arg(short, long)]
     typ: Option<String>,
 }
+
+
+#[derive(Args)]
+pub struct PrologFile {
+    /// Path to source file that witnesses come from.
+    #[arg(short, long)]
+    source: PathBuf,
+    /// Path to which the witness file is written.
+    #[arg(short, long)]
+    output: PathBuf,
+}
+
 
 
 // Trivial FieldOps for witness file generation
@@ -146,7 +160,7 @@ pub fn witness_file_cmd(
 fn var_to_string(var: &Variable) -> String {
       match &var.name {
           None => format!("Var{}", var.id),
-          Some(n) => format!("{}", n),
+          Some(n) => format!("Var{}", n),
       }
 }
 
@@ -410,11 +424,110 @@ pub fn mathematica_file_cmd(MathematicaFile { source, output, typ }: &Mathematic
     Ok(())
 }
 
+
+pub fn dump_equations_prolog(module_3ac: &Module, path: &PathBuf, config: &Config) -> std::io::Result<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(path)?;
+    let mut writer = BufWriter::new(file);
+    
+    qprintln!(config, "** Collecting variables...");
+    // Collect unbound variables from module
+    let mut input_variables = HashMap::new();
+    collect_module_variables(&module_3ac, &mut input_variables);
+    
+    write!(
+            writer,
+            ":- use_module(library(clpfd)).\n\ncircuit("
+        )?;
+    
+    
+    for (index, var) in input_variables.values().enumerate() {
+        write!(
+            writer,
+            "{}",
+            var_to_string(var)
+        )?;
+        
+        if index != input_variables.values().len() - 1 {
+            write!(writer, ", ")?;
+        }
+    }
+    
+    write!(
+            writer,
+            ") :- \n"
+        )?;
+    
+    for (index, expr) in module_3ac.exprs.iter().enumerate() {
+        write!(writer, "  ")?;
+    
+        if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
+            match (&left.v, &right.v) {
+                // a = c, for constant c and variables a
+                (Expr::Variable(_), Expr::Constant(_)) => {
+                    write!(
+                        writer,
+                        "{} #= {}",
+                        atom_to_string(&left.v), atom_to_string(&right.v)
+                    )?;
+                }
+            
+                // a = c, for variables a and c
+                (Expr::Variable(_), Expr::Variable(_)) => {
+                    write!(
+                        writer,
+                        "{} #= {}",
+                        atom_to_string(&left.v), atom_to_string(&right.v)
+                    )?;
+                }
+            
+                // a = b op c, for variable a
+                (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
+                    write!(
+                      writer,
+                      "{} {} {} #= {}",
+                      atom_to_string(&t1.v), op, atom_to_string(&t2.v), atom_to_string(&left.v)
+                    )?;
+                }
+                  
+                _ => {}
+            }
+        }
+        
+        if index != module_3ac.exprs.len() - 1 {
+            write!(writer, ",\n")?;
+        }
+    }
+    
+    write!(writer, ".\n")?;
+    
+    writer.flush()?;
+    Ok(())
+}
+
+/* Implements the subcommand that writes circuit into a prolog file. */
+pub fn prolog_file_cmd(PrologFile { source, output }: &PrologFile, config: &Config) -> Result<(), Error> {
+    qprintln!(config, "** Reading file...");
+    let unparsed_file = fs::read_to_string(source).expect("cannot read file");
+    let module = Module::parse(&unparsed_file).unwrap();
+    let module_3ac = compile(module.clone(), &(), config);
+    
+    qprintln!(config, "** Writing equations to file...");
+    dump_equations_prolog(&module_3ac, output, config).map_err(|err| qprintln!(config, "{:?}", err)).ok();
+
+    qprintln!(config, "** Prolog file generation success!");
+
+    Ok(())
+}
+
 pub fn generate(generate_commands: &GenerateCommands, config: &Config) -> Result<(), Error> {
     match generate_commands {
         GenerateCommands::WitnessFile(args) => witness_file_cmd(args, config),
         GenerateCommands::ThreeAddressFile(args) => three_addr_file_cmd(args, config),
         GenerateCommands::Z3File(args) => z3_file_cmd(args, config),
         GenerateCommands::MathematicaFile(args) => mathematica_file_cmd(args, config),
+        GenerateCommands::PrologFile(args) => prolog_file_cmd(args, config),
     }
 }
