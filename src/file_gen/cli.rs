@@ -23,8 +23,10 @@ pub enum GenerateCommands {
     WitnessFile(JSONWitnessFile),
     /// Export circuit into a comma-separated three-address format.
     ThreeAddressFile(ThreeAddressFile),
-    /// Export circuit into a z3 compatable format.
+    /// Export circuit into a Z3 compatable format.
     Z3File(Z3File),
+    /// Export circuit into a Mathematica compatable format.
+    MathematicaFile(MathematicaFile),
 }
 
 #[derive(Args)]
@@ -63,16 +65,36 @@ pub struct Z3File {
 }
 
 
+#[derive(Args)]
+pub struct MathematicaFile {
+    /// Path to source file that witnesses come from.
+    #[arg(short, long)]
+    source: PathBuf,
+    /// Path to which the witness file is written.
+    #[arg(short, long)]
+    output: PathBuf,
+    /// Type of elements within generated file. If unspecified, will be filed with "?".
+    #[arg(short, long)]
+    typ: Option<String>,
+}
+
+
 // Trivial FieldOps for witness file generation
 impl FieldOps for () {
-    fn canonical(&self, a: BigInt) -> BigInt {
-        a
-    }
-    fn negate(&self, a: BigInt) -> BigInt {
-        a
-    }
-    fn infix(&self, _: InfixOp, a: BigInt, _: BigInt) -> BigInt {
-        a
+    fn canonical(&self, a: BigInt) -> BigInt { a }
+    fn negate(&self, a: BigInt) -> BigInt { -a }
+    fn infix(&self, op: InfixOp, a: BigInt, b: BigInt) -> BigInt {
+        match op {
+            InfixOp::Add => a + b,
+            InfixOp::Subtract => a - b,
+            InfixOp::Multiply => a * b,
+            InfixOp::Divide => panic!("cannot evaluate Divide expression"),
+            InfixOp::DivideZ => panic!("cannot evaluate DivideZ expression"),
+            InfixOp::IntDivide => a / b,
+            InfixOp::Modulo => a % b,
+            InfixOp::Exponentiate => panic!("cannot evaluate Exponentiate expression"),
+            InfixOp::Equal => panic!("cannot evaluate equals expression"),
+        }
     }
 }
 
@@ -197,7 +219,7 @@ pub fn three_addr_file_cmd(ThreeAddressFile { source, output }: &ThreeAddressFil
 }
 
 
-pub fn dump_equations_z3(module_3ac: &Module, path: &PathBuf, typ: &Option<String>) -> std::io::Result<()> {
+pub fn dump_equations_z3(module_3ac: &Module, path: &PathBuf, typ: &Option<String>, config: &Config) -> std::io::Result<()> {
     let file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -211,7 +233,7 @@ pub fn dump_equations_z3(module_3ac: &Module, path: &PathBuf, typ: &Option<Strin
         };
     
     
-    println!("** Collecting variables...");
+    qprintln!(config, "** Collecting variables...");
     // Collect unbound variables from module
     let mut input_variables = HashMap::new();
     collect_module_variables(&module_3ac, &mut input_variables);
@@ -276,9 +298,114 @@ pub fn z3_file_cmd(Z3File { source, output, typ }: &Z3File, config: &Config) -> 
     let module_3ac = compile(module.clone(), &(), config);
     
     qprintln!(config, "** Writing equations to file...");
-    dump_equations_z3(&module_3ac, output, typ).map_err(|err| qprintln!(config, "{:?}", err)).ok();
+    dump_equations_z3(&module_3ac, output, typ, config).map_err(|err| qprintln!(config, "{:?}", err)).ok();
 
     qprintln!(config, "** Z3 file generation success!");
+
+    Ok(())
+}
+
+pub fn dump_equations_mathematica(module_3ac: &Module, path: &PathBuf, typ: &Option<String>, config: &Config) -> std::io::Result<()> {
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .open(path)?;
+    let mut writer = BufWriter::new(file);
+    
+    let tystr =
+        match typ {
+            Some(s) => {s}
+            None => {"?"}
+        };
+    
+    
+    qprintln!(config, "** Collecting variables...");
+    // Collect unbound variables from module
+    let mut input_variables = HashMap::new();
+    collect_module_variables(&module_3ac, &mut input_variables);
+    
+    write!(
+            writer,
+            "FindInstance[\n"
+        )?;
+    
+    
+    for (index, expr) in module_3ac.exprs.iter().enumerate() {
+        write!(writer, "  ")?;
+    
+        if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
+            match (&left.v, &right.v) {
+                // a = c, for constant c and variables a
+                (Expr::Variable(_), Expr::Constant(_)) => {
+                    write!(
+                        writer,
+                        "{} == {}",
+                        atom_to_string(&left.v), atom_to_string(&right.v)
+                    )?;
+                }
+            
+                // a = c, for variables a and c
+                (Expr::Variable(_), Expr::Variable(_)) => {
+                    write!(
+                        writer,
+                        "{} == {}",
+                        atom_to_string(&left.v), atom_to_string(&right.v)
+                    )?;
+                }
+            
+                // a = b op c, for variable a
+                (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
+                    write!(
+                      writer,
+                      "{} {} {} == {}",
+                      atom_to_string(&t1.v), op, atom_to_string(&t2.v), atom_to_string(&left.v)
+                    )?;
+                }
+                  
+                _ => {}
+            }
+        }
+        
+        if index != module_3ac.exprs.len() - 1 {
+            write!(writer, " &&\n")?;
+        }
+    }
+    
+    write!(writer, ", \n  {{")?;
+    
+    for (index, var) in input_variables.values().enumerate() {
+        write!(
+            writer,
+            "{}",
+            var_to_string(var)
+        )?;
+        
+        if index != input_variables.values().len() - 1 {
+            write!(writer, ", ")?;
+        }
+    }
+    
+    write!(
+      writer,
+      "}}, {}]\n",
+      tystr
+    )?;
+    
+    writer.flush()?;
+    Ok(())
+}
+
+/* Implements the subcommand that writes circuit into a z3 file. */
+pub fn mathematica_file_cmd(MathematicaFile { source, output, typ }: &MathematicaFile, config: &Config) -> Result<(), Error> {
+    qprintln!(config, "** Reading file...");
+    let unparsed_file = fs::read_to_string(source).expect("cannot read file");
+    let module = Module::parse(&unparsed_file).unwrap();
+    let module_3ac = compile(module.clone(), &(), config);
+    
+    qprintln!(config, "** Writing equations to file...");
+    dump_equations_mathematica(&module_3ac, output, typ, config).map_err(|err| qprintln!(config, "{:?}", err)).ok();
+
+    qprintln!(config, "** Mathematica file generation success!");
 
     Ok(())
 }
@@ -288,5 +415,6 @@ pub fn generate(generate_commands: &GenerateCommands, config: &Config) -> Result
         GenerateCommands::WitnessFile(args) => witness_file_cmd(args, config),
         GenerateCommands::ThreeAddressFile(args) => three_addr_file_cmd(args, config),
         GenerateCommands::Z3File(args) => z3_file_cmd(args, config),
+        GenerateCommands::MathematicaFile(args) => mathematica_file_cmd(args, config),
     }
 }
