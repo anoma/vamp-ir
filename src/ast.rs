@@ -1,14 +1,13 @@
+use crate::pest::Parser;
+use crate::transform::VarGen;
+use crate::typecheck::Type;
+use crate::util::parse_prefixed_num;
+use bincode::{Decode, Encode};
+use num_bigint::BigInt;
 use pest::iterators::Pair;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fmt::Write;
-use crate::typecheck::Type;
-use crate::pest::Parser;
-use bincode::{Encode, Decode};
-use std::collections::{HashMap, HashSet};
-use crate::transform::VarGen;
-use num_bigint::BigInt;
-use num_traits::Num;
-use std::ops::Neg;
 #[derive(Parser)]
 #[grammar = "vampir.pest"]
 pub struct VampirParser;
@@ -31,24 +30,20 @@ impl Module {
                 Rule::expr => {
                     let expr = TExpr::parse(pair).expect("expected expression");
                     exprs.push(expr);
-                },
+                }
                 Rule::definition => {
                     let definition = Definition::parse(pair).expect("expected definition");
                     defs.push(definition);
-                },
+                }
                 Rule::declaration => {
                     let mut pairs = pair.into_inner();
                     while let Some(pair) = pairs.next() {
                         let var = Variable::parse(pair).expect("expected variable");
                         pubs.push(var);
                     }
-                },
-                Rule::EOI => return Ok(Self {
-                    pubs,
-                    defs,
-                    exprs,
-                }),
-                _ => unreachable!("module item should either be expression, definition, or EOI")
+                }
+                Rule::EOI => return Ok(Self { pubs, defs, exprs }),
+                _ => unreachable!("module item should either be expression, definition, or EOI"),
             }
         }
         unreachable!("EOI should have been encountered")
@@ -57,7 +52,11 @@ impl Module {
 
 impl Default for Module {
     fn default() -> Self {
-        Self { defs: vec![], exprs: vec![], pubs: vec![] }
+        Self {
+            defs: vec![],
+            exprs: vec![],
+            pubs: vec![],
+        }
     }
 }
 
@@ -84,9 +83,13 @@ pub struct Definition(pub LetBinding);
 
 impl Definition {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::definition { return None }
+        if pair.as_rule() != Rule::definition {
+            return None;
+        }
         let mut pairs = pair.into_inner();
-        let pair = pairs.next().expect("definition should have a single let binding");
+        let pair = pairs
+            .next()
+            .expect("definition should have a single let binding");
         let binding = LetBinding::parse(pair).expect("definition should contain single binding");
         Some(Self(binding))
     }
@@ -103,32 +106,38 @@ pub struct LetBinding(pub TPat, pub Box<TExpr>);
 
 impl LetBinding {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::letBinding { return None }
+        if pair.as_rule() != Rule::letBinding {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("let binding should not be empty");
         let expr = TExpr::parse(pair).expect("expression should end with expression");
-        let pair = pairs.next().expect("let binding should have at least two parts");
+        let pair = pairs
+            .next()
+            .expect("let binding should have at least two parts");
         match pair.as_rule() {
             Rule::valueName => {
                 let name = Variable::parse(pair).expect("expression should be value name");
                 let mut pats = vec![];
                 while let Some(pair) = pairs.next() {
-                    let rhs = TPat::parse(pair)
-                        .expect("expected RHS to be a product");
+                    let rhs = TPat::parse(pair).expect("expected RHS to be a product");
                     pats.push(rhs);
                 }
-                let expr = Box::new(Expr::Function(Function {
-                    params: pats,
-                    body: Box::new(expr),
-                    env: HashMap::new(),
-                }).type_expr(None));
+                let expr = Box::new(
+                    Expr::Function(Function {
+                        params: pats,
+                        body: Box::new(expr),
+                        env: HashMap::new(),
+                    })
+                    .type_expr(None),
+                );
                 Some(Self(Pat::Variable(name).type_pat(None), expr))
-            },
+            }
             Rule::pattern => {
                 let pat = TPat::parse(pair).expect("pattern should start with pattern");
                 Some(Self(pat, Box::new(expr)))
-            },
-            _ => unreachable!("let binding is of unknown form")
+            }
+            _ => unreachable!("let binding is of unknown form"),
         }
     }
 }
@@ -149,7 +158,7 @@ impl fmt::Display for LetBinding {
                 } else {
                     write!(f, " {}", body)?;
                 }
-            },
+            }
             _ => {
                 let mut val_str = String::new();
                 write!(val_str, "{}", self.1)?;
@@ -159,7 +168,7 @@ impl fmt::Display for LetBinding {
                 } else {
                     write!(f, "{} = {}", self.0, val_str)?;
                 }
-            },
+            }
         };
         Ok(())
     }
@@ -207,13 +216,15 @@ impl Pat {
     pub fn type_pat(self, t: Option<Type>) -> TPat {
         let t = t.or_else(|| match &self {
             Self::Unit => Some(Type::Unit),
-            Self::Cons(pat1, pat2) =>
-                pat2.t.clone().or_else(|| pat1.t.clone().map(|x| Type::List(Box::new(x)))),
-            Self::Product(pat1, pat2) => {
-                pat1.t.clone()
-                    .zip(pat2.t.clone())
-                    .map(|(a,b)| Type::Product(Box::new(a), Box::new(b)))
-            },
+            Self::Cons(pat1, pat2) => pat2
+                .t
+                .clone()
+                .or_else(|| pat1.t.clone().map(|x| Type::List(Box::new(x)))),
+            Self::Product(pat1, pat2) => pat1
+                .t
+                .clone()
+                .zip(pat2.t.clone())
+                .map(|(a, b)| Type::Product(Box::new(a), Box::new(b))),
             Self::As(pat1, _) => pat1.t.clone(),
             Self::Constant(_) => Some(Type::Int),
             Self::Variable(_) | Self::Nil => None,
@@ -224,11 +235,12 @@ impl Pat {
 
 impl TPat {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::pattern { return None }
+        if pair.as_rule() != Rule::pattern {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next().expect("pattern should not be empty");
-        let mut pat =
-            Self::parse_pat1(pair).expect("pattern should start with pattern");
+        let mut pat = Self::parse_pat1(pair).expect("pattern should start with pattern");
         while let Some(pair) = pairs.next() {
             let name = Variable::parse(pair).expect("expected pattern name");
             pat = Pat::As(Box::new(pat), name).type_pat(None);
@@ -237,54 +249,56 @@ impl TPat {
     }
 
     pub fn parse_pat1(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::pattern1 { return None }
+        if pair.as_rule() != Rule::pattern1 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("pattern should not be empty");
-        let mut pats =
-            Self::parse_pat2(pair).expect("expression should start with product");
+        let mut pats = Self::parse_pat2(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next_back() {
-            let rhs = Self::parse_pat2(pair)
-                .expect("expected RHS to be a product");
+            let rhs = Self::parse_pat2(pair).expect("expected RHS to be a product");
             pats = Pat::Product(Box::new(rhs), Box::new(pats)).type_pat(None);
         }
         Some(pats)
     }
 
     pub fn parse_pat2(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::pattern2 { return None }
+        if pair.as_rule() != Rule::pattern2 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("pattern should not be empty");
-        let mut pats =
-            Self::parse_pat3(pair).expect("expression should start with product");
+        let mut pats = Self::parse_pat3(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next_back() {
-            let rhs = Self::parse_pat3(pair)
-                .expect("expected RHS to be a product");
+            let rhs = Self::parse_pat3(pair).expect("expected RHS to be a product");
             pats = Pat::Cons(Box::new(rhs), Box::new(pats)).type_pat(None);
         }
         Some(pats)
     }
 
     pub fn parse_pat3(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::pattern3 { return None }
+        if pair.as_rule() != Rule::pattern3 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
         match pair.as_rule() {
-            Rule::constant if pair.as_str().starts_with("(") => {
-                Some(Pat::Unit.type_pat(None))
-            },
-            Rule::constant if pair.as_str().starts_with("[") => {
-                Some(Pat::Nil.type_pat(None))
-            },
+            Rule::constant if pair.as_str().starts_with("(") => Some(Pat::Unit.type_pat(None)),
+            Rule::constant if pair.as_str().starts_with("[") => Some(Pat::Nil.type_pat(None)),
             Rule::constant => {
-                let value = pair.as_str().parse().ok().expect("constant should be an integer");
+                let value = pair
+                    .as_str()
+                    .parse()
+                    .ok()
+                    .expect("constant should be an integer");
                 Some(Pat::Constant(value).type_pat(None))
-            },
+            }
             Rule::valueName => {
                 let name = Variable::parse(pair).expect("pattern should be value name");
                 Some(Pat::Variable(name).type_pat(None))
-            },
+            }
             Rule::pattern => Self::parse(pair),
-            _ => unreachable!("pattern is of unknown form")
+            _ => unreachable!("pattern is of unknown form"),
         }
     }
 
@@ -296,19 +310,14 @@ impl TPat {
             Pat::Variable(var) => Expr::Variable(var.clone()),
             Pat::As(pat, _name) => pat.to_expr().v,
             Pat::Product(pat1, pat2) => {
-                Expr::Product(
-                    Box::new(pat1.to_expr()),
-                    Box::new(pat2.to_expr()),
-                )
+                Expr::Product(Box::new(pat1.to_expr()), Box::new(pat2.to_expr()))
             }
-            Pat::Cons(pat1, pat2) => {
-                Expr::Cons(
-                    Box::new(pat1.to_expr()),
-                    Box::new(pat2.to_expr()),
-                )
-            },
+            Pat::Cons(pat1, pat2) => Expr::Cons(Box::new(pat1.to_expr()), Box::new(pat2.to_expr())),
         };
-        TExpr { v, t: self.t.clone() }
+        TExpr {
+            v,
+            t: self.t.clone(),
+        }
     }
 }
 
@@ -318,10 +327,8 @@ impl fmt::Display for TPat {
             Pat::Unit => write!(f, "()")?,
             Pat::Nil => write!(f, "[]")?,
             Pat::As(pat, name) => write!(f, "{} as {}", pat, name)?,
-            Pat::Product(pat1, pat2) =>
-                write!(f, "({}, {})", pat1, pat2)?,
-            Pat::Cons(pat1, pat2) =>
-                write!(f, "({}: {})", pat1, pat2)?,
+            Pat::Product(pat1, pat2) => write!(f, "({}, {})", pat1, pat2)?,
+            Pat::Cons(pat1, pat2) => write!(f, "({}: {})", pat1, pat2)?,
             Pat::Variable(var) => write!(f, "{}", var)?,
             Pat::Constant(val) => write!(f, "{}", val)?,
         }
@@ -332,44 +339,47 @@ impl fmt::Display for TPat {
 // Encode is manually implemented for Pattern because some of its fields do not
 // implement Encode. This implementation uses wrappers to effect the encoding of
 // problematic fields.
-impl :: bincode :: Encode for Pat
-{
-    fn encode < E : :: bincode :: enc :: Encoder > (& self, encoder : & mut E)
-    -> core :: result :: Result < (), :: bincode :: error :: EncodeError >
-    {
-        match self
-        {
-            Self :: Unit =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (0u32), encoder) ?
-                ; Ok(())
-            }, Self :: As(field_0, field_1) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (1u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
-                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
-            }, Self :: Product(field_0, field_1) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (2u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
-                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
-            }, Self :: Variable(field_0) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (3u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
-            }, Self :: Constant(field_0) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (4u32), encoder) ?
-                ; :: bincode :: Encode :: encode(&BigIntBincode(field_0.clone()), encoder) ? ; Ok(())
-            }, Self :: Nil =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (5u32), encoder) ?
-                ; Ok(())
-            }, Self :: Cons(field_0, field_1) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (6u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
-                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
+impl ::bincode::Encode for Pat {
+    fn encode<E: ::bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), ::bincode::error::EncodeError> {
+        match self {
+            Self::Unit => {
+                <u32 as ::bincode::Encode>::encode(&(0u32), encoder)?;
+                Ok(())
+            }
+            Self::As(field_0, field_1) => {
+                <u32 as ::bincode::Encode>::encode(&(1u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                Ok(())
+            }
+            Self::Product(field_0, field_1) => {
+                <u32 as ::bincode::Encode>::encode(&(2u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                Ok(())
+            }
+            Self::Variable(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(3u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                Ok(())
+            }
+            Self::Constant(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(4u32), encoder)?;
+                ::bincode::Encode::encode(&BigIntBincode(field_0.clone()), encoder)?;
+                Ok(())
+            }
+            Self::Nil => {
+                <u32 as ::bincode::Encode>::encode(&(5u32), encoder)?;
+                Ok(())
+            }
+            Self::Cons(field_0, field_1) => {
+                <u32 as ::bincode::Encode>::encode(&(6u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                Ok(())
             }
         }
     }
@@ -378,40 +388,37 @@ impl :: bincode :: Encode for Pat
 // Decode is manually implemented for Pattern because some of its fields do not
 // implement Decode. This implementation uses wrappers to effect the decoding of
 // problematic fields.
-impl :: bincode :: Decode for Pat
-{
-    fn decode < D : :: bincode :: de :: Decoder > (decoder : & mut D) -> core
-    :: result :: Result < Self, :: bincode :: error :: DecodeError >
-    {
-        let variant_index = < u32 as :: bincode :: Decode > :: decode(decoder)
-        ? ; match variant_index
-        {
-            0u32 => Ok(Self :: Unit {}), 1u32 =>
-            Ok(Self :: As
-            {
-                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
-                :: Decode :: decode(decoder) ?,
-            }), 2u32 =>
-            Ok(Self :: Product
-            {
-                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
-                :: Decode :: decode(decoder) ?,
-            }), 3u32 =>
-            Ok(Self :: Variable
-            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 4u32 =>
-            Ok(Self :: Constant
-            { 0 : <BigIntBincode as :: bincode :: Decode> :: decode(decoder) ?.0, }), 5u32 =>
-            Ok(Self :: Nil {}), 6u32 =>
-            Ok(Self :: Cons
-            {
-                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
-                :: Decode :: decode(decoder) ?,
-            }), variant =>
-            Err(:: bincode :: error :: DecodeError :: UnexpectedVariant
-            {
-                found : variant, type_name : "Pattern", allowed : :: bincode
-                :: error :: AllowedEnumVariants :: Range { min : 0, max : 4 }
-            })
+impl ::bincode::Decode for Pat {
+    fn decode<D: ::bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        let variant_index = <u32 as ::bincode::Decode>::decode(decoder)?;
+        match variant_index {
+            0u32 => Ok(Self::Unit {}),
+            1u32 => Ok(Self::As {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+            }),
+            2u32 => Ok(Self::Product {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+            }),
+            3u32 => Ok(Self::Variable {
+                0: ::bincode::Decode::decode(decoder)?,
+            }),
+            4u32 => Ok(Self::Constant {
+                0: <BigIntBincode as ::bincode::Decode>::decode(decoder)?.0,
+            }),
+            5u32 => Ok(Self::Nil {}),
+            6u32 => Ok(Self::Cons {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+            }),
+            variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
+                found: variant,
+                type_name: "Pattern",
+                allowed: ::bincode::error::AllowedEnumVariants::Range { min: 0, max: 4 },
+            }),
         }
     }
 }
@@ -446,18 +453,22 @@ impl Expr {
             Self::Unit => Some(Type::Unit),
             Self::Sequence(exprs) => exprs.last().unwrap().t.clone(),
             Self::Cons(_expr1, expr2) => expr2.t.clone(),
-            Self::Product(expr1, expr2) => {
-                expr1.t.clone()
-                    .zip(expr2.t.clone())
-                    .map(|(a,b)| Type::Product(Box::new(a), Box::new(b)))
-            },
+            Self::Product(expr1, expr2) => expr1
+                .t
+                .clone()
+                .zip(expr2.t.clone())
+                .map(|(a, b)| Type::Product(Box::new(a), Box::new(b))),
             Self::Infix(InfixOp::Equal, _, _) => Some(Type::Unit),
             Self::Infix(_, _, _) => Some(Type::Int),
             Self::Negate(_) => Some(Type::Int),
             Self::Constant(_) => Some(Type::Int),
             Self::LetBinding(_, expr) => expr.t.clone(),
-            Self::Application(_, _) | Self::Match(_) | Self::Variable(_) |
-            Self::Function(_) | Self::Intrinsic(_) | Self::Nil => None,
+            Self::Application(_, _)
+            | Self::Match(_)
+            | Self::Variable(_)
+            | Self::Function(_)
+            | Self::Intrinsic(_)
+            | Self::Nil => None,
         });
         TExpr { v: self, t }
     }
@@ -466,76 +477,85 @@ impl Expr {
 // Encode is manually implemented for Expr because some of its fields do not
 // implement Encode. This implementation uses wrappers to effect the encoding of
 // problematic fields.
-impl :: bincode :: Encode for Expr
-{
-    fn encode < E : :: bincode :: enc :: Encoder > (& self, encoder : & mut E)
-    -> core :: result :: Result < (), :: bincode :: error :: EncodeError >
-    {
-        match self
-        {
-            Self :: Unit =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (0u32), encoder) ?
-                ; Ok(())
-            }, Self :: Sequence(field_0) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (1u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
-            }, Self :: Product(field_0, field_1) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (2u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
-                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
-            }, Self :: Infix(field_0, field_1, field_2) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (3u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
-                bincode :: Encode :: encode(field_1, encoder) ? ; :: bincode
-                :: Encode :: encode(field_2, encoder) ? ; Ok(())
-            }, Self :: Negate(field_0) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (4u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
-            }, Self :: Application(field_0, field_1) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (5u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
-                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
-            }, Self :: Constant(field_0) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (6u32), encoder) ?
-                ; :: bincode :: Encode :: encode(&BigIntBincode(field_0.clone()), encoder) ? ; Ok(())
-            }, Self :: Variable(field_0) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (7u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
-            }, Self :: Function(field_0) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (8u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
-            }, Self :: Intrinsic(field_0) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (9u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; Ok(())
-            }, Self :: LetBinding(field_0, field_1) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (10u32), encoder)
-                ? ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
-                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
-            }, Self :: Match(field_0) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (11u32), encoder)
-                ? ; :: bincode :: Encode :: encode(field_0, encoder) ? ;
+impl ::bincode::Encode for Expr {
+    fn encode<E: ::bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), ::bincode::error::EncodeError> {
+        match self {
+            Self::Unit => {
+                <u32 as ::bincode::Encode>::encode(&(0u32), encoder)?;
                 Ok(())
-            }, Self :: Nil =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (12u32), encoder) ?
-                ; Ok(())
-            }, Self :: Cons(field_0, field_1) =>
-            {
-                < u32 as :: bincode :: Encode > :: encode(& (13u32), encoder) ?
-                ; :: bincode :: Encode :: encode(field_0, encoder) ? ; ::
-                bincode :: Encode :: encode(field_1, encoder) ? ; Ok(())
+            }
+            Self::Sequence(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(1u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                Ok(())
+            }
+            Self::Product(field_0, field_1) => {
+                <u32 as ::bincode::Encode>::encode(&(2u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                Ok(())
+            }
+            Self::Infix(field_0, field_1, field_2) => {
+                <u32 as ::bincode::Encode>::encode(&(3u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                ::bincode::Encode::encode(field_2, encoder)?;
+                Ok(())
+            }
+            Self::Negate(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(4u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                Ok(())
+            }
+            Self::Application(field_0, field_1) => {
+                <u32 as ::bincode::Encode>::encode(&(5u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                Ok(())
+            }
+            Self::Constant(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(6u32), encoder)?;
+                ::bincode::Encode::encode(&BigIntBincode(field_0.clone()), encoder)?;
+                Ok(())
+            }
+            Self::Variable(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(7u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                Ok(())
+            }
+            Self::Function(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(8u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                Ok(())
+            }
+            Self::Intrinsic(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(9u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                Ok(())
+            }
+            Self::LetBinding(field_0, field_1) => {
+                <u32 as ::bincode::Encode>::encode(&(10u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                Ok(())
+            }
+            Self::Match(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(11u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                Ok(())
+            }
+            Self::Nil => {
+                <u32 as ::bincode::Encode>::encode(&(12u32), encoder)?;
+                Ok(())
+            }
+            Self::Cons(field_0, field_1) => {
+                <u32 as ::bincode::Encode>::encode(&(13u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                Ok(())
             }
         }
     }
@@ -544,228 +564,243 @@ impl :: bincode :: Encode for Expr
 // Decode is manually implemented for Expr because some of its fields do not
 // implement Decode. This implementation uses wrappers to effect the decoding of
 // problematic fields.
-impl :: bincode :: Decode for Expr
-{
-    fn decode < D : :: bincode :: de :: Decoder > (decoder : & mut D) -> core
-    :: result :: Result < Self, :: bincode :: error :: DecodeError >
-    {
-        let variant_index = < u32 as :: bincode :: Decode > :: decode(decoder)
-        ? ; match variant_index
-        {
-            0u32 => Ok(Self :: Unit {}), 1u32 =>
-            Ok(Self :: Sequence
-            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 2u32 =>
-            Ok(Self :: Product
-            {
-                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
-                :: Decode :: decode(decoder) ?,
-            }), 3u32 =>
-            Ok(Self :: Infix
-            {
-                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
-                :: Decode :: decode(decoder) ?, 2 : :: bincode :: Decode ::
-                decode(decoder) ?,
-            }), 4u32 =>
-            Ok(Self :: Negate
-            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 5u32 =>
-            Ok(Self :: Application
-            {
-                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
-                :: Decode :: decode(decoder) ?,
-            }), 6u32 =>
-            Ok(Self :: Constant
-            { 0 : <BigIntBincode as :: bincode :: Decode> :: decode(decoder) ?.0, }), 7u32 =>
-            Ok(Self :: Variable
-            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 8u32 =>
-            Ok(Self :: Function
-            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 9u32 =>
-            Ok(Self :: Intrinsic
-            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 10u32 =>
-            Ok(Self :: LetBinding
-            {
-                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
-                :: Decode :: decode(decoder) ?,
-            }), 11u32 =>
-            Ok(Self :: Match
-            { 0 : :: bincode :: Decode :: decode(decoder) ?, }), 12u32 =>
-            Ok(Self :: Nil {}), 13u32 =>
-            Ok(Self :: Cons
-            {
-                0 : :: bincode :: Decode :: decode(decoder) ?, 1 : :: bincode
-                :: Decode :: decode(decoder) ?,
-            }), variant =>
-            Err(:: bincode :: error :: DecodeError :: UnexpectedVariant
-            {
-                found : variant, type_name : "Expr", allowed : :: bincode ::
-                error :: AllowedEnumVariants :: Range { min : 0, max : 11 }
-            })
+impl ::bincode::Decode for Expr {
+    fn decode<D: ::bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        let variant_index = <u32 as ::bincode::Decode>::decode(decoder)?;
+        match variant_index {
+            0u32 => Ok(Self::Unit {}),
+            1u32 => Ok(Self::Sequence {
+                0: ::bincode::Decode::decode(decoder)?,
+            }),
+            2u32 => Ok(Self::Product {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+            }),
+            3u32 => Ok(Self::Infix {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+                2: ::bincode::Decode::decode(decoder)?,
+            }),
+            4u32 => Ok(Self::Negate {
+                0: ::bincode::Decode::decode(decoder)?,
+            }),
+            5u32 => Ok(Self::Application {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+            }),
+            6u32 => Ok(Self::Constant {
+                0: <BigIntBincode as ::bincode::Decode>::decode(decoder)?.0,
+            }),
+            7u32 => Ok(Self::Variable {
+                0: ::bincode::Decode::decode(decoder)?,
+            }),
+            8u32 => Ok(Self::Function {
+                0: ::bincode::Decode::decode(decoder)?,
+            }),
+            9u32 => Ok(Self::Intrinsic {
+                0: ::bincode::Decode::decode(decoder)?,
+            }),
+            10u32 => Ok(Self::LetBinding {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+            }),
+            11u32 => Ok(Self::Match {
+                0: ::bincode::Decode::decode(decoder)?,
+            }),
+            12u32 => Ok(Self::Nil {}),
+            13u32 => Ok(Self::Cons {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+            }),
+            variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
+                found: variant,
+                type_name: "Expr",
+                allowed: ::bincode::error::AllowedEnumVariants::Range { min: 0, max: 11 },
+            }),
         }
     }
 }
 
-/* Parse signed integer literals beginning with at most one occurrence of 0x
- * (indicating a radix of 16), 0o (radix 8), or 0b (radix 2). */
-pub fn parse_prefixed_num<T>(string: &str) -> Result<T, T::FromStrRadixErr>
-where T: Num + Neg<Output = T> {
-    // Process the number's sign
-    let (pos, magnitude) =
-        if let Some(rest) = string.strip_prefix("-") {
-            (false, rest)
-        } else if let Some(rest) = string.strip_prefix("+") {
-            (true, rest)
-        } else {
-            (true, string)
-        };
-    // Process the number's radix
-    let magnitude = if let Some(rest) = magnitude.strip_prefix("0b") {
-        T::from_str_radix(rest, 2)
-    } else if let Some(rest) = magnitude.strip_prefix("0o") {
-        T::from_str_radix(rest, 8)
-    } else if let Some(rest) = magnitude.strip_prefix("0x") {
-        T::from_str_radix(rest, 16)
-    } else {
-        T::from_str_radix(magnitude, 10)
-    }?;
-    // Combine magnitude and sign
-    Ok(if pos { magnitude } else { -magnitude })
-}
+// /* Parse signed integer literals beginning with at most one occurrence of 0x
+//  * (indicating a radix of 16), 0o (radix 8), or 0b (radix 2). */
+// pub fn parse_prefixed_num<T>(string: &str) -> Result<T, T::FromStrRadixErr>
+// where
+//     T: Num + Neg<Output = T>,
+// {
+//     // Process the number's sign
+//     let (pos, magnitude) = if let Some(rest) = string.strip_prefix("-") {
+//         (false, rest)
+//     } else if let Some(rest) = string.strip_prefix("+") {
+//         (true, rest)
+//     } else {
+//         (true, string)
+//     };
+//     // Process the number's radix
+//     let magnitude = if let Some(rest) = magnitude.strip_prefix("0b") {
+//         T::from_str_radix(rest, 2)
+//     } else if let Some(rest) = magnitude.strip_prefix("0o") {
+//         T::from_str_radix(rest, 8)
+//     } else if let Some(rest) = magnitude.strip_prefix("0x") {
+//         T::from_str_radix(rest, 16)
+//     } else {
+//         T::from_str_radix(magnitude, 10)
+//     }?;
+//     // Combine magnitude and sign
+//     Ok(if pos { magnitude } else { -magnitude })
+// }
 
 impl TExpr {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr { return None }
+        if pair.as_rule() != Rule::expr {
+            return None;
+        }
         let string = pair.as_str();
         let mut pairs = pair.into_inner();
         if string.starts_with("fun") {
             let pair = pairs.next().expect("expression should not be empty");
             Function::parse(pair).map(|x| Expr::Function(x).type_expr(None))
         } else if string.starts_with("def") {
-            let pair = pairs.next().expect("body expression should be prefixed by binding");
+            let pair = pairs
+                .next()
+                .expect("body expression should be prefixed by binding");
             let binding = LetBinding::parse(pair).expect("expression should start with binding");
             let mut body = vec![];
             while let Some(pair) = pairs.next() {
                 body.push(Self::parse(pair).expect("expression should end with expression"));
             }
-            if body.is_empty() { panic!("expression should not be empty") }
-            Some(Expr::LetBinding(binding, Box::new(Expr::Sequence(body).type_expr(None))).type_expr(None))
+            if body.is_empty() {
+                panic!("expression should not be empty")
+            }
+            Some(
+                Expr::LetBinding(binding, Box::new(Expr::Sequence(body).type_expr(None)))
+                    .type_expr(None),
+            )
         } else {
             let pair = pairs.next().expect("expression should not be empty");
             Self::parse_expr1(pair)
         }
     }
-    
+
     pub fn parse_expr1(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr1 { return None }
+        if pair.as_rule() != Rule::expr1 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next().expect("expression should not be empty");
         let mut exprs =
             vec![Self::parse_expr2(pair).expect("expression should start with product")];
         while let Some(pair) = pairs.next() {
-            let rhs = Self::parse_expr2(pair)
-                .expect("expected RHS to be a product");
+            let rhs = Self::parse_expr2(pair).expect("expected RHS to be a product");
             exprs.push(rhs);
-            
         }
-        Some(if exprs.len() == 1 { exprs[0].clone() } else { Expr::Sequence(exprs).type_expr(None) })
+        Some(if exprs.len() == 1 {
+            exprs[0].clone()
+        } else {
+            Expr::Sequence(exprs).type_expr(None)
+        })
     }
 
     pub fn parse_expr2(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr2 { return None }
+        if pair.as_rule() != Rule::expr2 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
-        let mut exprs =
-            Self::parse_expr3(pair).expect("expression should start with product");
+        let mut exprs = Self::parse_expr3(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next_back() {
-            let rhs = Self::parse_expr3(pair)
-                .expect("expected RHS to be a product");
+            let rhs = Self::parse_expr3(pair).expect("expected RHS to be a product");
             exprs = Expr::Product(Box::new(rhs), Box::new(exprs)).type_expr(None);
         }
         Some(exprs)
     }
 
     pub fn parse_expr3(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr3 { return None }
+        if pair.as_rule() != Rule::expr3 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next().expect("expression should not be empty");
-        let mut expr =
-            Self::parse_expr4(pair).expect("expression should start with product");
+        let mut expr = Self::parse_expr4(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next() {
             let op = InfixOp::parse(pair).expect("expected arithmetic operator");
             let rhs_pair = pairs.next().expect("expected RHS product");
-            let rhs = Self::parse_expr4(rhs_pair)
-                .expect("expected RHS to be a product");
+            let rhs = Self::parse_expr4(rhs_pair).expect("expected RHS to be a product");
             expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).type_expr(None);
         }
         Some(expr)
     }
 
     pub fn parse_expr4(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr4 { return None }
+        if pair.as_rule() != Rule::expr4 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
-        let mut exprs =
-            Self::parse_expr5(pair).expect("expression should start with product");
+        let mut exprs = Self::parse_expr5(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next_back() {
-            let rhs = Self::parse_expr5(pair)
-                .expect("expected RHS to be a product");
+            let rhs = Self::parse_expr5(pair).expect("expected RHS to be a product");
             exprs = Expr::Cons(Box::new(rhs), Box::new(exprs)).type_expr(None);
         }
         Some(exprs)
     }
 
     pub fn parse_expr5(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr5 { return None }
+        if pair.as_rule() != Rule::expr5 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next().expect("expression should not be empty");
-        let mut expr =
-            Self::parse_expr6(pair).expect("expression should start with product");
+        let mut expr = Self::parse_expr6(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next() {
             let op = InfixOp::parse(pair).expect("expected arithmetic operator");
             let rhs_pair = pairs.next().expect("expected RHS product");
-            let rhs = Self::parse_expr6(rhs_pair)
-                .expect("expected RHS to be a product");
+            let rhs = Self::parse_expr6(rhs_pair).expect("expected RHS to be a product");
             expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).type_expr(None);
         }
         Some(expr)
     }
 
     pub fn parse_expr6(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr6 { return None }
+        if pair.as_rule() != Rule::expr6 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next().expect("expression should not be empty");
-        let mut expr =
-            Self::parse_expr7(pair).expect("expression should start with product");
+        let mut expr = Self::parse_expr7(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next() {
             let op = InfixOp::parse(pair).expect("expected arithmetic operator");
             let rhs_pair = pairs.next().expect("expected RHS product");
-            let rhs = Self::parse_expr7(rhs_pair)
-                .expect("expected RHS to be a product");
+            let rhs = Self::parse_expr7(rhs_pair).expect("expected RHS to be a product");
             expr = Expr::Infix(op, Box::new(expr), Box::new(rhs)).type_expr(None);
         }
         Some(expr)
     }
 
     pub fn parse_expr7(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr7 { return None }
+        if pair.as_rule() != Rule::expr7 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
-        let mut expr =
-            Self::parse_expr8(pair).expect("expression should start with product");
+        let mut expr = Self::parse_expr8(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next_back() {
             let op = InfixOp::parse(pair).expect("expected arithmetic operator");
             let lhs_pair = pairs.next_back().expect("expected RHS product");
-            let lhs = Self::parse_expr8(lhs_pair)
-                .expect("expected RHS to be a product");
+            let lhs = Self::parse_expr8(lhs_pair).expect("expected RHS to be a product");
             expr = Expr::Infix(op, Box::new(lhs), Box::new(expr)).type_expr(None);
         }
         Some(expr)
     }
 
     pub fn parse_expr8(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr8 { return None }
+        if pair.as_rule() != Rule::expr8 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
-        let mut expr =
-            Self::parse_expr9(pair).expect("expression should start with product");
+        let mut expr = Self::parse_expr9(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next_back() {
             if pair.as_rule() == Rule::negate {
                 expr = Expr::Negate(Box::new(expr)).type_expr(None);
@@ -777,21 +812,23 @@ impl TExpr {
     }
 
     pub fn parse_expr9(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr9 { return None }
+        if pair.as_rule() != Rule::expr9 {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next().expect("expression should not be empty");
-        let mut expr =
-            Self::parse_expr10(pair).expect("expression should start with product");
+        let mut expr = Self::parse_expr10(pair).expect("expression should start with product");
         while let Some(pair) = pairs.next() {
-            let rhs = Self::parse_expr10(pair)
-                .expect("expected RHS to be a product");
+            let rhs = Self::parse_expr10(pair).expect("expected RHS to be a product");
             expr = Expr::Application(Box::new(expr), Box::new(rhs)).type_expr(None);
         }
         Some(expr)
     }
 
     pub fn parse_expr10(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::expr10 { return None }
+        if pair.as_rule() != Rule::expr10 {
+            return None;
+        }
         let string = pair.as_str();
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
@@ -800,14 +837,16 @@ impl TExpr {
         } else if pair.as_rule() == Rule::constant && string.starts_with("[") {
             Some(Expr::Nil.type_expr(None))
         } else if pair.as_rule() == Rule::constant {
-            let value = parse_prefixed_num(pair.as_str())
-                .expect("constant should be an integer");
+            let value = parse_prefixed_num(pair.as_str()).expect("constant should be an integer");
             Some(Expr::Constant(value).type_expr(None))
         } else if pair.as_rule() == Rule::valueName {
             let name = Variable::parse(pair).expect("expression should be value name");
             Some(Expr::Variable(name).type_expr(None))
-        } else if string.starts_with("(") || string.starts_with("fun") ||
-        string.starts_with("def") || string.starts_with("match") {
+        } else if string.starts_with("(")
+            || string.starts_with("fun")
+            || string.starts_with("def")
+            || string.starts_with("match")
+        {
             Self::parse(pair)
         } else {
             unreachable!("expression is of unknown form")
@@ -825,7 +864,8 @@ impl fmt::Display for TExpr {
                     write!(f, "{{")?;
                 }
                 let mut iter = exprs.iter();
-                let expr = iter.next()
+                let expr = iter
+                    .next()
                     .expect("sequence should contain at least one expression");
                 write!(f, "{}", expr)?;
                 while let Some(expr) = iter.next() {
@@ -834,13 +874,10 @@ impl fmt::Display for TExpr {
                 if exprs.len() > 1 {
                     write!(f, "}}")?;
                 }
-            },
-            Expr::Product(expr1, expr2) =>
-                write!(f, "({}, {})", expr1, expr2)?,
-            Expr::Cons(expr1, expr2) =>
-                write!(f, "({}: {})", expr1, expr2)?,
-            Expr::Infix(op, expr1, expr2) =>
-                write!(f, "({}{}{})", expr1, op, expr2)?,
+            }
+            Expr::Product(expr1, expr2) => write!(f, "({}, {})", expr1, expr2)?,
+            Expr::Cons(expr1, expr2) => write!(f, "({}: {})", expr1, expr2)?,
+            Expr::Infix(op, expr1, expr2) => write!(f, "({}{}{})", expr1, op, expr2)?,
             Expr::Negate(expr) => write!(f, "-{}", expr)?,
             Expr::Application(expr1, expr2) => write!(f, "{} {}", expr1, expr2)?,
             Expr::Constant(val) => write!(f, "{}", val)?,
@@ -856,7 +893,7 @@ impl fmt::Display for TExpr {
                 } else {
                     write!(f, "def {};\n{}", binding, expr)?;
                 }
-            },
+            }
             Expr::Match(matche) => write!(f, "{}", matche)?,
         }
         Ok(())
@@ -899,7 +936,9 @@ pub enum InfixOp {
 
 impl InfixOp {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::infixOp { return None }
+        if pair.as_rule() != Rule::infixOp {
+            return None;
+        }
         match pair.as_span().as_str() {
             "=" => Some(Self::Equal),
             "/" => Some(Self::Divide),
@@ -910,7 +949,7 @@ impl InfixOp {
             "^" => Some(Self::Exponentiate),
             "\\" => Some(Self::IntDivide),
             "%" => Some(Self::Modulo),
-            _ => unreachable!("Encountered unknown infix operator")
+            _ => unreachable!("Encountered unknown infix operator"),
         }
     }
 }
@@ -943,10 +982,15 @@ impl Variable {
     pub fn new(id: VariableId) -> Self {
         Self { id, name: None }
     }
-    
+
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::valueName { return None }
-        Some(Self{name: Some(pair.as_str().to_string()), id: 0 })
+        if pair.as_rule() != Rule::valueName {
+            return None;
+        }
+        Some(Self {
+            name: Some(pair.as_str().to_string()),
+            id: 0,
+        })
     }
 }
 
@@ -969,17 +1013,22 @@ pub struct Function {
 
 impl Function {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
-        if pair.as_rule() != Rule::function { return None }
+        if pair.as_rule() != Rule::function {
+            return None;
+        }
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("function should not be empty");
         let body = TExpr::parse(pair).expect("function should end with expression");
         let mut params = vec![];
         while let Some(pair) = pairs.next() {
-            let param =
-                TPat::parse(pair).expect("all prefixes to function should be patterns");
+            let param = TPat::parse(pair).expect("all prefixes to function should be patterns");
             params.push(param);
         }
-        Some(Self { params, body: Box::new(body), env: HashMap::default() })
+        Some(Self {
+            params,
+            body: Box::new(body),
+            env: HashMap::default(),
+        })
     }
 }
 
@@ -1003,12 +1052,8 @@ impl fmt::Display for Function {
 }
 
 /* The underlying function that expands an intrinsic call. */
-type IntrinsicImp = fn(
-    &Vec<TPat>,
-    &HashMap<VariableId, TExpr>,
-    &mut HashSet<VariableId>,
-    &mut VarGen
-) -> TExpr;
+type IntrinsicImp =
+    fn(&Vec<TPat>, &HashMap<VariableId, TExpr>, &mut HashSet<VariableId>, &mut VarGen) -> TExpr;
 
 #[derive(Clone)]
 pub struct Intrinsic {
@@ -1070,7 +1115,7 @@ impl Intrinsic {
         &self,
         bindings: &HashMap<VariableId, TExpr>,
         prover_defs: &mut HashSet<VariableId>,
-        gen: &mut VarGen
+        gen: &mut VarGen,
     ) -> TExpr {
         (self.imp)(&self.params, bindings, prover_defs, gen)
     }

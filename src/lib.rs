@@ -1,9 +1,9 @@
-pub mod plonk;
-pub mod typecheck;
-pub mod transform;
 pub mod ast;
 pub mod halo2;
-pub mod utilities;
+pub mod plonk;
+pub mod transform;
+mod typecheck;
+pub mod util;
 
 extern crate pest;
 #[macro_use]
