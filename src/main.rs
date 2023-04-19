@@ -1,7 +1,6 @@
-
 use clap::{Parser, Subcommand, ValueEnum};
-use vamp_ir::halo2::cli::{Halo2Commands, halo2};
-use vamp_ir::plonk::cli::{PlonkCommands, plonk};
+use vamp_ir::halo2::cli::{halo2, Halo2Commands};
+use vamp_ir::plonk::cli::{plonk, PlonkCommands};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
