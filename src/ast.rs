@@ -2,7 +2,7 @@ use crate::pest::Parser;
 use crate::transform::VarGen;
 use crate::typecheck::Type;
 use crate::util::parse_prefixed_num;
-use bincode::{Decode, Encode};
+use bincode::{Decode, Encode, impl_borrow_decode};
 use num_bigint::BigInt;
 use pest::iterators::Pair;
 use std::collections::{HashMap, HashSet};
@@ -417,11 +417,13 @@ impl ::bincode::Decode for Pat {
             variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
                 found: variant,
                 type_name: "Pattern",
-                allowed: ::bincode::error::AllowedEnumVariants::Range { min: 0, max: 4 },
+                allowed: &::bincode::error::AllowedEnumVariants::Range { min: 0, max: 4 },
             }),
         }
     }
 }
+
+impl_borrow_decode!(Pat);
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct TExpr {
@@ -617,39 +619,13 @@ impl ::bincode::Decode for Expr {
             variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
                 found: variant,
                 type_name: "Expr",
-                allowed: ::bincode::error::AllowedEnumVariants::Range { min: 0, max: 11 },
+                allowed: &::bincode::error::AllowedEnumVariants::Range { min: 0, max: 11 },
             }),
         }
     }
 }
 
-// /* Parse signed integer literals beginning with at most one occurrence of 0x
-//  * (indicating a radix of 16), 0o (radix 8), or 0b (radix 2). */
-// pub fn parse_prefixed_num<T>(string: &str) -> Result<T, T::FromStrRadixErr>
-// where
-//     T: Num + Neg<Output = T>,
-// {
-//     // Process the number's sign
-//     let (pos, magnitude) = if let Some(rest) = string.strip_prefix("-") {
-//         (false, rest)
-//     } else if let Some(rest) = string.strip_prefix("+") {
-//         (true, rest)
-//     } else {
-//         (true, string)
-//     };
-//     // Process the number's radix
-//     let magnitude = if let Some(rest) = magnitude.strip_prefix("0b") {
-//         T::from_str_radix(rest, 2)
-//     } else if let Some(rest) = magnitude.strip_prefix("0o") {
-//         T::from_str_radix(rest, 8)
-//     } else if let Some(rest) = magnitude.strip_prefix("0x") {
-//         T::from_str_radix(rest, 16)
-//     } else {
-//         T::from_str_radix(magnitude, 10)
-//     }?;
-//     // Combine magnitude and sign
-//     Ok(if pos { magnitude } else { -magnitude })
-// }
+impl_borrow_decode!(Expr);
 
 impl TExpr {
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
