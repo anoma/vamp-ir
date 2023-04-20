@@ -22,6 +22,7 @@ use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use clap::{Args, Subcommand};
 
@@ -207,7 +208,10 @@ fn compile_plonk_cmd(
     .unwrap();
 
     println!("* Synthesizing arithmetic circuit...");
-    let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
+    //let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(&module_3ac);
+    let module_rc = Rc::new(module_3ac);
+    let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_rc);
+
     // Compile the circuit
     let (pk_p, vk) = circuit
         .compile::<PC>(&pp)

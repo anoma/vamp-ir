@@ -14,13 +14,14 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::fs;
 use std::io::Write;
+use std::rc::Rc;
 use rand_core::OsRng;
 
 use vamp_ir::plonk::synth::PlonkModule;
 use vamp_ir::ast::Module;
 use vamp_ir::transform::compile;
 use vamp_ir::plonk::synth::{PrimeFieldOps, make_constant};
-use vamp_ir::utilities::util::prompt_inputs;
+use vamp_ir::util::prompt_inputs;
 
 use std::time::Instant;
 
@@ -68,7 +69,8 @@ fn bench(pir_file: &str, max_degree: u32) {
 
     println!("* Synthesizing arithmetic circuit...");
     let inst4 = Instant::now();
-    let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_3ac.clone());
+    let module_rc = Rc::new(module_3ac);
+    let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_rc);
     // Compile the circuit
     let (pk_p, vk) = circuit.compile::<PC>(&pp)
         .expect("unable to compile circuit");
@@ -122,10 +124,10 @@ fn bench(pir_file: &str, max_degree: u32) {
 }
 
 #[allow(dead_code)]
-fn criterion_benchmark(c: &mut Criterion) {
-    let source = "tests/alu.pir".to_string();
-    let max_degree = 15;
-    //c.bench_function("plonk_bench", |b| b.iter(|| bench(&source, max_degree)));
+fn criterion_benchmark(_c: &mut Criterion) {
+    let source = "tests/blake2s.pir".to_string();
+    let max_degree = 21;
+    //_c.bench_function("plonk_bench", |b| b.iter(|| bench(&source, max_degree)));
     bench(&source, max_degree);
 }
 

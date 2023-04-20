@@ -14,6 +14,7 @@ use num_traits::Signed;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 use crate::ast::{Expr, InfixOp, Module, Pat, TExpr, VariableId};
 use crate::transform::{collect_module_variables, FieldOps};
@@ -249,7 +250,7 @@ trait StandardCs<FF: FieldExt> {
 
 #[derive(Clone)]
 pub struct Halo2Module<F: PrimeField> {
-    pub module: Module,
+    pub module: Rc<Module>,
     pub variable_map: HashMap<VariableId, Value<F>>,
     pub k: u32,
 }
@@ -287,7 +288,7 @@ where
         for (k, v) in encoded_variable_map {
             variable_map.insert(k, v.0);
         }
-        let module = Module::decode(decoder)?;
+        let module = Rc::new(Module::decode(decoder)?);
         let k = u32::decode(decoder)?;
         Ok(Halo2Module {
             module,
@@ -440,7 +441,7 @@ impl<FF: FieldExt> StandardCs<FF> for StandardPlonk<FF> {
 
 impl<F: FieldExt + PrimeField> Halo2Module<F> {
     /* Make new circuit with default assignments to all variables in module. */
-    pub fn new(module: Module) -> Self {
+    pub fn new(module: Rc<Module>) -> Self {
         let mut variables = HashMap::new();
         collect_module_variables(&module, &mut variables);
         let mut variable_map = HashMap::new();

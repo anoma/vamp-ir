@@ -4,21 +4,17 @@ use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::plonk::keygen_vk;
 
-use ark_serialize::{Read, SerializationError, CanonicalSerialize, CanonicalDeserialize};
-
 use std::collections::HashMap;
 use std::fs::File;
 use std::fs;
 use std::io::Write;
-use rand_core::OsRng;
-use bincode::error::{DecodeError, EncodeError};
-use std::path::PathBuf;
+use std::rc::Rc;
 
 
-use vamp_ir::halo2::synth::{Halo2Module, PrimeFieldOps, verifier, prover, keygen, make_constant};
+use vamp_ir::halo2::synth::{Halo2Module, PrimeFieldOps, verifier, prover, keygen};
 use vamp_ir::ast::Module;
 use vamp_ir::transform::compile;
-use vamp_ir::utilities::util::prompt_inputs;
+use vamp_ir::util::prompt_inputs;
 
 use std::time::Instant;
 
@@ -42,7 +38,8 @@ fn bench(pir_file: &str) {
 
     println!("* Synthesizing arithmetic circuit...");
     let inst4 = Instant::now();
-    let mut circuit = Halo2Module::<Fp>::new(module_3ac.clone());
+    let module_rc = Rc::new(module_3ac);
+    let mut circuit = Halo2Module::<Fp>::new(module_rc);
     let params: Params<EqAffine> = Params::new(circuit.k);
     let inst5 = Instant::now();
     file.write_all(format!("Synthesizing arithmetic circuit time: {:?}\n", inst5.duration_since(inst4)).as_bytes()).unwrap();
@@ -100,9 +97,9 @@ fn bench(pir_file: &str) {
 }
 
 #[allow(dead_code)]
-fn criterion_benchmark(c: &mut Criterion) {
+fn criterion_benchmark(_c: &mut Criterion) {
     let source = "tests/blake2s.pir".to_string();
-    //c.bench_function("plonk_bench", |b| b.iter(|| bench(&source, max_degree)));
+    //_c.bench_function("plonk_bench", |b| b.iter(|| bench(&source, max_degree)));
     bench(&source);
 }
 

@@ -11,6 +11,7 @@ use plonk_core::error::Error;
 use plonk_core::proof_system::pi::PublicInputs;
 use std::collections::{BTreeMap, HashMap};
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 struct PrimeFieldBincode<T>(T)
 where
@@ -170,7 +171,7 @@ where
     F: PrimeField,
     P: TEModelParameters<BaseField = F>,
 {
-    pub module: Module,
+    pub module: Rc<Module>,
     variable_map: HashMap<VariableId, F>,
     phantom: PhantomData<P>,
 }
@@ -207,7 +208,7 @@ where
         for (k, v) in encoded_variable_map {
             variable_map.insert(k, v.0);
         }
-        let module = Module::decode(decoder)?;
+        let module =  Rc::new(Module::decode(decoder)?);
         Ok(PlonkModule {
             module,
             variable_map,
@@ -222,7 +223,7 @@ where
     P: TEModelParameters<BaseField = F>,
 {
     /* Make new circuit with default assignments to all variables in module. */
-    pub fn new(module: Module) -> PlonkModule<F, P> {
+    pub fn new(module: Rc<Module>) -> PlonkModule<F, P> {
         let mut variables = HashMap::new();
         collect_module_variables(&module, &mut variables);
         let mut variable_map = HashMap::new();
