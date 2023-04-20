@@ -830,17 +830,13 @@ pub fn collect_pattern_variables(pat: &TPat, map: &mut HashMap<VariableId, Varia
 fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>) {
     match &expr.v {
         Expr::Variable(var) => {
-            map.insert(var.id, var.clone());
+            map.entry(var.id).or_insert_with(|| var.clone());
         }
         Expr::Sequence(exprs) => {
-            for expr in exprs {
-                collect_expr_variables(expr, map);
-            }
+            exprs.iter().for_each(|expr| collect_expr_variables(expr, map));
         }
         Expr::Intrinsic(Intrinsic { params, .. }) => {
-            for param in params {
-                collect_pattern_variables(param, map);
-            }
+            params.iter().for_each(|param| collect_pattern_variables(param, map));
         }
         Expr::Infix(_, expr1, expr2)
         | Expr::Application(expr1, expr2)
@@ -853,9 +849,7 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
             collect_expr_variables(expr1, map);
         }
         Expr::Function(fun) => {
-            for param in &fun.params {
-                collect_pattern_variables(param, map);
-            }
+            fun.params.iter().for_each(|param| collect_pattern_variables(param, map));
             collect_expr_variables(&*fun.body, map);
         }
         Expr::LetBinding(binding, body) => {
@@ -865,10 +859,11 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
         }
         Expr::Match(matche) => {
             collect_expr_variables(&matche.0, map);
-            for (pat, expr2) in matche.1.iter().zip(matche.2.iter()) {
+            matche.1.iter().zip(&matche.2).for_each(|(pat, expr2)| {
                 collect_pattern_variables(pat, map);
                 collect_expr_variables(expr2, map);
-            }
+            });
+
         }
         Expr::Constant(_) | Expr::Unit | Expr::Nil => {}
     }
@@ -882,9 +877,9 @@ fn collect_def_variables(def: &Definition, map: &mut HashMap<VariableId, Variabl
 
 /* Collect all the variables occuring in the given module. */
 pub fn collect_module_variables(module: &Module, map: &mut HashMap<VariableId, Variable>) {
-    for var in &module.pubs {
-        map.insert(var.id, var.clone());
-    }
+    map.reserve(module.pubs.len());
+    map.extend(module.pubs.iter().map(|var| (var.id, var.clone())));
+
     for def in &module.defs {
         collect_def_variables(def, map);
     }
