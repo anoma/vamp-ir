@@ -295,6 +295,41 @@ impl ::bincode::Decode for Pat {
     }
 }
 
+impl<'de> ::bincode::BorrowDecode<'de> for Pat {
+    fn borrow_decode<D: ::bincode::de::BorrowDecode<'de>>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        let variant_index = <u32 as ::bincode::BorrowDecode>::borrow_decode(decoder)?;
+        match variant_index {
+            0u32 => Ok(Self::Unit {}),
+            1u32 => Ok(Self::As {
+                0: ::bincode::BorrowDecode::borrow_decode(decoder)?,
+                1: ::bincode::BorrowDecode::borrow_decode(decoder)?,
+            }),
+            2u32 => Ok(Self::Product {
+                0: ::bincode::BorrowDecode::borrow_decode(decoder)?,
+                1: ::bincode::BorrowDecode::borrow_decode(decoder)?,
+            }),
+            3u32 => Ok(Self::Variable {
+                0: ::bincode::BorrowDecode::borrow_decode(decoder)?,
+            }),
+            4u32 => Ok(Self::Constant {
+                0: <BigIntBincode as ::bincode::BorrowDecode>::borrow_decode(decoder)?.0,
+            }),
+            5u32 => Ok(Self::Nil {}),
+            6u32 => Ok(Self::Cons {
+                0: ::bincode::BorrowDecode::borrow_decode(decoder)?,
+                1: ::bincode::BorrowDecode::borrow_decode(decoder)?,
+            }),
+            variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
+                found: variant,
+                type_name: "Pattern",
+                allowed: ::bincode::error::AllowedEnumVariants::Range { min: 0, max: 4 },
+            }),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct TPat {
     pub v: Pat,
