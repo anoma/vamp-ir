@@ -126,7 +126,7 @@ fn bench(pir_file: &str, max_degree: u32) {
 #[allow(dead_code)]
 fn criterion_benchmark(_c: &mut Criterion) {
     let source = "tests/blake2s.pir".to_string();
-    let max_degree = 21;
+    let max_degree = 19;
     //_c.bench_function("plonk_bench", |b| b.iter(|| bench(&source, max_degree)));
     bench(&source, max_degree);
 }
