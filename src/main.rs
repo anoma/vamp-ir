@@ -1,6 +1,6 @@
-use clap::{Parser, Subcommand, ValueEnum};
 use vamp_ir::halo2::cli::{halo2, Halo2Commands};
 use vamp_ir::plonk::cli::{plonk, PlonkCommands};
+use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -27,6 +27,7 @@ enum ProofSystems {
 
 /* Main entry point for vamp-ir compiler, prover, and verifier. */
 fn main() {
+
     let cli = Cli::parse();
     match &cli.backend {
         Backend::Plonk(plonk_commands) => plonk(plonk_commands),

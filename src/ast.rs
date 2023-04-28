@@ -206,6 +206,95 @@ pub enum Pat {
     Constant(BigInt),
 }
 
+// Encode is manually implemented for Pattern because some of its fields do not
+// implement Encode. This implementation uses wrappers to effect the encoding of
+// problematic fields.
+impl ::bincode::Encode for Pat {
+    fn encode<E: ::bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> core::result::Result<(), ::bincode::error::EncodeError> {
+        match self {
+            Self::Unit => {
+                <u32 as ::bincode::Encode>::encode(&(0u32), encoder)?;
+                Ok(())
+            }
+            Self::As(field_0, field_1) => {
+                <u32 as ::bincode::Encode>::encode(&(1u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                Ok(())
+            }
+            Self::Product(field_0, field_1) => {
+                <u32 as ::bincode::Encode>::encode(&(2u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                Ok(())
+            }
+            Self::Variable(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(3u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                Ok(())
+            }
+            Self::Constant(field_0) => {
+                <u32 as ::bincode::Encode>::encode(&(4u32), encoder)?;
+                ::bincode::Encode::encode(&BigIntBincode(field_0.clone()), encoder)?;
+                Ok(())
+            }
+            Self::Nil => {
+                <u32 as ::bincode::Encode>::encode(&(5u32), encoder)?;
+                Ok(())
+            }
+            Self::Cons(field_0, field_1) => {
+                <u32 as ::bincode::Encode>::encode(&(6u32), encoder)?;
+                ::bincode::Encode::encode(field_0, encoder)?;
+                ::bincode::Encode::encode(field_1, encoder)?;
+                Ok(())
+            }
+        }
+    }
+}
+
+// Decode is manually implemented for Pattern because some of its fields do not
+// implement Decode. This implementation uses wrappers to effect the decoding of
+// problematic fields.
+impl ::bincode::Decode for Pat {
+    fn decode<D: ::bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
+        let variant_index = <u32 as ::bincode::Decode>::decode(decoder)?;
+        match variant_index {
+            0u32 => Ok(Self::Unit {}),
+            1u32 => Ok(Self::As {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+            }),
+            2u32 => Ok(Self::Product {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+            }),
+            3u32 => Ok(Self::Variable {
+                0: ::bincode::Decode::decode(decoder)?,
+            }),
+            4u32 => Ok(Self::Constant {
+                0: <BigIntBincode as ::bincode::Decode>::decode(decoder)?.0,
+            }),
+            5u32 => Ok(Self::Nil {}),
+            6u32 => Ok(Self::Cons {
+                0: ::bincode::Decode::decode(decoder)?,
+                1: ::bincode::Decode::decode(decoder)?,
+            }),
+            variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
+                found: variant,
+                type_name: "Pattern",
+                allowed: &::bincode::error::AllowedEnumVariants::Range { min: 0, max: 4 },
+            }),
+        }
+    }
+}
+
+impl_borrow_decode!(Pat);
+
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct TPat {
     pub v: Pat,
@@ -335,95 +424,6 @@ impl fmt::Display for TPat {
         Ok(())
     }
 }
-
-// Encode is manually implemented for Pattern because some of its fields do not
-// implement Encode. This implementation uses wrappers to effect the encoding of
-// problematic fields.
-impl ::bincode::Encode for Pat {
-    fn encode<E: ::bincode::enc::Encoder>(
-        &self,
-        encoder: &mut E,
-    ) -> core::result::Result<(), ::bincode::error::EncodeError> {
-        match self {
-            Self::Unit => {
-                <u32 as ::bincode::Encode>::encode(&(0u32), encoder)?;
-                Ok(())
-            }
-            Self::As(field_0, field_1) => {
-                <u32 as ::bincode::Encode>::encode(&(1u32), encoder)?;
-                ::bincode::Encode::encode(field_0, encoder)?;
-                ::bincode::Encode::encode(field_1, encoder)?;
-                Ok(())
-            }
-            Self::Product(field_0, field_1) => {
-                <u32 as ::bincode::Encode>::encode(&(2u32), encoder)?;
-                ::bincode::Encode::encode(field_0, encoder)?;
-                ::bincode::Encode::encode(field_1, encoder)?;
-                Ok(())
-            }
-            Self::Variable(field_0) => {
-                <u32 as ::bincode::Encode>::encode(&(3u32), encoder)?;
-                ::bincode::Encode::encode(field_0, encoder)?;
-                Ok(())
-            }
-            Self::Constant(field_0) => {
-                <u32 as ::bincode::Encode>::encode(&(4u32), encoder)?;
-                ::bincode::Encode::encode(&BigIntBincode(field_0.clone()), encoder)?;
-                Ok(())
-            }
-            Self::Nil => {
-                <u32 as ::bincode::Encode>::encode(&(5u32), encoder)?;
-                Ok(())
-            }
-            Self::Cons(field_0, field_1) => {
-                <u32 as ::bincode::Encode>::encode(&(6u32), encoder)?;
-                ::bincode::Encode::encode(field_0, encoder)?;
-                ::bincode::Encode::encode(field_1, encoder)?;
-                Ok(())
-            }
-        }
-    }
-}
-
-// Decode is manually implemented for Pattern because some of its fields do not
-// implement Decode. This implementation uses wrappers to effect the decoding of
-// problematic fields.
-impl ::bincode::Decode for Pat {
-    fn decode<D: ::bincode::de::Decoder>(
-        decoder: &mut D,
-    ) -> core::result::Result<Self, ::bincode::error::DecodeError> {
-        let variant_index = <u32 as ::bincode::Decode>::decode(decoder)?;
-        match variant_index {
-            0u32 => Ok(Self::Unit {}),
-            1u32 => Ok(Self::As {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-            }),
-            2u32 => Ok(Self::Product {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-            }),
-            3u32 => Ok(Self::Variable {
-                0: ::bincode::Decode::decode(decoder)?,
-            }),
-            4u32 => Ok(Self::Constant {
-                0: <BigIntBincode as ::bincode::Decode>::decode(decoder)?.0,
-            }),
-            5u32 => Ok(Self::Nil {}),
-            6u32 => Ok(Self::Cons {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-            }),
-            variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
-                found: variant,
-                type_name: "Pattern",
-                allowed: &::bincode::error::AllowedEnumVariants::Range { min: 0, max: 4 },
-            }),
-        }
-    }
-}
-
-impl_borrow_decode!(Pat);
 
 #[derive(Debug, Clone, Encode, Decode)]
 pub struct TExpr {
