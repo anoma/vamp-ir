@@ -1,9 +1,12 @@
-use crate::ast::{Module, TExpr, Pat, InfixOp, Expr, Variable};
+use crate::pest::Parser;
+
+use crate::ast::{VampirParser, Rule, Module, TExpr, Definition, Pat, InfixOp, Expr, Variable};
 use crate::transform::{compile, collect_module_variables, FieldOps};
 
-use ark_bls12_381::{Bls12_381, Fr as BlsScalar};
-use halo2_proofs::pasta::{EqAffine, Fp};
+use ark_bls12_381::{Fr};
 use crate::plonk::synth::{PrimeFieldOps as PlonkPrimeFieldOps};
+
+use halo2_proofs::pasta::{Fp};
 use crate::halo2::synth::{PrimeFieldOps as Halo2PrimeFieldOps};
 
 use std::collections::HashMap;
@@ -18,7 +21,6 @@ use clap::{Args, Subcommand};
 use std::path::PathBuf;
 
 use num_bigint::BigInt;
-
 
 #[derive(Subcommand)]
 pub enum REPLCommands {
@@ -44,11 +46,12 @@ pub struct Plonk {
     source: Option<PathBuf>,
 }
 
+
 pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
-    let mut module = Module::default();
+    let mut module: Module = Module::default();
 
     if let Some(path) = source {
-        let unparsed_file = fs::read_to_string(path).expect("cannot read file");
+        let unparsed_file: String = fs::read_to_string(path).expect("cannot read file");
         module = Module::parse(&unparsed_file).unwrap();
         println!("Entering REPL with module loaded from file.");
         // println!("{}", module);
@@ -57,31 +60,70 @@ pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
     }
 
     loop {
-        print!("> ");
+        print!("In : ");
         std::io::stdout().flush().expect("Error flushing stdout");
 
-        let mut input = String::new();
+        let mut input: String = String::new();
         std::io::stdin().read_line(&mut input).expect("Error reading from stdin");
 
         if input.trim() == "quit" || input.trim() == "exit" {
             break;
         }
 
-        println!("{}", input);
+        let mut defs: Vec<Definition> = vec![];
+        let mut exprs: Vec<TExpr> = vec![];
+        let mut pubs: Vec<Variable> = vec![];
+
+        match VampirParser::parse(Rule::moduleItems, &input) {
+            Ok(mut pairs) => {
+                while let Some(pair) = pairs.next() {
+                    match pair.as_rule() {
+                        Rule::expr => {
+                            let expr: TExpr = TExpr::parse(pair).expect("expected expression");
+                            exprs.push(expr);
+                        }
+                        Rule::definition => {
+                            let definition: Definition = Definition::parse(pair).expect("expected definition");
+                            defs.push(definition);
+                        }
+                        Rule::declaration => {
+                            let mut pairs: pest::iterators::Pairs<Rule> = pair.into_inner();
+                            while let Some(pair) = pairs.next() {
+                                let var: Variable = Variable::parse(pair).expect("expected variable");
+                                pubs.push(var);
+                            }
+                        }
+                        Rule::EOI => continue,
+                        _ => unreachable!("module item should either be expression, definition, or EOI"),
+                    }
+                }
+
+                module.defs.extend(defs);
+                module.exprs.extend(exprs);
+                module.pubs.extend(pubs);
+
+                if let Some(last_expr) = module.exprs.last() {
+                    println!("Out: {:?}", last_expr);
+                } else {
+                    println!("No expression to evaluate.");
+                }
+                },
+            Err(e) => eprintln!("REPL exited with an error: {:?}", e)
+        }
     }
 }
 
 
 /* Implements the subcommand that writes witnesses to a JSON file. */
 pub fn halo2_repl_cmd(Halo2 { source }: &Halo2) {
-    println!("** Halo2 Repl");
+    println!("** Entering Halo2 Repl");
     repl_cmd(&source, &Halo2PrimeFieldOps::<Fp>::default());
 }
 
 /* Implements the subcommand that writes circuit into comma separated, three-address file. */
 pub fn plonk_repl_cmd(Plonk { source }: &Plonk) {
-    println!("** Plonk Repl");
-    repl_cmd(&source, &PlonkPrimeFieldOps::<BlsScalar>::default());
+    println!("** Entering Plonk Repl");
+    repl_cmd(&source, &PlonkPrimeFieldOps::<Fr>::default());
 }
 
 pub fn repl(repl_commands: &REPLCommands) {
