@@ -4,6 +4,7 @@ pub mod plonk;
 pub mod transform;
 mod typecheck;
 pub mod util;
+mod test;
 
 extern crate pest;
 #[macro_use]

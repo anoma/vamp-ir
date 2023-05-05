@@ -48,64 +48,64 @@ pub enum PlonkCommands {
 pub struct Setup {
     /// Maximum degree exponent of the polynomial commitment scheme
     #[arg(short, long, default_value_t = 10)]
-    max_degree: u128,
+    pub max_degree: u128,
     /// Path to which the public parameters are written
     #[arg(short, long)]
-    output: PathBuf,
+    pub output: PathBuf,
     /// Disable validity checks on the generated public parameters
     #[arg(long)]
-    unchecked: bool,
+    pub unchecked: bool,
 }
 
 #[derive(Args)]
 pub struct PlonkCompile {
     /// Path to public parameters
     #[arg(short, long)]
-    universal_params: PathBuf,
+    pub universal_params: PathBuf,
     /// Path to source file to be compiled
     #[arg(short, long)]
-    source: PathBuf,
+    pub source: PathBuf,
     /// Path to which circuit is written
     #[arg(short, long)]
-    output: PathBuf,
+    pub output: PathBuf,
     /// Do not perform validity checks on public parameters
     #[arg(long)]
-    unchecked: bool,
+    pub unchecked: bool,
 }
 
 #[derive(Args)]
 pub struct PlonkProve {
     /// Path to public parameters
     #[arg(short, long)]
-    universal_params: PathBuf,
+    pub universal_params: PathBuf,
     /// Path to circuit on which to construct proof
     #[arg(short, long)]
-    circuit: PathBuf,
+    pub circuit: PathBuf,
     /// Path to which the proof is written
     #[arg(short, long)]
-    output: PathBuf,
+    pub output: PathBuf,
     /// Do not perform validity checks on public parameters
     #[arg(long)]
-    unchecked: bool,
+    pub unchecked: bool,
     /// Path to prover's input file
     #[arg(short, long)]
-    inputs: Option<PathBuf>,
+    pub inputs: Option<PathBuf>,
 }
 
 #[derive(Args)]
 pub struct PlonkVerify {
     /// Path to public parameters
     #[arg(short, long)]
-    universal_params: PathBuf,
+    pub universal_params: PathBuf,
     /// Path to circuit on which to construct proof
     #[arg(short, long)]
-    circuit: PathBuf,
+    pub circuit: PathBuf,
     /// Path to the proof that is being verified
     #[arg(short, long)]
-    proof: PathBuf,
+    pub proof: PathBuf,
     /// Do not perform validity checks on public parameters
     #[arg(long)]
-    unchecked: bool,
+    pub unchecked: bool,
 }
 
 pub fn plonk(plonk_commands: &PlonkCommands) {
@@ -161,7 +161,7 @@ struct ProofData {
 }
 
 /* Implements the subcommand that generates the public parameters for proofs. */
-fn setup_plonk_cmd(
+pub fn setup_plonk_cmd(
     Setup {
         max_degree,
         output,
@@ -185,7 +185,7 @@ fn setup_plonk_cmd(
 
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
  */
-fn compile_plonk_cmd(
+pub fn compile_plonk_cmd(
     PlonkCompile {
         universal_params,
         source,
@@ -227,7 +227,7 @@ fn compile_plonk_cmd(
 
 /* Implements the subcommand that creates a proof from interactively entered
  * inputs. */
-fn prove_plonk_cmd(
+pub fn prove_plonk_cmd(
     PlonkProve {
         universal_params,
         circuit,
@@ -300,7 +300,7 @@ fn prove_plonk_cmd(
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
-fn verify_plonk_cmd(
+pub fn verify_plonk_cmd(
     PlonkVerify {
         universal_params,
         circuit,
