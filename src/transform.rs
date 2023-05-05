@@ -1667,3 +1667,91 @@ fn expand_fold_intrinsic(
         }),
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* Evaluate the given module emitting the constraints that it implies. */
+pub fn evaluate_module_repl(
+    module: &Module,
+    flattened: &mut Module,
+    bindings: &mut HashMap<VariableId, TExpr>,
+    prover_defs: &mut HashSet<VariableId>,
+    field_ops: &dyn FieldOps,
+    gen: &mut VarGen,
+) -> Option<TExpr> {
+    for def in &module.defs {
+        evaluate_def(def, flattened, bindings, prover_defs, field_ops, gen);
+    }
+    let mut last_result = None;
+    for expr in &module.exprs {
+        last_result = Some(evaluate(expr, flattened, bindings, prover_defs, field_ops, gen));
+    }
+    last_result
+}
+
+/* Compile the given module down into three-address codes. */
+pub fn compile_repl(mut module: Module, field_ops: &dyn FieldOps) -> Option<TExpr> {
+    let mut vg = VarGen::new();
+    let mut globals = HashMap::new();
+    let mut bindings = HashMap::new();
+    let mut prog_types = HashMap::new();
+    let mut global_types = HashMap::new();
+    register_fresh_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
+    register_iter_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
+    register_fold_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
+    number_module_variables(&mut module, &mut globals, &mut vg);
+    infer_module_types(
+        &mut module,
+        &globals,
+        &mut global_types,
+        &mut prog_types,
+        &mut vg,
+    );
+    println!("** Inferring types...");
+    print_types(&module, &prog_types);
+    // Global variables may have further internal structure, determine this
+    // using derived type information
+    expand_global_variables(
+        &mut module,
+        &globals,
+        &global_types,
+        &mut prog_types,
+        &bindings,
+        &mut vg,
+    );
+    // Type information is no longer required since we do symbolic
+    // execution from now on
+    strip_module_types(&mut module);
+    let mut prover_defs = HashSet::new();
+    let mut constraints = Module::default();
+    // Start generating arithmetic constraints
+    evaluate_module_repl(
+        &module,
+        &mut constraints,
+        &mut bindings,
+        &mut prover_defs,
+        field_ops,
+        &mut vg,
+    )
+}

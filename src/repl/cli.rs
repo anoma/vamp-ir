@@ -1,7 +1,8 @@
 use crate::pest::Parser;
 
-use crate::ast::{VampirParser, Rule, Module, TExpr, Definition, Pat, InfixOp, Expr, Variable};
-use crate::transform::{compile, collect_module_variables, FieldOps};
+use crate::ast::{VampirParser, Rule, Module, TExpr, Expr, Definition, Pat, InfixOp, Variable, VariableId};
+use crate::transform::{compile, evaluate_module_repl, collect_module_variables, compile_repl, FieldOps, VarGen};
+//use crate::repl::transform::{compile, evaluate_module, collect_module_variables, FieldOps};
 
 use ark_bls12_381::{Fr};
 use crate::plonk::synth::{PrimeFieldOps as PlonkPrimeFieldOps};
@@ -9,13 +10,12 @@ use crate::plonk::synth::{PrimeFieldOps as PlonkPrimeFieldOps};
 use halo2_proofs::pasta::{Fp};
 use crate::halo2::synth::{PrimeFieldOps as Halo2PrimeFieldOps};
 
-use std::collections::HashMap;
-use serde_json::Map;
-
 use std::fs; 
 use std::fs::File;
 use std::io::{BufWriter, BufReader, BufRead, Write};
 use std::fs::OpenOptions;
+use std::fmt::{Display};
+use std::collections::{HashMap, HashSet};
 
 use clap::{Args, Subcommand};
 use std::path::PathBuf;
@@ -46,7 +46,6 @@ pub struct Plonk {
     source: Option<PathBuf>,
 }
 
-
 pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
     let mut module: Module = Module::default();
 
@@ -59,6 +58,10 @@ pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
         println!("Entering REPL with no module loaded.");
     }
 
+    let mut defs: Vec<Definition> = vec![];
+    let mut exprs: Vec<TExpr> = vec![];
+    let mut pubs: Vec<Variable> = vec![];
+
     loop {
         print!("In : ");
         std::io::stdout().flush().expect("Error flushing stdout");
@@ -70,9 +73,9 @@ pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
             break;
         }
 
-        let mut defs: Vec<Definition> = vec![];
-        let mut exprs: Vec<TExpr> = vec![];
-        let mut pubs: Vec<Variable> = vec![];
+        defs = vec![];
+        exprs = vec![];
+        pubs = vec![];
 
         match VampirParser::parse(Rule::moduleItems, &input) {
             Ok(mut pairs) => {
@@ -102,13 +105,13 @@ pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
                 module.exprs.extend(exprs);
                 module.pubs.extend(pubs);
 
-                if let Some(last_expr) = module.exprs.last() {
-                    println!("Out: {:?}", last_expr);
+                if let Some(last_expr) = compile_repl(module.clone(), field_ops) {
+                    println!("Out: {}", last_expr);
                 } else {
                     println!("No expression to evaluate.");
                 }
                 },
-            Err(e) => eprintln!("REPL exited with an error: {:?}", e)
+            Err(e) => eprintln!("Parse Error: {:?}", e)
         }
     }
 }
