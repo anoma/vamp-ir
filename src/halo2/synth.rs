@@ -1,6 +1,5 @@
+use group::ff::{Field, FromUniformBytes};
 use ff::PrimeField;
-use group::ff::Field;
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::circuit::{Cell, Layouter, SimpleFloorPlanner, Value};
 use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::plonk::*;
@@ -57,10 +56,10 @@ where
 }
 
 // Make field elements from signed values
-pub fn make_constant<F: FieldExt>(c: BigInt) -> F {
+pub fn make_constant<F: Field + FromUniformBytes<64> + Ord>(c: BigInt) -> F {
     let mut bytes = c.magnitude().to_bytes_le();
     bytes.resize(64, 0);
-    let magnitude = F::from_bytes_wide(&bytes.try_into().unwrap());
+    let magnitude = F::from_uniform_bytes(&bytes.try_into().unwrap());
     if c.is_positive() {
         magnitude
     } else {
@@ -75,7 +74,7 @@ fn evaluate_expr<F>(
     assigns: &mut HashMap<VariableId, F>,
 ) -> F
 where
-    F: FieldExt + PrimeField,
+    F: ff::FromUniformBytes<64> + std::cmp::Ord,
 {
     match &expr.v {
         Expr::Constant(c) => make_constant(c.clone()),
@@ -114,7 +113,7 @@ where
             byte_array[length..length + padding]
                 .iter_mut()
                 .for_each(|x| *x = 0);
-            F::from_bytes_wide(&byte_array)
+            F::from_uniform_bytes(&byte_array)
         }
         Expr::Infix(InfixOp::Modulo, a, b) => {
             let op1 = BigUint::from_bytes_le(evaluate_expr(&a, defs, assigns).to_repr().as_ref());
@@ -127,7 +126,7 @@ where
             byte_array[length..length + padding]
                 .iter_mut()
                 .for_each(|x| *x = 0);
-            F::from_bytes_wide(&byte_array)
+            F::from_uniform_bytes(&byte_array)
         }
         _ => unreachable!("encountered unexpected expression: {}", expr),
     }
@@ -143,7 +142,7 @@ where
 
 impl<F> FieldOps for PrimeFieldOps<F>
 where
-    F: PrimeField + FieldExt,
+    F: ff::FromUniformBytes<64> + std::cmp::Ord ,
 {
     /* Evaluate the given negation expression in the given prime field. */
     fn canonical(&self, a: BigInt) -> BigInt {
@@ -177,7 +176,7 @@ where
                 .to_bigint()
                 .unwrap(),
             InfixOp::DivideZ => {
-                if d == F::zero() {
+                if d == F::ZERO {
                     BigInt::from(0)
                 } else {
                     BigUint::from_bytes_le((c * d.invert().unwrap()).to_repr().as_ref())
@@ -191,15 +190,15 @@ where
                 let (sign, limbs) = b.to_u64_digits();
                 BigUint::from_bytes_le(
                     if sign == Sign::Minus {
-                        c.pow(&limbs.try_into().unwrap()).invert().unwrap()
+                        c.pow(&limbs).invert().unwrap()
                     } else {
-                        c.pow(&limbs.try_into().unwrap())
+                        c.pow(&limbs)
                     }
-                    .to_repr()
-                    .as_ref(),
+                        .to_repr()
+                        .as_ref(),
                 )
-                .to_bigint()
-                .unwrap()
+                    .to_bigint()
+                    .unwrap()
             }
             InfixOp::Equal => panic!("cannot evaluate equals expression"),
         }
@@ -223,7 +222,7 @@ pub struct PlonkConfig {
     sc: Column<Fixed>,
 }
 
-trait StandardCs<FF: FieldExt> {
+trait StandardCs<FF: Field> {
     fn raw_multiply<F>(
         &self,
         layouter: &mut impl Layouter<FF>,
@@ -298,12 +297,12 @@ where
     }
 }
 
-struct StandardPlonk<F: FieldExt> {
+struct StandardPlonk<F: Field> {
     config: PlonkConfig,
     _marker: PhantomData<F>,
 }
 
-impl<FF: FieldExt> StandardPlonk<FF> {
+impl<FF: Field> StandardPlonk<FF> {
     fn new(config: PlonkConfig) -> Self {
         StandardPlonk {
             config,
@@ -324,7 +323,7 @@ struct PolyGate<F> {
     q_c: F,
 }
 
-impl<FF: FieldExt> StandardCs<FF> for StandardPlonk<FF> {
+impl<FF: Field> StandardCs<FF> for StandardPlonk<FF> {
     fn raw_multiply<F>(
         &self,
         layouter: &mut impl Layouter<FF>,
@@ -359,10 +358,10 @@ impl<FF: FieldExt> StandardCs<FF> for StandardPlonk<FF> {
                     || value.unwrap().map(|v| v.2),
                 )?;
 
-                region.assign_fixed(|| "a", self.config.sl, 0, || Value::known(FF::zero()))?;
-                region.assign_fixed(|| "b", self.config.sr, 0, || Value::known(FF::zero()))?;
-                region.assign_fixed(|| "c", self.config.so, 0, || Value::known(FF::one()))?;
-                region.assign_fixed(|| "a * b", self.config.sm, 0, || Value::known(FF::one()))?;
+                region.assign_fixed(|| "a", self.config.sl, 0, || Value::known(FF::ZERO))?;
+                region.assign_fixed(|| "b", self.config.sr, 0, || Value::known(FF::ZERO))?;
+                region.assign_fixed(|| "c", self.config.so, 0, || Value::known(FF::ONE))?;
+                region.assign_fixed(|| "a * b", self.config.sm, 0, || Value::known(FF::ONE))?;
                 Ok((lhs.cell(), rhs.cell(), out.cell()))
             },
         )
@@ -401,10 +400,10 @@ impl<FF: FieldExt> StandardCs<FF> for StandardPlonk<FF> {
                     || value.unwrap().map(|v| v.2),
                 )?;
 
-                region.assign_fixed(|| "a", self.config.sl, 0, || Value::known(FF::one()))?;
-                region.assign_fixed(|| "b", self.config.sr, 0, || Value::known(FF::one()))?;
-                region.assign_fixed(|| "c", self.config.so, 0, || Value::known(FF::one()))?;
-                region.assign_fixed(|| "a + b", self.config.sm, 0, || Value::known(FF::zero()))?;
+                region.assign_fixed(|| "a", self.config.sl, 0, || Value::known(FF::ONE))?;
+                region.assign_fixed(|| "b", self.config.sr, 0, || Value::known(FF::ONE))?;
+                region.assign_fixed(|| "c", self.config.so, 0, || Value::known(FF::ONE))?;
+                region.assign_fixed(|| "a + b", self.config.sm, 0, || Value::known(FF::ZERO))?;
                 Ok((lhs.cell(), rhs.cell(), out.cell()))
             },
         )
@@ -439,7 +438,7 @@ impl<FF: FieldExt> StandardCs<FF> for StandardPlonk<FF> {
     }
 }
 
-impl<F: FieldExt + PrimeField> Halo2Module<F> {
+impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Halo2Module<F> {
     /* Make new circuit with default assignments to all variables in module. */
     pub fn new(module: Rc<Module>) -> Self {
         let mut variables = HashMap::new();
@@ -501,15 +500,15 @@ impl<F: FieldExt + PrimeField> Halo2Module<F> {
         let (c1, c2, c3) = cs.raw_poly(layouter, || {
             let a: Value<Assigned<_>> = a
                 .map(|v1| self.variable_map[&v1])
-                .unwrap_or(Value::known(F::zero()))
+                .unwrap_or(Value::known(F::ZERO))
                 .into();
             let b: Value<Assigned<_>> = b
                 .map(|v2| self.variable_map[&v2])
-                .unwrap_or(Value::known(F::zero()))
+                .unwrap_or(Value::known(F::ZERO))
                 .into();
             let c: Value<Assigned<_>> = c
                 .map(|v3| self.variable_map[&v3])
-                .unwrap_or(Value::known(F::zero()))
+                .unwrap_or(Value::known(F::ZERO))
                 .into();
             PolyGate {
                 a,
@@ -541,7 +540,7 @@ impl<F: FieldExt + PrimeField> Halo2Module<F> {
     }
 }
 
-fn copy_variable<F: FieldExt>(
+fn copy_variable<F: Field>(
     var: VariableId,
     cell: Cell,
     map: &mut BTreeMap<VariableId, Cell>,
@@ -557,7 +556,7 @@ fn copy_variable<F: FieldExt>(
     Ok(())
 }
 
-impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
+impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> {
     type Config = PlonkConfig;
     type FloorPlanner = SimpleFloorPlanner;
 
@@ -595,11 +594,11 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
             let b = meta.query_advice(b, Rotation::cur());
             let c = meta.query_advice(c, Rotation::cur());
 
-            let sl = meta.query_fixed(sl, Rotation::cur());
-            let sr = meta.query_fixed(sr, Rotation::cur());
-            let so = meta.query_fixed(so, Rotation::cur());
-            let sm = meta.query_fixed(sm, Rotation::cur());
-            let sc = meta.query_fixed(sc, Rotation::cur());
+            let sl = meta.query_fixed(sl);
+            let sr = meta.query_fixed(sr);
+            let so = meta.query_fixed(so);
+            let sm = meta.query_fixed(sm);
+            let sc = meta.query_fixed(sc);
 
             vec![a.clone() * sl + b.clone() * sr + a * b * sm + (c * so) + sc]
         });
@@ -621,8 +620,8 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
 
         let mut inputs = BTreeMap::new();
 
-        let val1: Assigned<_> = Assigned::from(F::one());
-        let val0: Assigned<_> = Assigned::from(F::zero());
+        let val1: Assigned<_> = Assigned::from(F::ONE);
+        let val0: Assigned<_> = Assigned::from(F::ZERO);
         let (_, cell0, _) = cs.raw_poly(&mut layouter, || PolyGate {
             a: Value::known(val0),
             b: Value::known(val0),
@@ -644,11 +643,11 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Some(v1.id),
                             Some(v2.id),
                             None,
-                            F::one(),
-                            -F::one(),
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
+                            F::ONE,
+                            -F::ONE,
+                            F::ZERO,
+                            F::ZERO,
+                            F::ZERO,
                             cell0,
                             &mut inputs,
                             &cs,
@@ -662,10 +661,10 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Some(v1.id),
                             None,
                             None,
-                            F::one(),
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
+                            F::ONE,
+                            F::ZERO,
+                            F::ZERO,
+                            F::ZERO,
                             -op2,
                             cell0,
                             &mut inputs,
@@ -677,13 +676,13 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                     (Expr::Variable(v1), Expr::Negate(e2))
                         if matches!(&e2.v, Expr::Constant(c2) if {
                             let op2: F = make_constant::<F>(c2.clone());
-                            self.make_gate(Some(v1.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op2, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, op2, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = -v2
                     (Expr::Variable(v1), Expr::Negate(e2))
                         if matches!(&e2.v, Expr::Variable(v2) if {
-                            self.make_gate(Some(v1.id), Some(v2.id), None, F::one(), F::one(), F::zero(), F::zero(), F::zero(), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v2.id), None, F::ONE, F::ONE, F::ZERO, F::ZERO, F::ZERO, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = c2 + c3
@@ -694,7 +693,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op2: F = make_constant::<F>(c2.clone());
                             let op3: F = make_constant::<F>(c3.clone());
-                            self.make_gate(Some(v1.id), None, None, F::one(), F::one(), F::zero(), F::zero(), -op2-op3, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), None, None, F::ONE, F::ONE, F::ZERO, F::ZERO, -op2-op3, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = v2 + c3
@@ -704,7 +703,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Constant(c3),
                         ) if {
                             let op3: F = make_constant::<F>(c3.clone());
-                            self.make_gate(Some(v1.id), Some(v2.id), None, F::one(), -F::one(), F::zero(), F::zero(), -op3, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v2.id), None, F::ONE, -F::ONE, F::ZERO, F::ZERO, -op3, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = c2 + v3
@@ -714,7 +713,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v3),
                         ) if {
                             let op2: F = make_constant::<F>(c2.clone());
-                            self.make_gate(Some(v1.id), Some(v3.id), None, F::one(), -F::one(), F::zero(), F::zero(), -op2, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v3.id), None, F::ONE, -F::ONE, F::ZERO, F::ZERO, -op2, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = v2 + v3
@@ -723,7 +722,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
-                            self.make_gate(Some(v1.id), Some(v2.id), Some(v3.id), F::one(), -F::one(), -F::one(), F::zero(), F::zero(), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v2.id), Some(v3.id), F::ONE, -F::ONE, -F::ONE, F::ZERO, F::ZERO, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = c2 - c3
@@ -734,7 +733,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op2: F = make_constant::<F>(c2.clone());
                             let op3: F = make_constant::<F>(c3.clone());
-                            self.make_gate(Some(v1.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op3-op2, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, op3-op2, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = v2 - c3
@@ -744,7 +743,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Constant(c3),
                         ) if {
                             let op3: F = make_constant::<F>(c3.clone());
-                            self.make_gate(Some(v1.id), Some(v2.id), None, F::one(), -F::one(), F::zero(), F::zero(), op3, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v2.id), None, F::ONE, -F::ONE, F::ZERO, F::ZERO, op3, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = c2 - v3
@@ -754,7 +753,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v3),
                         ) if {
                             let op2: F = make_constant::<F>(c2.clone());
-                            self.make_gate(Some(v1.id), Some(v3.id), None, F::one(), F::one(), F::zero(), F::zero(), -op2, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v3.id), None, F::ONE, F::ONE, F::ZERO, F::ZERO, -op2, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = v2 - v3
@@ -763,7 +762,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
-                            self.make_gate(Some(v1.id), Some(v2.id), Some(v3.id), F::one(), -F::one(), F::one(), F::zero(), F::zero(), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v2.id), Some(v3.id), F::ONE, -F::ONE, F::ONE, F::ZERO, F::ZERO, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = c2 / c3
@@ -774,7 +773,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op1: F = make_constant(c2.clone());
                             let op2: F = make_constant(c3.clone());
-                            self.make_gate(Some(v1.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), -(op1*op2.invert().unwrap()), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, -(op1*op2.invert().unwrap()), cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = v2 / c3
@@ -784,7 +783,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Constant(c3),
                         ) if {
                             let op2: F = make_constant(c3.clone());
-                            self.make_gate(Some(v1.id), Some(v2.id), None, F::one(), -op2.invert().unwrap(), F::zero(), F::zero(), F::zero(), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v2.id), None, F::ONE, -op2.invert().unwrap(), F::ZERO, F::ZERO, F::ZERO, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = c2 / v3 ***
@@ -794,7 +793,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v3),
                         ) if {
                             let op2: F = make_constant::<F>(c2.clone());
-                            self.make_gate(Some(v1.id), Some(v3.id), None, F::zero(), F::zero(), F::zero(), F::one(), -op2, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v3.id), None, F::ZERO, F::ZERO, F::ZERO, F::ONE, -op2, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = v2 / v3 ***
@@ -803,7 +802,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
-                            self.make_gate(Some(v1.id), Some(v3.id), Some(v2.id), F::zero(), F::zero(), -F::one(), F::one(), F::zero(), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v3.id), Some(v2.id), F::ZERO, F::ZERO, -F::ONE, F::ONE, F::ZERO, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = c2 * c3
@@ -814,7 +813,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op1: F = make_constant(c2.clone());
                             let op2: F = make_constant(c3.clone());
-                            self.make_gate(Some(v1.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), -(op1*op2), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, -(op1*op2), cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = v2 * c3
@@ -824,7 +823,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Constant(c3),
                         ) if {
                             let op2: F = make_constant(c3.clone());
-                            self.make_gate(Some(v1.id), Some(v2.id), None, F::one(), -op2, F::zero(), F::zero(), F::zero(), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v2.id), None, F::ONE, -op2, F::ZERO, F::ZERO, F::ZERO, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = c2 * v3
@@ -834,7 +833,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v3),
                         ) if {
                             let op2: F = make_constant(c2.clone());
-                            self.make_gate(Some(v1.id), Some(v3.id), None, F::one(), -op2, F::zero(), F::zero(), F::zero(), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v1.id), Some(v3.id), None, F::ONE, -op2, F::ZERO, F::ZERO, F::ZERO, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = v2 * v3
@@ -843,7 +842,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
-                            self.make_gate(Some(v2.id), Some(v3.id), Some(v1.id), F::zero(), F::zero(), F::one(), -F::one(), F::zero(), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v2.id), Some(v3.id), Some(v1.id), F::ZERO, F::ZERO, F::ONE, -F::ONE, F::ZERO, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // Now for constants on the LHS
@@ -854,10 +853,10 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Some(v2.id),
                             None,
                             None,
-                            F::one(),
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
+                            F::ONE,
+                            F::ZERO,
+                            F::ZERO,
+                            F::ZERO,
                             -op1,
                             cell0,
                             &mut inputs,
@@ -873,10 +872,10 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             None,
                             None,
                             None,
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
-                            F::zero(),
+                            F::ZERO,
+                            F::ZERO,
+                            F::ZERO,
+                            F::ZERO,
                             op1 - op2,
                             cell0,
                             &mut inputs,
@@ -889,14 +888,14 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         if matches!(&e2.v, Expr::Constant(c2) if {
                             let op1: F = make_constant::<F>(c1.clone());
                             let op2: F = make_constant::<F>(c2.clone());
-                            self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), op1+op2, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(None, None, None, F::ZERO, F::ZERO, F::ZERO, F::ZERO, op1+op2, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = -v2
                     (Expr::Constant(c1), Expr::Negate(e2))
                         if matches!(&e2.v, Expr::Variable(v2) if {
                             let op1: F = make_constant::<F>(c1.clone());
-                            self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op1, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v2.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, op1, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = c2 + c3
@@ -908,7 +907,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             let op1: F = make_constant::<F>(c1.clone());
                             let op2: F = make_constant::<F>(c2.clone());
                             let op3: F = make_constant::<F>(c3.clone());
-                            self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), op1-op2-op3, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(None, None, None, F::ZERO, F::ZERO, F::ZERO, F::ZERO, op1-op2-op3, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = v2 + c3
@@ -919,7 +918,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op1: F = make_constant::<F>(c1.clone());
                             let op3: F = make_constant::<F>(c3.clone());
-                            self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op3-op1, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v2.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, op3-op1, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = c2 + v3
@@ -930,7 +929,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op1: F = make_constant::<F>(c1.clone());
                             let op2: F = make_constant::<F>(c2.clone());
-                            self.make_gate(Some(v3.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op2-op1, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v3.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, op2-op1, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = v2 + v3
@@ -940,7 +939,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v3),
                         ) if {
                             let op1: F = make_constant::<F>(c1.clone());
-                            self.make_gate(Some(v2.id), Some(v3.id), None, F::one(), F::one(), F::zero(), F::zero(), -op1, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v2.id), Some(v3.id), None, F::ONE, F::ONE, F::ZERO, F::ZERO, -op1, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = c2 - c3
@@ -952,7 +951,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             let op1: F = make_constant::<F>(c1.clone());
                             let op2: F = make_constant::<F>(c2.clone());
                             let op3: F = make_constant::<F>(c3.clone());
-                            self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), op1-op2+op3, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(None, None, None, F::ZERO, F::ZERO, F::ZERO, F::ZERO, op1-op2+op3, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = v2 - c3
@@ -963,7 +962,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op1: F = make_constant::<F>(c1.clone());
                             let op3: F = make_constant::<F>(c3.clone());
-                            self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), -op1-op3, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v2.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, -op1-op3, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = c2 - v3
@@ -974,7 +973,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op1: F = make_constant::<F>(c1.clone());
                             let op2: F = make_constant::<F>(c2.clone());
-                            self.make_gate(Some(v3.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), op1-op2, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v3.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, op1-op2, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = v2 - v3
@@ -984,7 +983,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v3),
                         ) if {
                             let op1: F = make_constant::<F>(c1.clone());
-                            self.make_gate(Some(v2.id), Some(v3.id), None, F::one(), -F::one(), F::zero(), F::zero(), -op1, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v2.id), Some(v3.id), None, F::ONE, -F::ONE, F::ZERO, F::ZERO, -op1, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = c2 / c3
@@ -996,7 +995,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             let op1: F = make_constant(c1.clone());
                             let op2: F = make_constant(c2.clone());
                             let op3: F = make_constant(c3.clone());
-                            self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), op1*op3-op2, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(None, None, None, F::ZERO, F::ZERO, F::ZERO, F::ZERO, op1*op3-op2, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = v2 / c3
@@ -1007,7 +1006,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op1: F = make_constant(c1.clone());
                             let op3: F = make_constant(c3.clone());
-                            self.make_gate(Some(v2.id), None, None, F::one(), F::zero(), F::zero(), F::zero(), -op1*op3, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v2.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, -op1*op3, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = c2 / v3 ***
@@ -1018,7 +1017,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op1: F = make_constant(c1.clone());
                             let op2: F = make_constant(c2.clone());
-                            self.make_gate(Some(v3.id), None, None, op1, F::zero(), F::zero(), F::zero(), -op2, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v3.id), None, None, op1, F::ZERO, F::ZERO, F::ZERO, -op2, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = v2 / v3 ***
@@ -1028,7 +1027,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v3),
                         ) if {
                             let op1: F = make_constant(c1.clone());
-                            self.make_gate(Some(v2.id), Some(v3.id), None, F::one(), -op1, F::zero(), F::zero(), F::zero(), cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v2.id), Some(v3.id), None, F::ONE, -op1, F::ZERO, F::ZERO, F::ZERO, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = c2 * c3
@@ -1040,7 +1039,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             let op1: F = make_constant(c1.clone());
                             let op2: F = make_constant(c2.clone());
                             let op3: F = make_constant(c3.clone());
-                            self.make_gate(None, None, None, F::zero(), F::zero(), F::zero(), F::zero(), op1-op2*op3, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(None, None, None, F::ZERO, F::ZERO, F::ZERO, F::ZERO, op1-op2*op3, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = v2 * c3
@@ -1051,7 +1050,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op1: F = make_constant(c1.clone());
                             let op3: F = make_constant(c3.clone());
-                            self.make_gate(Some(v2.id), None, None, op3, F::zero(), F::zero(), F::zero(), -op1, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v2.id), None, None, op3, F::ZERO, F::ZERO, F::ZERO, -op1, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = c2 * v3
@@ -1062,7 +1061,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                         ) if {
                             let op1: F = make_constant(c1.clone());
                             let op2: F = make_constant(c2.clone());
-                            self.make_gate(Some(v3.id), None, None, op2, F::zero(), F::zero(), F::zero(), -op1, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v3.id), None, None, op2, F::ZERO, F::ZERO, F::ZERO, -op1, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = v2 * v3
@@ -1072,7 +1071,7 @@ impl<F: FieldExt + Field> Circuit<F> for Halo2Module<F> {
                             Expr::Variable(v3),
                         ) if {
                             let op1: F = make_constant(c1.clone());
-                            self.make_gate(Some(v2.id), Some(v3.id), None, F::zero(), F::zero(), F::zero(), F::one(), -op1, cell0, &mut inputs, &cs, &mut layouter)?;
+                            self.make_gate(Some(v2.id), Some(v3.id), None, F::ZERO, F::ZERO, F::ZERO, F::ONE, -op1, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     _ => panic!("unsupported constraint encountered: {}", expr),
