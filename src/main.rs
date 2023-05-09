@@ -3,8 +3,8 @@ use vamp_ir::error::Error;
 use vamp_ir::file_gen::cli::{generate, GenerateCommands};
 use vamp_ir::halo2::cli::{halo2, Halo2Commands};
 use vamp_ir::plonk::cli::{plonk, PlonkCommands};
+use vamp_ir::repl::cli::{repl, REPL};
 use vamp_ir::util::Config;
-use vamp_ir::repl::cli::{repl, REPLCommands};
 
 const VERIF_FAILURE_CODE: i32 = 1;
 
@@ -26,8 +26,7 @@ enum Backend {
     Plonk(PlonkCommands),
     #[command(subcommand)]
     Halo2(Halo2Commands),
-    #[command(subcommand)]
-    REPL(REPLCommands),
+    REPL(REPL),
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]

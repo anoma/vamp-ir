@@ -1668,30 +1668,7 @@ fn expand_fold_intrinsic(
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/* Evaluate the given module emitting the constraints that it implies. */
+/* Evaluate the given module, outputing the evaluation of the last expression. */
 pub fn evaluate_module_repl(
     module: &Module,
     flattened: &mut Module,
@@ -1705,13 +1682,33 @@ pub fn evaluate_module_repl(
     }
     let mut last_result = None;
     for expr in &module.exprs {
-        last_result = Some(evaluate(expr, flattened, bindings, prover_defs, field_ops, gen));
+        last_result = Some(evaluate(
+            expr,
+            flattened,
+            bindings,
+            prover_defs,
+            field_ops,
+            gen,
+        ).unwrap());
     }
     last_result
 }
 
-/* Compile the given module down into three-address codes. */
-pub fn compile_repl(mut module: Module, field_ops: &dyn FieldOps) -> Option<TExpr> {
+/* Version of compile for repl. Does everything compile does to evaluate a module. */
+pub fn compile_repl(
+    defs: Vec<Definition>,
+    exprs: Vec<TExpr>,
+    pubs: Vec<Variable>,
+    mut module: &mut Module,
+    field_ops: &dyn FieldOps,
+) -> Option<TExpr> {
+    let exp_len: usize = exprs.len();
+    let def_len: usize = defs.len();
+
+    module.exprs.extend(exprs);
+    module.defs.extend(defs);
+    module.pubs.extend(pubs);
+
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
     let mut bindings = HashMap::new();
@@ -1721,37 +1718,49 @@ pub fn compile_repl(mut module: Module, field_ops: &dyn FieldOps) -> Option<TExp
     register_iter_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     register_fold_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
-    infer_module_types(
-        &mut module,
-        &globals,
-        &mut global_types,
-        &mut prog_types,
-        &mut vg,
-    );
-    println!("** Inferring types...");
-    print_types(&module, &prog_types);
-    // Global variables may have further internal structure, determine this
-    // using derived type information
-    expand_global_variables(
-        &mut module,
-        &globals,
-        &global_types,
-        &mut prog_types,
-        &bindings,
-        &mut vg,
-    );
-    // Type information is no longer required since we do symbolic
-    // execution from now on
-    strip_module_types(&mut module);
+
+    // Types should only be inferred if new definitions are added.
+    if def_len != 0 {
+        infer_module_types(
+            &mut module,
+            &globals,
+            &mut global_types,
+            &mut prog_types,
+            &mut vg,
+        );
+
+        println!("** Inferring types...");
+        print_types(&module, &prog_types, &Config { quiet: false });
+
+        // Global variables may have further internal structure, determine this
+        // using derived type information
+        expand_global_variables(
+            &mut module,
+            &globals,
+            &global_types,
+            &mut prog_types,
+            &bindings,
+            &mut vg,
+        );
+        // Type information is no longer required since we do symbolic
+        // execution from now on
+        strip_module_types(&mut module);
+    }
+
     let mut prover_defs = HashSet::new();
     let mut constraints = Module::default();
-    // Start generating arithmetic constraints
-    evaluate_module_repl(
-        &module,
-        &mut constraints,
-        &mut bindings,
-        &mut prover_defs,
-        field_ops,
-        &mut vg,
-    )
+
+    // If there are no new expressions, then there should be no output.
+    if exp_len == 0 {
+        None
+    } else {
+        evaluate_module_repl(
+            &module,
+            &mut constraints,
+            &mut bindings,
+            &mut prover_defs,
+            field_ops,
+            &mut vg,
+        )
+    }
 }
