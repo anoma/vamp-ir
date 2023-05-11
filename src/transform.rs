@@ -1733,8 +1733,7 @@ pub fn compile_repl(
         // Only print type of new def.
         let mut modified_module = module.clone();
         modified_module.defs = modified_module.defs.split_off(modified_module.defs.len().saturating_sub(def_len));
-        print_types(&module, &prog_types, &Config { quiet: false });
-        // print_types(&module, &prog_types);
+        print_types(&modified_module, &prog_types, &Config { quiet: false });
 
         // Global variables may have further internal structure, determine this
         // using derived type information
