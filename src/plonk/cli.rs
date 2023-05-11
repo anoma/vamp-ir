@@ -1,5 +1,6 @@
 use crate::ast::Module;
 use crate::plonk::synth::{make_constant, PlonkModule, PrimeFieldOps};
+use crate::plonk::{plonk_compile, plonk_prove, plonk_verify, PlonkCircuitData, PlonkProofData};
 use crate::transform::compile;
 use crate::util::{prompt_inputs, read_inputs_from_file};
 
@@ -117,49 +118,6 @@ pub fn plonk(plonk_commands: &PlonkCommands) {
     }
 }
 
-/* Captures all the data required to use a PLONK circuit. */
-struct PlonkCircuitData {
-    pk_p: ProverKey<BlsScalar>,
-    vk: (VerifierKey<BlsScalar, PC>, Vec<usize>),
-    circuit: PlonkModule<BlsScalar, JubJubParameters>,
-}
-
-impl PlonkCircuitData {
-    fn read<R>(mut reader: R) -> Result<Self, DecodeError>
-    where
-        R: std::io::Read,
-    {
-        let pk_p = ProverKey::<BlsScalar>::deserialize(&mut reader)
-            .map_err(|x| DecodeError::OtherString(x.to_string()))?;
-        let vk = <(VerifierKey<_, _>, Vec<usize>)>::deserialize(&mut reader)
-            .map_err(|x| DecodeError::OtherString(x.to_string()))?;
-        let circuit: PlonkModule<BlsScalar, JubJubParameters> =
-            bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
-        Ok(Self { pk_p, vk, circuit })
-    }
-
-    fn write<W>(&self, mut writer: W) -> Result<(), EncodeError>
-    where
-        W: std::io::Write,
-    {
-        self.pk_p
-            .serialize(&mut writer)
-            .map_err(|x| EncodeError::OtherString(x.to_string()))?;
-        self.vk
-            .serialize(&mut writer)
-            .map_err(|x| EncodeError::OtherString(x.to_string()))?;
-        bincode::encode_into_std_write(&self.circuit, &mut writer, bincode::config::standard())?;
-        Ok(())
-    }
-}
-
-/* Captures all the data generated from proving circuit witnesses. */
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
-struct ProofData {
-    proof: Proof<BlsScalar, PC>,
-    pi: PublicInputs<BlsScalar>,
-}
-
 /* Implements the subcommand that generates the public parameters for proofs. */
 pub fn setup_plonk_cmd(
     Setup {
@@ -193,11 +151,6 @@ pub fn compile_plonk_cmd(
         unchecked,
     }: &PlonkCompile,
 ) {
-    println!("* Compiling constraints...");
-    let unparsed_file = fs::read_to_string(source).expect("cannot read file");
-    let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module, &PrimeFieldOps::<BlsScalar>::default());
-
     println!("* Reading public parameters...");
     let mut pp_file = File::open(universal_params).expect("unable to load public parameters file");
     let pp = if *unchecked {
@@ -207,20 +160,14 @@ pub fn compile_plonk_cmd(
     }
     .unwrap();
 
-    println!("* Synthesizing arithmetic circuit...");
-    //let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(&module_3ac);
-    let module_rc = Rc::new(module_3ac);
-    let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_rc);
+    let unparsed_file = fs::read_to_string(source).expect("cannot read file");
 
-    // Compile the circuit
-    let (pk_p, vk) = circuit
-        .compile::<PC>(&pp)
-        .expect("unable to compile circuit");
+    println!("* Synthesizing arithmetic circuit...");
+    let circuit_data = plonk_compile(unparsed_file, &pp);
+
     println!("* Serializing circuit to storage...");
     let mut circuit_file = File::create(output).expect("unable to create circuit file");
-    PlonkCircuitData { pk_p, vk, circuit }
-        .write(&mut circuit_file)
-        .unwrap();
+    circuit_data.write(&mut circuit_file).unwrap();
 
     println!("* Constraint compilation success!");
 }
@@ -242,11 +189,7 @@ pub fn prove_plonk_cmd(
     let mut expected_path_to_inputs = circuit.clone();
     expected_path_to_inputs.set_extension("inputs");
 
-    let PlonkCircuitData {
-        pk_p,
-        vk: _vk,
-        mut circuit,
-    } = PlonkCircuitData::read(&mut circuit_file).unwrap();
+    let mut circuit_data = PlonkCircuitData::read(&mut circuit_file).unwrap();
 
     // Prompt for program inputs
     let var_assignments_ints = match inputs {
@@ -255,7 +198,7 @@ pub fn prove_plonk_cmd(
                 "* Reading inputs from file {}...",
                 path_to_inputs.to_string_lossy()
             );
-            read_inputs_from_file(&circuit.module, path_to_inputs)
+            read_inputs_from_file(&circuit_data.circuit.module, path_to_inputs)
         }
         None => {
             if expected_path_to_inputs.exists() {
@@ -263,10 +206,10 @@ pub fn prove_plonk_cmd(
                     "* Reading inputs from file {}...",
                     expected_path_to_inputs.to_string_lossy()
                 );
-                read_inputs_from_file(&circuit.module, &expected_path_to_inputs)
+                read_inputs_from_file(&circuit_data.circuit.module, &expected_path_to_inputs)
             } else {
                 println!("* Soliciting circuit witnesses...");
-                prompt_inputs(&circuit.module)
+                prompt_inputs(&circuit_data.circuit.module)
             }
         }
     };
@@ -277,7 +220,7 @@ pub fn prove_plonk_cmd(
     }
 
     // Populate variable definitions
-    circuit.populate_variables(var_assignments);
+    &circuit_data.circuit.populate_variables(var_assignments);
 
     println!("* Reading public parameters...");
     let mut pp_file = File::open(universal_params).expect("unable to load public parameters file");
@@ -290,11 +233,11 @@ pub fn prove_plonk_cmd(
 
     // Start proving witnesses
     println!("* Proving knowledge of witnesses...");
-    let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
+    let proof_data = plonk_prove(&pp, &mut circuit_data);
 
     println!("* Serializing proof to storage...");
     let mut proof_file = File::create(output).expect("unable to create proof file");
-    ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
+    proof_data.serialize(&mut proof_file).unwrap();
 
     println!("* Proof generation success!");
 }
@@ -310,18 +253,18 @@ pub fn verify_plonk_cmd(
 ) {
     println!("* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
-    let PlonkCircuitData {
-        pk_p: _pk_p,
-        vk,
-        circuit,
-    } = PlonkCircuitData::read(&mut circuit_file).unwrap();
+    let circuit_data = PlonkCircuitData::read(&mut circuit_file).unwrap();
 
     println!("* Reading zero-knowledge proof...");
     let mut proof_file = File::open(proof).expect("unable to load proof file");
-    let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
+    let proof_data = PlonkProofData::deserialize(&mut proof_file).unwrap();
 
     println!("* Public inputs:");
-    for (var, val) in circuit.annotate_public_inputs(&vk.1, &pi).values() {
+    for (var, val) in circuit_data
+        .circuit
+        .annotate_public_inputs(&circuit_data.vk.1, &proof_data.pi)
+        .values()
+    {
         println!("{} = {}", var, val);
     }
 
@@ -336,17 +279,11 @@ pub fn verify_plonk_cmd(
 
     // Verifier POV
     println!("* Verifying proof validity...");
-    let verifier_data = VerifierData::new(vk.0, pi);
-    let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
-        &pp,
-        verifier_data.key,
-        &proof,
-        &verifier_data.pi,
-        b"Test",
-    );
-    if let Ok(()) = verifier_result {
+    let result = plonk_verify(&pp, circuit_data, proof_data);
+
+    if let Ok(()) = result {
         println!("* Zero-knowledge proof is valid");
     } else {
-        println!("* Result from verifier: {:?}", verifier_result);
+        println!("* Result from verifier: {:?}", result);
     }
 }
