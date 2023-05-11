@@ -1,7 +1,7 @@
 use crate::pest::Parser;
 
 use crate::ast::{Definition, Module, Rule, TExpr, VampirParser, Variable};
-use crate::transform::{compile_repl, FieldOps};
+use crate::transform::{compile_repl, compile, FieldOps};
 //use crate::repl::transform::{compile, evaluate_module, collect_module_variables, FieldOps};
 
 use crate::plonk::synth::PrimeFieldOps as PlonkPrimeFieldOps;
@@ -15,6 +15,8 @@ use std::io::Write;
 
 use clap::Args;
 use std::path::PathBuf;
+
+use crate::util::Config;
 
 #[derive(Args)]
 pub struct REPL {
@@ -37,6 +39,8 @@ pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
     } else {
         println!("Entering REPL with no module loaded.");
     }
+
+    compile(module.clone(), field_ops, &Config { quiet: false });
 
     let mut defs: Vec<Definition>;
     let mut exprs: Vec<TExpr>;
