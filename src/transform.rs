@@ -833,10 +833,14 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
             map.entry(var.id).or_insert_with(|| var.clone());
         }
         Expr::Sequence(exprs) => {
-            exprs.iter().for_each(|expr| collect_expr_variables(expr, map));
+            exprs
+                .iter()
+                .for_each(|expr| collect_expr_variables(expr, map));
         }
         Expr::Intrinsic(Intrinsic { params, .. }) => {
-            params.iter().for_each(|param| collect_pattern_variables(param, map));
+            params
+                .iter()
+                .for_each(|param| collect_pattern_variables(param, map));
         }
         Expr::Infix(_, expr1, expr2)
         | Expr::Application(expr1, expr2)
@@ -849,7 +853,9 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
             collect_expr_variables(expr1, map);
         }
         Expr::Function(fun) => {
-            fun.params.iter().for_each(|param| collect_pattern_variables(param, map));
+            fun.params
+                .iter()
+                .for_each(|param| collect_pattern_variables(param, map));
             collect_expr_variables(&*fun.body, map);
         }
         Expr::LetBinding(binding, body) => {
@@ -863,7 +869,6 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
                 collect_pattern_variables(pat, map);
                 collect_expr_variables(expr2, map);
             });
-
         }
         Expr::Constant(_) | Expr::Unit | Expr::Nil => {}
     }

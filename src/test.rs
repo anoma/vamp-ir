@@ -24,8 +24,8 @@ mod test {
         let inputs_file = File::create("range.inputs").expect("Could not create inputs file");
         let mut input_map = HashMap::new();
         input_map.insert("x", "10");
-        
-        serde_json::to_writer(inputs_file, &input_map).unwrap(); 
+
+        serde_json::to_writer(inputs_file, &input_map).unwrap();
 
         let prove = PlonkProve {
             universal_params: "test_params.pp".into(),
@@ -44,5 +44,4 @@ mod test {
         };
         verify_plonk_cmd(&verify);
     }
-
 }

@@ -2,7 +2,7 @@ use crate::pest::Parser;
 use crate::transform::VarGen;
 use crate::typecheck::Type;
 use crate::util::parse_prefixed_num;
-use bincode::{Decode, Encode, impl_borrow_decode};
+use bincode::{impl_borrow_decode, Decode, Encode};
 use num_bigint::BigInt;
 use pest::iterators::Pair;
 use std::collections::{HashMap, HashSet};
