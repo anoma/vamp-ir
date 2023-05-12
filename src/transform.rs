@@ -1739,9 +1739,8 @@ pub fn compile_repl(
 
         println!("** Inferring types...");
         // Only print type of new def.
-        let mut modified_module = module.clone();
-        modified_module.defs = modified_module.defs.split_off(modified_module.defs.len().saturating_sub(def_len));
-        print_types(&modified_module, &prog_types, &Config { quiet: false });
+        let last_n_defs = module.defs.iter().rev().take(def_len).cloned().rev().collect::<Vec<_>>();
+        print_types(&Module { defs: last_n_defs, ..Module::default() }, &prog_types, &Config { quiet: false });
 
         // Global variables may have further internal structure, determine this
         // using derived type information
