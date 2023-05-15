@@ -1,7 +1,6 @@
 use crate::ast::Module;
-use crate::plonk::synth::{make_constant, PlonkModule, PrimeFieldOps};
+use crate::plonk::synth::{PlonkModule, PrimeFieldOps};
 use crate::transform::compile;
-use crate::util::{prompt_inputs, read_inputs_from_file};
 
 use ark_bls12_381::{Bls12_381, Fr as BlsScalar};
 use ark_ec::PairingEngine;
@@ -9,7 +8,7 @@ use ark_ed_on_bls12_381::EdwardsParameters as JubJubParameters;
 use ark_poly::polynomial::univariate::DensePolynomial;
 use ark_poly_commit::{sonic_pc::SonicKZG10, PolynomialCommitment};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError};
-use plonk::error::to_pc_error;
+
 use plonk_core::circuit::{verify_proof, Circuit};
 use plonk_core::error::Error;
 use plonk_core::prelude::VerifierData;
@@ -17,12 +16,8 @@ use plonk_core::proof_system::pi::PublicInputs;
 use plonk_core::proof_system::{Proof, ProverKey, VerifierKey};
 
 use bincode::error::{DecodeError, EncodeError};
-use rand_core::OsRng;
-use std::collections::HashMap;
-use std::fs;
-use std::fs::File;
+
 use std::io::Write;
-use std::path::PathBuf;
 use std::rc::Rc;
 
 pub mod cli;
