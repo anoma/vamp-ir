@@ -65,7 +65,7 @@ pub struct Halo2Verify {
 
 /* Implements the subcommand that compiles a vamp-ir file into a Halo2 circuit.
  */
-fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile) {
+pub fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile) {
     println!("* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
@@ -86,7 +86,7 @@ fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile) {
 
 /* Implements the subcommand that creates a proof from interactively entered
  * inputs. */
-fn prove_halo2_cmd(
+pub fn prove_halo2_cmd(
     Halo2Prove {
         circuit,
         output,
@@ -178,41 +178,7 @@ fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) {
     }
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
-struct ProofDataHalo2 {
-    proof: Vec<u8>,
-}
 
-/* Captures all the data required to use a Halo2 circuit. */
-struct HaloCircuitData {
-    params: Params<EqAffine>,
-    circuit: Halo2Module<Fp>,
-}
-
-impl HaloCircuitData {
-    fn read<R>(mut reader: R) -> Result<Self, DecodeError>
-    where
-        R: std::io::Read,
-    {
-        let params = Params::<EqAffine>::read(&mut reader)
-            .map_err(|x| DecodeError::OtherString(x.to_string()))?;
-        let circuit: Halo2Module<Fp> =
-            bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
-        Ok(Self { params, circuit })
-    }
-
-    fn write<W>(&self, mut writer: W) -> Result<(), EncodeError>
-    where
-        W: std::io::Write,
-    {
-        self.params
-            .write(&mut writer)
-            .expect("unable to create circuit file");
-        bincode::encode_into_std_write(&self.circuit, &mut writer, bincode::config::standard())
-            .expect("unable to create circuit file");
-        Ok(())
-    }
-}
 
 pub fn halo2(halo2_commands: &Halo2Commands) {
     match halo2_commands {
