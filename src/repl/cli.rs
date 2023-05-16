@@ -1,7 +1,7 @@
 use crate::pest::Parser;
 
 use crate::ast::{Definition, Module, Rule, TExpr, VampirParser, Variable};
-use crate::transform::{compile_repl, compile, FieldOps};
+use crate::transform::{compile, compile_repl, FieldOps};
 
 use crate::plonk::synth::PrimeFieldOps as PlonkPrimeFieldOps;
 use ark_bls12_381::Fr;

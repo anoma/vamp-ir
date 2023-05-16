@@ -632,7 +632,12 @@ fn evaluate(
             let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen)?;
             let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen)?;
             flatten_equals(&expr1, &expr2, flattened);
-            Ok(Expr::Unit.type_expr(Some(Type::Unit)))
+            if let None = flattened {
+                // To Do: Some way for repl to see constraint results?
+                Ok(Expr::Unit.type_expr(Some(Type::Unit)))
+            } else {
+                Ok(Expr::Unit.type_expr(Some(Type::Unit)))
+            }
         }
         Expr::Infix(InfixOp::Exponentiate, e1, e2) => {
             // Compute the base once and for all
@@ -953,43 +958,44 @@ fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
 /* Flatten the given binding down into the set of constraints it defines. */
 fn flatten_binding(pat: &TPat, expr: &TExpr, oflattened: &mut Option<Module>) {
     if let Some(flattened) = oflattened {
-    match (&pat.v, &expr.v) {
-        (Pat::Variable(_), Expr::Function(_) | Expr::Intrinsic(_)) => {}
-        (
-            Pat::Variable(_),
-            Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
-        ) => {
-            flattened
-                .defs
-                .push(Definition(LetBinding(pat.clone(), Box::new(expr.clone()))));
+        match (&pat.v, &expr.v) {
+            (Pat::Variable(_), Expr::Function(_)) => {}
+            (
+                Pat::Variable(_),
+                Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
+            ) => {
+                flattened
+                    .defs
+                    .push(Definition(LetBinding(pat.clone(), Box::new(expr.clone()))));
+            }
+            (
+                Pat::Constant(pat),
+                Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
+            ) => {
+                flattened.exprs.push(
+                    Expr::Infix(
+                        InfixOp::Equal,
+                        Box::new(Expr::Constant(pat.clone()).type_expr(Some(Type::Int))),
+                        Box::new(expr.clone()),
+                    )
+                    .type_expr(Some(Type::Unit)),
+                );
+            }
+            (Pat::As(pat, _name), _) => {
+                flatten_binding(pat, expr, oflattened);
+            }
+            (Pat::Unit, Expr::Unit) | (Pat::Nil, Expr::Nil) => {}
+            (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
+                flatten_binding(pat1, expr1, oflattened);
+                flatten_binding(pat2, expr2, oflattened);
+            }
+            (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
+                flatten_binding(pat1, expr1, oflattened);
+                flatten_binding(pat2, expr2, oflattened);
+            }
+            _ => unreachable!("encountered unexpected binding: {} = {}", pat, expr),
         }
-        (
-            Pat::Constant(pat),
-            Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
-        ) => {
-            flattened.exprs.push(
-                Expr::Infix(
-                    InfixOp::Equal,
-                    Box::new(Expr::Constant(pat.clone()).type_expr(Some(Type::Int))),
-                    Box::new(expr.clone()),
-                )
-                .type_expr(Some(Type::Unit)),
-            );
-        }
-        (Pat::As(pat, _name), _) => {
-            flatten_binding(pat, expr, oflattened);
-        }
-        (Pat::Unit, Expr::Unit) | (Pat::Nil, Expr::Nil) => {}
-        (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
-            flatten_binding(pat1, expr1, oflattened);
-            flatten_binding(pat2, expr2, oflattened);
-        }
-        (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
-            flatten_binding(pat1, expr1, oflattened);
-            flatten_binding(pat2, expr2, oflattened);
-        }
-        _ => unreachable!("encountered unexpected binding: {} = {}", pat, expr),
-    }}
+    }
 }
 
 /* Flatten the given equality down into the set of constraints it defines. */
@@ -1461,6 +1467,44 @@ fn expand_fresh_intrinsic(
     }
 }
 
+/* Register the fresh intrinsic in the compilation environment.
+For the REPL, fresh is essentially the identity function */
+fn register_fresh_intrinsic_repl(
+    globals: &mut HashMap<String, VariableId>,
+    global_types: &mut HashMap<VariableId, Type>,
+    bindings: &mut HashMap<VariableId, TExpr>,
+    gen: &mut VarGen,
+) {
+    let fresh_func_id = gen.generate_id();
+    let fresh_arg_id = gen.generate_id();
+    let fresh_arg = Variable::new(fresh_arg_id);
+    let fresh_arg_type = Type::Variable(fresh_arg.clone());
+    let fresh_arg_pat = Pat::Variable(fresh_arg.clone()).type_pat(Some(fresh_arg_type.clone()));
+    // Register the range function in global namespace
+    globals.insert("fresh".to_string(), fresh_func_id);
+    // Describe the intrinsic's parameters and implementation
+    let fresh_ident: Function = Function {
+        params: vec![fresh_arg_pat],
+        body: Box::new(TExpr {
+            v: Expr::Variable(fresh_arg.clone()),
+            t: None,
+        }),
+        env: HashMap::new(),
+    };
+    // Describe the intrinsic's type
+    let imp_typ = Type::Function(Box::new(fresh_arg_type.clone()), Box::new(fresh_arg_type));
+    // Register the intrinsic descriptor with the global binding
+    global_types.insert(
+        fresh_func_id,
+        Type::Forall(fresh_arg, Box::new(imp_typ.clone())),
+    );
+    // Register this as a binding to contextualize evaluation
+    bindings.insert(
+        fresh_func_id,
+        Expr::Function(fresh_ident.clone()).type_expr(Some(imp_typ)),
+    );
+}
+
 /* Register the iter intrinsic in the compilation environment. */
 fn register_iter_intrinsic(
     globals: &mut HashMap<String, VariableId>,
@@ -1722,7 +1766,7 @@ pub fn compile_repl(
     let mut bindings = HashMap::new();
     let mut prog_types = HashMap::new();
     let mut global_types = HashMap::new();
-    register_fresh_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
+    register_fresh_intrinsic_repl(&mut globals, &mut global_types, &mut bindings, &mut vg);
     register_iter_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     register_fold_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     number_module_variables(&mut module, &mut globals, &mut vg);
@@ -1739,8 +1783,22 @@ pub fn compile_repl(
 
         println!("** Inferring types...");
         // Only print type of new def.
-        let last_n_defs = module.defs.iter().rev().take(def_len).cloned().rev().collect::<Vec<_>>();
-        print_types(&Module { defs: last_n_defs, ..Module::default() }, &prog_types, &Config { quiet: false });
+        let last_n_defs = module
+            .defs
+            .iter()
+            .rev()
+            .take(def_len)
+            .cloned()
+            .rev()
+            .collect::<Vec<_>>();
+        print_types(
+            &Module {
+                defs: last_n_defs,
+                ..Module::default()
+            },
+            &prog_types,
+            &Config { quiet: false }
+        );
 
         // Global variables may have further internal structure, determine this
         // using derived type information
@@ -1763,12 +1821,6 @@ pub fn compile_repl(
     if exp_len == 0 {
         None
     } else {
-        evaluate_module_repl(
-            &module,
-            &mut bindings,
-            &mut prover_defs,
-            field_ops,
-            &mut vg,
-        )
+        evaluate_module_repl(&module, &mut bindings, &mut prover_defs, field_ops, &mut vg)
     }
 }
