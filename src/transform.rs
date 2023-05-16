@@ -1,9 +1,10 @@
 use crate::ast::{
-    Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, TExpr, TPat, Variable,
-    VariableId,
+    Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, Rule, TExpr, TPat,
+    VampirParser, Variable, VariableId,
 };
 use crate::error::*;
 use crate::qprintln;
+use crate::pest::Parser;
 use crate::typecheck::{
     expand_expr_variables, expand_pattern_variables, infer_module_types, print_types,
     strip_module_types, Type,
@@ -15,6 +16,7 @@ use num_traits::sign::Signed;
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::io::Write;
 
 /* A structure for generating unique variable IDs. */
 pub struct VarGen(VariableId);
@@ -331,13 +333,13 @@ pub fn number_module_variables(
     module: &mut Module,
     globals: &mut HashMap<String, VariableId>,
     gen: &mut VarGen,
+    locals: &mut HashMap<String, u32>,
 ) {
-    let mut locals = HashMap::new();
     for var in &mut module.pubs {
         number_variable(var, &locals, globals, gen);
     }
     for def in &mut module.defs {
-        number_def_variables(def, &mut locals, globals, gen);
+        number_def_variables(def, locals, globals, gen);
     }
     for expr in &mut module.exprs {
         number_expr_variables(expr, &locals, globals, gen);
@@ -1260,7 +1262,7 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps, config: &Config) ->
     register_fresh_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     register_iter_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     register_fold_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
-    number_module_variables(&mut module, &mut globals, &mut vg);
+    number_module_variables(&mut module, &mut globals, &mut vg, &mut HashMap::new());
     infer_module_types(
         &mut module,
         &globals,
@@ -1721,46 +1723,8 @@ fn expand_fold_intrinsic(
     }
 }
 
-/* Evaluate the given module, outputing the evaluation of the last expression. */
-pub fn evaluate_module_repl(
-    module: &Module,
-    bindings: &mut HashMap<VariableId, TExpr>,
-    prover_defs: &mut HashSet<VariableId>,
-    field_ops: &dyn FieldOps,
-    gen: &mut VarGen,
-) -> Option<TExpr> {
-    for def in &module.defs {
-        evaluate_def(def, &mut None, bindings, prover_defs, field_ops, gen);
-    }
-    let mut last_result = None;
-    for expr in &module.exprs {
-        last_result = Some(evaluate(
-            expr,
-            &mut None,
-            bindings,
-            prover_defs,
-            field_ops,
-            gen,
-        ).unwrap());
-    }
-    last_result
-}
-
-/* Version of compile for repl. Does everything compile does to evaluate a module. */
-pub fn compile_repl(
-    defs: Vec<Definition>,
-    exprs: Vec<TExpr>,
-    pubs: Vec<Variable>,
-    mut module: &mut Module,
-    field_ops: &dyn FieldOps,
-) -> Option<TExpr> {
-    let exp_len: usize = exprs.len();
-    let def_len: usize = defs.len();
-
-    module.exprs.extend(exprs);
-    module.defs.extend(defs);
-    module.pubs.extend(pubs);
-
+/* Version of compile for repl. Does everything compile does to evaluate a module, but split between repl interactions. */
+pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) {
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
     let mut bindings = HashMap::new();
@@ -1769,58 +1733,146 @@ pub fn compile_repl(
     register_fresh_intrinsic_repl(&mut globals, &mut global_types, &mut bindings, &mut vg);
     register_iter_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     register_fold_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
-    number_module_variables(&mut module, &mut globals, &mut vg);
 
-    // Types should only be inferred if new definitions are added.
-    if def_len != 0 {
-        infer_module_types(
-            &mut module,
-            &globals,
-            &mut global_types,
-            &mut prog_types,
-            &mut vg,
-        );
-
-        println!("** Inferring types...");
-        // Only print type of new def.
-        let last_n_defs = module
-            .defs
-            .iter()
-            .rev()
-            .take(def_len)
-            .cloned()
-            .rev()
-            .collect::<Vec<_>>();
-        print_types(
-            &Module {
-                defs: last_n_defs,
-                ..Module::default()
-            },
-            &prog_types,
-            &Config { quiet: false }
-        );
-
-        // Global variables may have further internal structure, determine this
-        // using derived type information
-        expand_global_variables(
-            &mut module,
-            &globals,
-            &global_types,
-            &mut prog_types,
-            &bindings,
-            &mut vg,
-        );
-        // Type information is no longer required since we do symbolic
-        // execution from now on
-        strip_module_types(&mut module);
-    }
-
+    let mut locals = HashMap::new();
+    number_module_variables(&mut module, &mut globals, &mut vg, &mut locals);
+    infer_module_types(
+        &mut module,
+        &globals,
+        &mut global_types,
+        &mut prog_types,
+        &mut vg,
+    );
+    println!("** Inferring types...");
+    print_types(&module, &prog_types, &Config { quiet: false });
+    // Global variables may have further internal structure, determine this
+    // using derived type information
+    expand_global_variables(
+        &mut module,
+        &globals,
+        &global_types,
+        &mut prog_types,
+        &bindings,
+        &mut vg,
+    );
+    // Type information is no longer required since we do symbolic
+    // execution from now on
+    strip_module_types(&mut module);
     let mut prover_defs = HashSet::new();
+    // Start generating arithmetic constraints
+    evaluate_module(
+        &module,
+        &mut None,
+        &mut bindings,
+        &mut prover_defs,
+        field_ops,
+        &mut vg,
+    );
 
-    // If there are no new expressions, then there should be no output.
-    if exp_len == 0 {
-        None
-    } else {
-        evaluate_module_repl(&module, &mut bindings, &mut prover_defs, field_ops, &mut vg)
+    loop {
+        print!("In : ");
+        std::io::stdout().flush().expect("Error flushing stdout");
+
+        let mut input: String = String::new();
+        std::io::stdin()
+            .read_line(&mut input)
+            .expect("Error reading from stdin");
+
+        if input.trim() == "quit" || input.trim() == "exit" {
+            break;
+        }
+
+        let mut module = Module {
+            defs: vec![],
+            exprs: vec![],
+            pubs: vec![],
+        };
+
+        match VampirParser::parse(Rule::moduleItems, &input) {
+            Ok(mut pairs) => {
+                while let Some(pair) = pairs.next() {
+                    match pair.as_rule() {
+                        Rule::expr => {
+                            let expr: TExpr = TExpr::parse(pair).expect("expected expression");
+                            module.exprs.push(expr);
+                        }
+                        Rule::definition => {
+                            let definition: Definition =
+                                Definition::parse(pair).expect("expected definition");
+                            module.defs.push(definition);
+                        }
+                        Rule::declaration => {
+                            let mut pairs: pest::iterators::Pairs<Rule> = pair.into_inner();
+                            while let Some(pair) = pairs.next() {
+                                let var: Variable =
+                                    Variable::parse(pair).expect("expected variable");
+                                module.pubs.push(var);
+                            }
+                        }
+                        Rule::EOI => continue,
+                        _ => unreachable!(
+                            "module item should either be expression, definition, or EOI"
+                        ),
+                    }
+                }
+
+                number_module_variables(&mut module, &mut globals, &mut vg, &mut locals);
+
+                // Only look at types if new definitions are added.
+                if module.defs.len() > 0 {
+                    infer_module_types(
+                        &mut module,
+                        &globals,
+                        &mut global_types,
+                        &mut prog_types,
+                        &mut vg,
+                    );
+                    println!("** Inferring types...");
+                    print_types(&module, &prog_types, &Config { quiet: false });
+                    // Global variables may have further internal structure, determine this
+                    // using derived type information
+                    expand_global_variables(
+                        &mut module,
+                        &globals,
+                        &global_types,
+                        &mut prog_types,
+                        &bindings,
+                        &mut vg,
+                    );
+                    // Type information is no longer required since we do symbolic
+                    // execution from now on
+                    strip_module_types(&mut module);
+                }
+
+                for def in &module.defs {
+                    evaluate_def(
+                        def,
+                        &mut None,
+                        &mut bindings,
+                        &mut prover_defs,
+                        field_ops,
+                        &mut vg,
+                    );
+                }
+                for expr in &module.exprs {
+                    println!(
+                        "Out: {}",
+                        evaluate(
+                            expr,
+                            &mut None,
+                            &mut bindings,
+                            &mut prover_defs,
+                            field_ops,
+                            &mut vg
+                        ).unwrap()
+                    );
+                }
+
+                if module.exprs.len() == 0 {
+                    println!("No expression to evaluate.")
+                }
+            }
+            Err(e) => eprintln!("Parse Error: {:?}", e),
+        }
     }
 }

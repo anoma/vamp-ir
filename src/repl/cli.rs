@@ -1,7 +1,5 @@
-use crate::pest::Parser;
-
-use crate::ast::{Definition, Module, Rule, TExpr, VampirParser, Variable};
-use crate::transform::{compile, compile_repl, FieldOps};
+use crate::ast::Module;
+use crate::transform::{compile_repl, FieldOps};
 
 use crate::plonk::synth::PrimeFieldOps as PlonkPrimeFieldOps;
 use ark_bls12_381::Fr;
@@ -10,7 +8,6 @@ use crate::halo2::synth::PrimeFieldOps as Halo2PrimeFieldOps;
 use halo2_proofs::pasta::Fp;
 
 use std::fs;
-use std::io::Write;
 
 use clap::Args;
 use std::path::PathBuf;
@@ -39,66 +36,7 @@ pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
         println!("Entering REPL with no module loaded.");
     }
 
-    compile(module.clone(), field_ops, &Config { quiet: false });
-
-    let mut defs: Vec<Definition>;
-    let mut exprs: Vec<TExpr>;
-    let mut pubs: Vec<Variable>;
-
-    loop {
-        print!("In : ");
-        std::io::stdout().flush().expect("Error flushing stdout");
-
-        let mut input: String = String::new();
-        std::io::stdin()
-            .read_line(&mut input)
-            .expect("Error reading from stdin");
-
-        if input.trim() == "quit" || input.trim() == "exit" {
-            break;
-        }
-
-        defs = vec![];
-        exprs = vec![];
-        pubs = vec![];
-
-        match VampirParser::parse(Rule::moduleItems, &input) {
-            Ok(mut pairs) => {
-                while let Some(pair) = pairs.next() {
-                    match pair.as_rule() {
-                        Rule::expr => {
-                            let expr: TExpr = TExpr::parse(pair).expect("expected expression");
-                            exprs.push(expr);
-                        }
-                        Rule::definition => {
-                            let definition: Definition =
-                                Definition::parse(pair).expect("expected definition");
-                            defs.push(definition);
-                        }
-                        Rule::declaration => {
-                            let mut pairs: pest::iterators::Pairs<Rule> = pair.into_inner();
-                            while let Some(pair) = pairs.next() {
-                                let var: Variable =
-                                    Variable::parse(pair).expect("expected variable");
-                                pubs.push(var);
-                            }
-                        }
-                        Rule::EOI => continue,
-                        _ => unreachable!(
-                            "module item should either be expression, definition, or EOI"
-                        ),
-                    }
-                }
-
-                if let Some(last_expr) = compile_repl(defs, exprs, pubs, &mut module, field_ops) {
-                    println!("Out: {}", last_expr);
-                } else {
-                    println!("No expression to evaluate.");
-                }
-            }
-            Err(e) => eprintln!("Parse Error: {:?}", e),
-        }
-    }
+    compile_repl(&mut module, field_ops)
 }
 
 pub fn repl(args: &REPL) {
