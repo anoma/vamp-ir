@@ -102,6 +102,14 @@ where
         Expr::Infix(InfixOp::Divide, a, b) => {
             evaluate_expr(&a, defs, assigns) * evaluate_expr(&b, defs, assigns).invert().unwrap()
         }
+        Expr::Infix(InfixOp::DivideZ, a, b) => {
+            let divisor = evaluate_expr(&b, defs, assigns);
+            if divisor.is_zero().into() {
+                0.into()
+            } else {
+                evaluate_expr(&a, defs, assigns) * divisor.invert().unwrap()
+            }
+        }
         Expr::Infix(InfixOp::IntDivide, a, b) => {
             let op1 = BigUint::from_bytes_le(evaluate_expr(&a, defs, assigns).to_repr().as_ref());
             let op2 = BigUint::from_bytes_le(evaluate_expr(&b, defs, assigns).to_repr().as_ref());
