@@ -175,6 +175,7 @@ fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) {
         println!("* Zero-knowledge proof is valid");
     } else {
         println!("* Result from verifier: {:?}", verifier_result);
+        std::process::exit(88);
     }
 }
 

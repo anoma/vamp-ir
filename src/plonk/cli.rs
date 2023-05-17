@@ -348,5 +348,6 @@ fn verify_plonk_cmd(
         println!("* Zero-knowledge proof is valid");
     } else {
         println!("* Result from verifier: {:?}", verifier_result);
+        std::process::exit(88);
     }
 }
