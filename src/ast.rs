@@ -1,8 +1,9 @@
+use crate::error::Error;
 use crate::pest::Parser;
 use crate::transform::VarGen;
 use crate::typecheck::Type;
 use crate::util::parse_prefixed_num;
-use bincode::{Decode, Encode, impl_borrow_decode};
+use bincode::{impl_borrow_decode, Decode, Encode};
 use num_bigint::BigInt;
 use pest::iterators::Pair;
 use std::collections::{HashMap, HashSet};
@@ -1028,8 +1029,12 @@ impl fmt::Display for Function {
 }
 
 /* The underlying function that expands an intrinsic call. */
-type IntrinsicImp =
-    fn(&Vec<TPat>, &HashMap<VariableId, TExpr>, &mut HashSet<VariableId>, &mut VarGen) -> TExpr;
+type IntrinsicImp = fn(
+    &Vec<TPat>,
+    &HashMap<VariableId, TExpr>,
+    &mut HashSet<VariableId>,
+    &mut VarGen,
+) -> Result<TExpr, Error>;
 
 #[derive(Clone)]
 pub struct Intrinsic {
@@ -1092,7 +1097,7 @@ impl Intrinsic {
         bindings: &HashMap<VariableId, TExpr>,
         prover_defs: &mut HashSet<VariableId>,
         gen: &mut VarGen,
-    ) -> TExpr {
+    ) -> Result<TExpr, Error> {
         (self.imp)(&self.params, bindings, prover_defs, gen)
     }
 }

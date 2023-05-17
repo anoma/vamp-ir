@@ -19,6 +19,8 @@ pub enum Error {
     NonConstantIterArgumentError,
 
     // cannot statically match {} against {}
+    StaticMatchError { expr: TExpr, pat: TPat },
+
     MatchError { expr: TExpr, pat: TPat },
 
     // only list arguments to fold supported

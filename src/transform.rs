@@ -2,6 +2,7 @@ use crate::ast::{
     Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, TExpr, TPat, Variable,
     VariableId,
 };
+use crate::error::*;
 use crate::typecheck::{
     expand_expr_variables, expand_pattern_variables, infer_module_types, print_types,
     strip_module_types, Type,
@@ -102,7 +103,7 @@ fn match_pattern_expr(
     ext: &mut HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
-) -> Tribool {
+) -> Result<Tribool, Error> {
     match (&pat.v, &expr.v) {
         (_, Expr::Variable(var)) if env.contains_key(&var.id) => {
             match_pattern_expr(pat, &env[&var.id].clone(), env, ext, prover_defs, gen)
@@ -114,13 +115,13 @@ fn match_pattern_expr(
         }
         (Pat::Variable(var), _) => {
             ext.insert(var.id, expr.clone());
-            Tribool::True
+            Ok(Tribool::True)
         }
         (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2))
         | (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
-            let inner_res1 = match_pattern_expr(pat1, expr1, env, ext, prover_defs, gen);
-            let inner_res2 = match_pattern_expr(pat2, expr2, env, ext, prover_defs, gen);
-            std::cmp::min(inner_res1, inner_res2)
+            let inner_res1 = match_pattern_expr(pat1, expr1, env, ext, prover_defs, gen)?;
+            let inner_res2 = match_pattern_expr(pat2, expr2, env, ext, prover_defs, gen)?;
+            Ok(std::cmp::min(inner_res1, inner_res2))
         }
         (Pat::Product(_, _), Expr::Variable(var)) => {
             let new_var1 = Variable::new(gen.generate_id());
@@ -157,11 +158,14 @@ fn match_pattern_expr(
             );
             match_pattern_expr(pat, expr, env, ext, prover_defs, gen)
         }
-        (Pat::Unit, Expr::Unit) | (Pat::Nil, Expr::Nil) => Tribool::True,
-        (Pat::Constant(a), Expr::Constant(b)) if a == b => Tribool::True,
-        (Pat::Constant(a), Expr::Constant(b)) if a != b => Tribool::False,
-        (Pat::Constant(_), Expr::Variable(_) | Expr::Infix(_, _, _)) => Tribool::Indeterminate,
-        _ => panic!("unable to match {} against {}", expr, pat),
+        (Pat::Unit, Expr::Unit) | (Pat::Nil, Expr::Nil) => Ok(Tribool::True),
+        (Pat::Constant(a), Expr::Constant(b)) if a == b => Ok(Tribool::True),
+        (Pat::Constant(a), Expr::Constant(b)) if a != b => Ok(Tribool::False),
+        (Pat::Constant(_), Expr::Variable(_) | Expr::Infix(_, _, _)) => Ok(Tribool::Indeterminate),
+        _ => Err(Error::MatchError {
+            expr: expr.clone(),
+            pat: pat.clone(),
+        }),
     }
 }
 
@@ -387,9 +391,10 @@ fn evaluate_binding(
         prover_defs,
         field_ops,
         gen,
-    );
+    )
+    .unwrap();
     // Allow binding value to carry around its own context
-    capture_env(&mut val, capture);
+    capture_env(&mut val, capture).unwrap();
     // Now make a let binding for the expanded value whilst making sure that the
     // pattern is fully expanded
     let mut new_binding = Definition(LetBinding(binding.0.clone(), Box::new(val)));
@@ -409,7 +414,8 @@ fn evaluate_binding(
         &mut new_bindings,
         prover_defs,
         gen,
-    );
+    )
+    .unwrap();
     new_bindings
 }
 
@@ -417,30 +423,33 @@ fn evaluate_binding(
  * it is a function or an intrinsic. The general idea is to incrementally add to
  * the object's environment as it escapes more lexical scopes, instead of
  * copying all captured bindings at once. */
-fn capture_env(val: &mut TExpr, new_bindings: HashMap<VariableId, TExpr>) {
+fn capture_env(val: &mut TExpr, new_bindings: HashMap<VariableId, TExpr>) -> Result<(), Error> {
     match &mut val.v {
         Expr::Function(fun) => {
             for (k, v) in new_bindings {
                 fun.env.entry(k).or_insert(v);
             }
+            Ok(())
         }
         Expr::Intrinsic(intr) => {
             for (k, v) in new_bindings {
                 intr.env.entry(k).or_insert(v);
             }
+            Ok(())
         }
         Expr::Product(expr1, expr2) | Expr::Cons(expr1, expr2) => {
-            capture_env(expr1, new_bindings.clone());
-            capture_env(expr2, new_bindings);
+            capture_env(expr1, new_bindings.clone())?;
+            capture_env(expr2, new_bindings)?;
+            Ok(())
         }
         Expr::Unit
         | Expr::Infix(_, _, _)
         | Expr::Negate(_)
         | Expr::Constant(_)
         | Expr::Variable(_)
-        | Expr::Nil => {}
+        | Expr::Nil => Ok(()),
         Expr::Application(_, _) | Expr::Sequence(_) | Expr::LetBinding(_, _) | Expr::Match(_) => {
-            panic!("encountered expression {} after evaluation", val)
+            Err(Error::UnexpectedExpression { expr: val.clone() })
         }
     }
 }
@@ -454,10 +463,10 @@ fn evaluate(
     prover_defs: &mut HashSet<VariableId>,
     field_ops: &dyn FieldOps,
     gen: &mut VarGen,
-) -> TExpr {
+) -> Result<TExpr, Error> {
     match &expr.v {
         Expr::Application(expr1, expr2) => {
-            let mut expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen);
+            let mut expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen)?;
             refresh_expr_variables(&mut expr1, &HashMap::new(), prover_defs, gen);
             match &mut expr1.v {
                 Expr::Intrinsic(intr) => {
@@ -494,11 +503,11 @@ fn evaluate(
                     expr1.t = None;
                     // Finally evaluate the body
                     let mut val =
-                        evaluate(&expr1, flattened, bindings, prover_defs, field_ops, gen);
+                        evaluate(&expr1, flattened, bindings, prover_defs, field_ops, gen)?;
                     // Enable closures by storing the required environment
                     // modifications inside the evaluation result
-                    capture_env(&mut val, new_bindings);
-                    val
+                    capture_env(&mut val, new_bindings)?;
+                    Ok(val)
                 }
                 Expr::Function(fun) if fun.params.is_empty() => {
                     unreachable!("functions should have at least one parameter");
@@ -536,15 +545,16 @@ fn evaluate(
                     expr1.t = None;
                     // Finally evaluate the body
                     let mut val =
-                        evaluate(&expr1, flattened, bindings, prover_defs, field_ops, gen);
+                        evaluate(&expr1, flattened, bindings, prover_defs, field_ops, gen)?;
                     // Enable closures by storing the required environment
                     // modifications inside the evaluation result
-                    capture_env(&mut val, new_bindings);
-                    val
+                    capture_env(&mut val, new_bindings)?;
+                    Ok(val)
                 }
-                _ => {
-                    panic!("cannot apply argument {} to {}", expr2, expr1)
-                }
+                _ => Err(Error::ApplicationError {
+                    expr2: *expr2.clone(),
+                    expr1: expr1,
+                }),
             }
         }
         Expr::LetBinding(_, _) => {
@@ -578,7 +588,7 @@ fn evaluate(
                     // Iteratively evaluate a sequence expression here in order
                     // to avoid leaving this call frame
                     for expr in &seq[0..seq.len() - 1] {
-                        evaluate(expr, flattened, bindings, prover_defs, field_ops, gen);
+                        evaluate(expr, flattened, bindings, prover_defs, field_ops, gen)?;
                     }
                     // Hence the let's body is now effectively this sequence's
                     // last expression
@@ -588,7 +598,7 @@ fn evaluate(
                 }
             }
             // Now evaluate the inner-most body
-            let mut val = evaluate(expr, flattened, bindings, prover_defs, field_ops, gen);
+            let mut val = evaluate(expr, flattened, bindings, prover_defs, field_ops, gen)?;
             // Now restore the old environment before this entire let expression
             exchange_map(bindings, &mut acc_bindings);
             let acc_bindings = acc_bindings
@@ -597,8 +607,8 @@ fn evaluate(
                 .collect();
             // Capture the environment modifications required to evaluate body
             // inside the body. Necessary for closures.
-            capture_env(&mut val, acc_bindings);
-            val
+            capture_env(&mut val, acc_bindings)?;
+            Ok(val)
         }
         Expr::Sequence(seq) => {
             let mut val = None;
@@ -615,34 +625,36 @@ fn evaluate(
             val.expect("encountered empty sequence")
         }
         Expr::Product(expr1, expr2) => {
-            let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen);
-            let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen);
-            Expr::Product(Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone())
+            let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen)?;
+            let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen)?;
+            Ok(Expr::Product(Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone()))
         }
         Expr::Cons(expr1, expr2) => {
-            let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen);
-            let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen);
-            Expr::Cons(Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone())
+            let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen)?;
+            let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen)?;
+            Ok(Expr::Cons(Box::new(expr1), Box::new(expr2)).type_expr(expr.t.clone()))
         }
         Expr::Infix(InfixOp::Equal, expr1, expr2) => {
-            let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen);
-            let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen);
+            let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen)?;
+            let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen)?;
             flatten_equals(&expr1, &expr2, flattened);
-            Expr::Unit.type_expr(Some(Type::Unit))
+            Ok(Expr::Unit.type_expr(Some(Type::Unit)))
         }
         Expr::Infix(InfixOp::Exponentiate, e1, e2) => {
             // Compute the base once and for all
-            let e1 = evaluate(e1, flattened, bindings, prover_defs, field_ops, gen);
-            let e2 = evaluate(e2, flattened, bindings, prover_defs, field_ops, gen);
+            let e1 = evaluate(e1, flattened, bindings, prover_defs, field_ops, gen)?;
+            let e2 = evaluate(e2, flattened, bindings, prover_defs, field_ops, gen)?;
             match (&e1.v, &e2.v) {
-                (Expr::Constant(a), Expr::Constant(b)) => {
-                    Expr::Constant(field_ops.infix(InfixOp::Exponentiate, a.clone(), b.clone()))
-                        .type_expr(Some(Type::Int))
-                }
+                (Expr::Constant(a), Expr::Constant(b)) => Ok(Expr::Constant(field_ops.infix(
+                    InfixOp::Exponentiate,
+                    a.clone(),
+                    b.clone(),
+                ))
+                .type_expr(Some(Type::Int))),
                 (_, Expr::Constant(c)) if c.is_zero() => {
-                    Expr::Constant(One::one()).type_expr(Some(Type::Int))
+                    Ok(Expr::Constant(One::one()).type_expr(Some(Type::Int)))
                 }
-                (_, Expr::Constant(c)) if c.is_one() => e1,
+                (_, Expr::Constant(c)) if c.is_one() => Ok(e1),
                 (_, Expr::Constant(v2)) if v2.is_positive() => {
                     // Compute roughly the sqrt of this expression
                     let sqrt = Expr::Infix(
@@ -652,7 +664,7 @@ fn evaluate(
                     )
                     .type_expr(Some(Type::Int));
                     let out2_term =
-                        evaluate(&sqrt, flattened, bindings, prover_defs, field_ops, gen);
+                        evaluate(&sqrt, flattened, bindings, prover_defs, field_ops, gen)?;
                     // Now square the value to obtain roughly this expression
                     let mut rhs = infix_op(InfixOp::Multiply, out2_term.clone(), out2_term);
                     // Multiply by the base once more in order to obtain
@@ -677,16 +689,16 @@ fn evaluate(
                     );
                     evaluate(&rhs, flattened, bindings, prover_defs, field_ops, gen)
                 }
-                _ => panic!("variables are not permitted in expression exponents"),
+                _ => Err(Error::VariableExponentError),
             }
         }
         Expr::Infix(op, expr1, expr2) => {
-            let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen);
-            let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen);
+            let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen)?;
+            let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen)?;
             match (&expr1.v, &expr2.v) {
                 (Expr::Constant(c1), Expr::Constant(c2)) => {
-                    Expr::Constant(field_ops.infix(*op, c1.clone(), c2.clone()))
-                        .type_expr(expr.t.clone())
+                    Ok(Expr::Constant(field_ops.infix(*op, c1.clone(), c2.clone()))
+                        .type_expr(expr.t.clone()))
                 }
                 (_, _) => {
                     let val = infix_op(op.clone(), expr1, expr2);
@@ -696,26 +708,26 @@ fn evaluate(
                         Box::new(val),
                     ));
                     flattened.defs.push(binding);
-                    Expr::Variable(var).type_expr(expr.t.clone())
+                    Ok(Expr::Variable(var).type_expr(expr.t.clone()))
                 }
             }
         }
         Expr::Negate(expr1) => {
-            let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen);
+            let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen)?;
             match expr1.v {
                 Expr::Constant(c1) => {
-                    Expr::Constant(field_ops.negate(c1)).type_expr(expr.t.clone())
+                    Ok(Expr::Constant(field_ops.negate(c1)).type_expr(expr.t.clone()))
                 }
-                _ => Expr::Negate(Box::new(expr1)).type_expr(expr.t.clone()),
+                _ => Ok(Expr::Negate(Box::new(expr1)).type_expr(expr.t.clone())),
             }
         }
         Expr::Constant(c) => {
-            Expr::Constant(field_ops.canonical(c.clone())).type_expr(expr.t.clone())
+            Ok(Expr::Constant(field_ops.canonical(c.clone())).type_expr(expr.t.clone()))
         }
-        Expr::Unit | Expr::Nil => expr.clone(),
+        Expr::Unit | Expr::Nil => Ok(expr.clone()),
         Expr::Variable(var) => match bindings.get(&var.id) {
-            Some(val) if !prover_defs.contains(&var.id) => val.clone(),
-            _ => expr.clone(),
+            Some(val) if !prover_defs.contains(&var.id) => Ok(val.clone()),
+            _ => Ok(expr.clone()),
         },
         Expr::Function(Function {
             params, body, env, ..
@@ -735,17 +747,23 @@ fn evaluate(
             let mut ext = env.clone().into_iter().map(|(k, v)| (k, Some(v))).collect();
             // Supplement the partially captured environment with bindings
             exchange_map(bindings, &mut ext);
-            let expr1 = intr.execute(bindings, prover_defs, gen);
-            let val = evaluate(&expr1, flattened, bindings, prover_defs, field_ops, gen);
+            let expr1 = intr.execute(bindings, prover_defs, gen)?;
+            let val = evaluate(&expr1, flattened, bindings, prover_defs, field_ops, gen)?;
             exchange_map(bindings, &mut ext);
-            val
+            Ok(val)
         }
-        Expr::Function(_) | Expr::Intrinsic(_) => expr.clone(),
+        Expr::Function(_) | Expr::Intrinsic(_) => Ok(expr.clone()),
         Expr::Match(matche) => {
-            let val = evaluate(&matche.0, flattened, bindings, prover_defs, field_ops, gen);
+            let val = evaluate(&matche.0, flattened, bindings, prover_defs, field_ops, gen)?;
             for (pat, expr2) in matche.1.iter().zip(matche.2.iter()) {
-                let res =
-                    match_pattern_expr(&pat, &val, bindings, &mut HashMap::new(), prover_defs, gen);
+                let res = match_pattern_expr(
+                    &pat,
+                    &val,
+                    bindings,
+                    &mut HashMap::new(),
+                    prover_defs,
+                    gen,
+                )?;
                 match res {
                     Tribool::True => {
                         let expr = TExpr {
@@ -758,7 +776,10 @@ fn evaluate(
                         return evaluate(&expr, flattened, bindings, prover_defs, field_ops, gen);
                     }
                     Tribool::Indeterminate => {
-                        panic!("cannot statically match {} against {}", val, pat)
+                        return Err(Error::StaticMatchError {
+                            expr: expr.clone(),
+                            pat: pat.clone(),
+                        })
                     }
                     Tribool::False => continue,
                 }
@@ -804,7 +825,7 @@ pub fn evaluate_module(
         evaluate_def(def, flattened, bindings, prover_defs, field_ops, gen);
     }
     for expr in &module.exprs {
-        evaluate(expr, flattened, bindings, prover_defs, field_ops, gen);
+        evaluate(expr, flattened, bindings, prover_defs, field_ops, gen).unwrap();
     }
 }
 
@@ -833,10 +854,14 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
             map.entry(var.id).or_insert_with(|| var.clone());
         }
         Expr::Sequence(exprs) => {
-            exprs.iter().for_each(|expr| collect_expr_variables(expr, map));
+            exprs
+                .iter()
+                .for_each(|expr| collect_expr_variables(expr, map));
         }
         Expr::Intrinsic(Intrinsic { params, .. }) => {
-            params.iter().for_each(|param| collect_pattern_variables(param, map));
+            params
+                .iter()
+                .for_each(|param| collect_pattern_variables(param, map));
         }
         Expr::Infix(_, expr1, expr2)
         | Expr::Application(expr1, expr2)
@@ -849,7 +874,9 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
             collect_expr_variables(expr1, map);
         }
         Expr::Function(fun) => {
-            fun.params.iter().for_each(|param| collect_pattern_variables(param, map));
+            fun.params
+                .iter()
+                .for_each(|param| collect_pattern_variables(param, map));
             collect_expr_variables(&*fun.body, map);
         }
         Expr::LetBinding(binding, body) => {
@@ -863,7 +890,6 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
                 collect_pattern_variables(pat, map);
                 collect_expr_variables(expr2, map);
             });
-
         }
         Expr::Constant(_) | Expr::Unit | Expr::Nil => {}
     }
@@ -1021,38 +1047,38 @@ fn flatten_expr_to_3ac(
     expr: &TExpr,
     flattened: &mut Module,
     gen: &mut VarGen,
-) -> TPat {
+) -> Result<TPat, Error> {
     match (out, &expr.v) {
-        (None, Expr::Constant(val)) => Pat::Constant(val.clone()).type_pat(expr.t.clone()),
-        (None, Expr::Variable(var)) => Pat::Variable(var.clone()).type_pat(expr.t.clone()),
+        (None, Expr::Constant(val)) => Ok(Pat::Constant(val.clone()).type_pat(expr.t.clone())),
+        (None, Expr::Variable(var)) => Ok(Pat::Variable(var.clone()).type_pat(expr.t.clone())),
         (Some(pat), Expr::Constant(_) | Expr::Variable(_)) => {
             push_constraint_def(flattened, pat.clone(), expr.clone());
-            pat
+            Ok(pat)
         }
         (out, Expr::Negate(n)) => {
-            let out1_term = flatten_expr_to_3ac(None, n, flattened, gen);
+            let out1_term = flatten_expr_to_3ac(None, n, flattened, gen)?;
             let rhs = Expr::Negate(Box::new(out1_term.to_expr()));
             let out_var = Variable::new(gen.generate_id());
             let out = out.unwrap_or(Pat::Variable(out_var.clone()).type_pat(expr.t.clone()));
             push_constraint_def(flattened, out.clone(), rhs.type_expr(Some(Type::Int)));
-            out
+            Ok(out)
         }
         (out, Expr::Infix(op, e1, e2)) if *op != InfixOp::Exponentiate => {
-            let out1_term = flatten_expr_to_3ac(None, e1, flattened, gen);
-            let out2_term = flatten_expr_to_3ac(None, e2, flattened, gen);
+            let out1_term = flatten_expr_to_3ac(None, e1, flattened, gen)?;
+            let out2_term = flatten_expr_to_3ac(None, e2, flattened, gen)?;
             let rhs = infix_op(*op, out1_term.to_expr(), out2_term.to_expr());
             let out_var = Variable::new(gen.generate_id());
             let out = out.unwrap_or(Pat::Variable(out_var.clone()).type_pat(expr.t.clone()));
             push_constraint_def(flattened, out.clone(), rhs);
-            out
+            Ok(out)
         }
-        _ => panic!("encountered unexpected expression: {}", expr),
+        _ => Err(Error::UnexpectedExpression { expr: expr.clone() }),
     }
 }
 
 /* Flatten the given definition into three-address form. */
 fn flatten_def_to_3ac(def: &Definition, flattened: &mut Module, gen: &mut VarGen) {
-    flatten_expr_to_3ac(Some(def.0 .0.clone()), &*def.0 .1, flattened, gen);
+    flatten_expr_to_3ac(Some(def.0 .0.clone()), &*def.0 .1, flattened, gen).unwrap();
 }
 
 /* Flatten all definitions and expressions in this module into three-address
@@ -1088,7 +1114,8 @@ pub fn flatten_module_to_3ac(
                         ohs,
                         flattened,
                         gen,
-                    );
+                    )
+                    .unwrap();
                 }
                 (_, Expr::Constant(val), ohs, _) | (ohs, _, _, Expr::Constant(val)) => {
                     flatten_expr_to_3ac(
@@ -1096,12 +1123,13 @@ pub fn flatten_module_to_3ac(
                         ohs,
                         flattened,
                         gen,
-                    );
+                    )
+                    .unwrap();
                 }
                 (_, _, _, _) => {
-                    let lhs = flatten_expr_to_3ac(None, lhs, flattened, gen);
-                    let rhs = flatten_expr_to_3ac(None, rhs, flattened, gen);
-                    flatten_expr_to_3ac(Some(lhs), &rhs.to_expr(), flattened, gen);
+                    let lhs = flatten_expr_to_3ac(None, lhs, flattened, gen).unwrap();
+                    let rhs = flatten_expr_to_3ac(None, rhs, flattened, gen).unwrap();
+                    flatten_expr_to_3ac(Some(lhs), &rhs.to_expr(), flattened, gen).unwrap();
                 }
             }
             // Remove the last definition because it is solely an equality
@@ -1398,17 +1426,19 @@ fn expand_fresh_intrinsic(
     _bindings: &HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     _gen: &mut VarGen,
-) -> TExpr {
+) -> Result<TExpr, Error> {
     match &params[..] {
         [param]
             if matches!(param.v, Pat::Variable(param_var) if {
                 prover_defs.insert(param_var.id);
-                return param.to_expr();
+                return Ok(param.to_expr());
             }) =>
         {
             unreachable!()
         }
-        _ => panic!("unexpected parameters for fresh: {:?}", params),
+        _ => Err(Error::UnexpectedFreshParameters {
+            params: params.clone(),
+        }),
     }
 }
 
@@ -1456,7 +1486,7 @@ fn expand_iter_intrinsic(
     bindings: &HashMap<VariableId, TExpr>,
     _prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
-) -> TExpr {
+) -> Result<TExpr, Error> {
     match &params[..] {
         [TPat {
             v: Pat::Variable(param_var),
@@ -1487,7 +1517,7 @@ fn expand_iter_intrinsic(
                     t: body.t,
                 };
             }
-            TExpr {
+            Ok(TExpr {
                 t: Some(Type::Function(
                     Box::new(iter_func.t.clone().unwrap()),
                     Box::new(iter_func.t.clone().unwrap()),
@@ -1500,7 +1530,7 @@ fn expand_iter_intrinsic(
                     body: Box::new(body),
                     env: HashMap::new(),
                 }),
-            }
+            })
         }
         _ => panic!("unexpected arguments to iter: {:?}", params),
     }
@@ -1556,7 +1586,7 @@ fn expand_fold_intrinsic(
     bindings: &HashMap<VariableId, TExpr>,
     _prover_defs: &mut HashSet<VariableId>,
     gen: &mut VarGen,
-) -> TExpr {
+) -> Result<TExpr, Error> {
     match &params[..] {
         [TPat {
             v: Pat::Variable(param_var),
@@ -1605,7 +1635,7 @@ fn expand_fold_intrinsic(
                     t: body.t,
                 };
             }
-            TExpr {
+            Ok(TExpr {
                 t: Some(Type::Function(
                     Box::new(fold_func.t.clone().unwrap()),
                     Box::new(fold_func_func),
@@ -1618,8 +1648,10 @@ fn expand_fold_intrinsic(
                     body: Box::new(body),
                     env: HashMap::new(),
                 }),
-            }
+            })
         }
-        _ => panic!("unexpected arguments to fold: {:?}", params),
+        _ => Err(Error::UnexpectedArgumentsInFold {
+            params: params.clone(),
+        }),
     }
 }
