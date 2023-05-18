@@ -162,7 +162,7 @@ fn match_pattern_expr(
         (Pat::Constant(a), Expr::Constant(b)) if a == b => Ok(Tribool::True),
         (Pat::Constant(a), Expr::Constant(b)) if a != b => Ok(Tribool::False),
         (Pat::Constant(_), Expr::Variable(_) | Expr::Infix(_, _, _)) => Ok(Tribool::Indeterminate),
-        _ => Err(Error::MatchError {
+        _ => Err(Error::StaticMatchError {
             expr: expr.clone(),
             pat: pat.clone(),
         }),
@@ -399,7 +399,7 @@ fn evaluate_binding(
     // pattern is fully expanded
     let mut new_binding = Definition(LetBinding(binding.0.clone(), Box::new(val)));
     let mut pat_exps = HashMap::new();
-    expand_pattern_variables(&mut new_binding.0 .0, &new_binding.0 .1, &mut pat_exps, gen);
+    expand_pattern_variables(&mut new_binding.0 .0, &new_binding.0 .1, &mut pat_exps, gen).unwrap();
     // Now decompose the let-binding into a flattened form
     flatten_binding(&new_binding.0 .0, &new_binding.0 .1, flattened);
     // Now expand the environment to reflect the binding that has been effected
@@ -510,7 +510,7 @@ fn evaluate(
                     Ok(val)
                 }
                 Expr::Function(fun) if fun.params.is_empty() => {
-                    unreachable!("functions should have at least one parameter");
+                    Err(Error::NoParameterInFunction)
                 }
                 Expr::Function(fun) => {
                     // Now that we have an assignment, move the function
@@ -784,7 +784,7 @@ fn evaluate(
                     Tribool::False => continue,
                 }
             }
-            panic!("cannot match {} to any pattern in {}", matche.0, expr);
+            Err(Error::MatchError{expr1: *matche.0.clone(), expr2: expr.clone()})
         }
     }
 }
@@ -1231,7 +1231,7 @@ fn expand_global_variables(
                 id: *id,
             })
             .type_expr(Some(vars[id].clone()));
-            expand_expr_variables(&mut expr, &mut expansions, types, gen);
+            expand_expr_variables(&mut expr, &mut expansions, types, gen).unwrap();
         }
     }
     // Now substitute each reference to a global variable with its inner
@@ -1509,7 +1509,7 @@ fn expand_iter_intrinsic(
             let val = if let Expr::Constant(c) = &bindings[&param_var.id].v {
                 c
             } else {
-                panic!("only constant arguments to iter supported")
+                return Err(Error::NonConstantIterArgumentError);
             };
             for _ in 0..val.to_i8().expect("specified iteration count is too large") {
                 body = TExpr {
@@ -1532,7 +1532,7 @@ fn expand_iter_intrinsic(
                 }),
             })
         }
-        _ => panic!("unexpected arguments to iter: {:?}", params),
+        _ => Err(Error::UnexpectedIterArguments{params: params.to_vec()})
     }
 }
 
@@ -1616,7 +1616,7 @@ fn expand_fold_intrinsic(
                 } else if let Expr::Nil = &param_val.v {
                     break param_list;
                 } else {
-                    panic!("only list arguments to fold supported")
+                    return Err(Error::NonListArgumentsInFoldError)
                 };
             };
             let mut body = TExpr {
