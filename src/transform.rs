@@ -163,8 +163,8 @@ fn match_pattern_expr(
         (Pat::Constant(a), Expr::Constant(b)) if a != b => Ok(Tribool::False),
         (Pat::Constant(_), Expr::Variable(_) | Expr::Infix(_, _, _)) => Ok(Tribool::Indeterminate),
         _ => Err(Error::StaticMatchError {
-            expr: expr.clone(),
-            pat: pat.clone(),
+            e: expr.clone(),
+            p: pat.clone(),
         }),
     }
 }
@@ -449,7 +449,7 @@ fn capture_env(val: &mut TExpr, new_bindings: HashMap<VariableId, TExpr>) -> Res
         | Expr::Variable(_)
         | Expr::Nil => Ok(()),
         Expr::Application(_, _) | Expr::Sequence(_) | Expr::LetBinding(_, _) | Expr::Match(_) => {
-            Err(Error::UnexpectedExpression { expr: val.clone() })
+            Err(Error::UnexpectedExpression { e: val.clone() })
         }
     }
 }
@@ -552,8 +552,8 @@ fn evaluate(
                     Ok(val)
                 }
                 _ => Err(Error::ApplicationError {
-                    expr2: *expr2.clone(),
-                    expr1: expr1,
+                    e2: *expr2.clone(),
+                    e1: expr1,
                 }),
             }
         }
@@ -777,14 +777,14 @@ fn evaluate(
                     }
                     Tribool::Indeterminate => {
                         return Err(Error::StaticMatchError {
-                            expr: expr.clone(),
-                            pat: pat.clone(),
+                            e: expr.clone(),
+                            p: pat.clone(),
                         })
                     }
                     Tribool::False => continue,
                 }
             }
-            Err(Error::MatchError{expr1: *matche.0.clone(), expr2: expr.clone()})
+            Err(Error::MatchError{e1: *matche.0.clone(), e2: expr.clone()})
         }
     }
 }
@@ -1072,7 +1072,7 @@ fn flatten_expr_to_3ac(
             push_constraint_def(flattened, out.clone(), rhs);
             Ok(out)
         }
-        _ => Err(Error::UnexpectedExpression { expr: expr.clone() }),
+        _ => Err(Error::UnexpectedExpression { e: expr.clone() }),
     }
 }
 

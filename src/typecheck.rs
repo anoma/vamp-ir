@@ -778,7 +778,7 @@ pub fn expand_pattern_variables(
             expand_pattern_variables(pat1, expr, map, gen)?;
             Ok(())
         }
-        _ => Err(Error::PatternMatchError { expr: expr.clone(), pat: pat.clone() }),
+        _ => Err(Error::PatternMatchError { e: expr.clone(), p: pat.clone() }),
 
     }
 }
