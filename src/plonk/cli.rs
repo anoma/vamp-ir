@@ -1,4 +1,5 @@
 use crate::ast::Module;
+use crate::error::Error;
 use crate::plonk::synth::{make_constant, PlonkModule, PrimeFieldOps};
 use crate::transform::compile;
 use crate::util::{prompt_inputs, read_inputs_from_file};
@@ -108,7 +109,7 @@ pub struct PlonkVerify {
     unchecked: bool,
 }
 
-pub fn plonk(plonk_commands: &PlonkCommands) {
+pub fn plonk(plonk_commands: &PlonkCommands) -> Result<(), Error> {
     match plonk_commands {
         PlonkCommands::Setup(args) => setup_plonk_cmd(args),
         PlonkCommands::Compile(args) => compile_plonk_cmd(args),
@@ -167,7 +168,7 @@ fn setup_plonk_cmd(
         output,
         unchecked,
     }: &Setup,
-) {
+) -> Result<(), Error> {
     // Generate CRS
     println!("* Setting up public parameters...");
     let pp = PC::setup(1 << max_degree, None, &mut OsRng)
@@ -181,6 +182,8 @@ fn setup_plonk_cmd(
     }
     .unwrap();
     println!("* Public parameter setup success!");
+
+    Ok(())
 }
 
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
@@ -192,7 +195,7 @@ fn compile_plonk_cmd(
         output,
         unchecked,
     }: &PlonkCompile,
-) {
+) -> Result<(), Error>{
     println!("* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
@@ -214,8 +217,8 @@ fn compile_plonk_cmd(
 
     // Compile the circuit
     let (pk_p, vk) = circuit
-        .compile::<PC>(&pp)
-        .expect("unable to compile circuit");
+        .compile::<PC>(&pp)?;
+        //.expect("unable to compile circuit");
     println!("* Serializing circuit to storage...");
     let mut circuit_file = File::create(output).expect("unable to create circuit file");
     PlonkCircuitData { pk_p, vk, circuit }
@@ -223,6 +226,8 @@ fn compile_plonk_cmd(
         .unwrap();
 
     println!("* Constraint compilation success!");
+
+    Ok(())
 }
 
 /* Implements the subcommand that creates a proof from interactively entered
@@ -235,7 +240,7 @@ fn prove_plonk_cmd(
         unchecked,
         inputs,
     }: &PlonkProve,
-) {
+) -> Result<(), Error> {
     println!("* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
 
@@ -297,6 +302,8 @@ fn prove_plonk_cmd(
     ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
 
     println!("* Proof generation success!");
+
+    Ok(())
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
@@ -307,7 +314,7 @@ fn verify_plonk_cmd(
         proof,
         unchecked,
     }: &PlonkVerify,
-) {
+) -> Result<(), Error> {
     println!("* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
     let PlonkCircuitData {
@@ -346,8 +353,9 @@ fn verify_plonk_cmd(
     );
     if let Ok(()) = verifier_result {
         println!("* Zero-knowledge proof is valid");
+        Ok(())
     } else {
         println!("* Result from verifier: {:?}", verifier_result);
-        std::process::exit(88);
+        Err(Error::ProofVerificationFailure)
     }
 }

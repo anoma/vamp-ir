@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod error;
 pub mod halo2;
 pub mod plonk;
 pub mod transform;

@@ -30,7 +30,8 @@ fn main() {
 
     let cli = Cli::parse();
     match &cli.backend {
-        Backend::Plonk(plonk_commands) => plonk(plonk_commands),
-        Backend::Halo2(halo2_commands) => halo2(halo2_commands),
-    }
+        Backend::Plonk(plonk_commands) => plonk(plonk_commands).unwrap(),
+        Backend::Halo2(halo2_commands) => halo2(halo2_commands).unwrap(),
+    };
+    
 }

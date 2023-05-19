@@ -2,6 +2,7 @@ use crate::ast::Module;
 use crate::halo2::synth::{keygen, make_constant, prover, verifier, Halo2Module, PrimeFieldOps};
 use crate::transform::compile;
 use crate::util::{prompt_inputs, read_inputs_from_file};
+use crate::error::Error;
 
 use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::plonk::keygen_vk;
@@ -65,7 +66,7 @@ pub struct Halo2Verify {
 
 /* Implements the subcommand that compiles a vamp-ir file into a Halo2 circuit.
  */
-fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile) {
+fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile) -> Result<(), Error> {
     println!("* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
@@ -82,6 +83,8 @@ fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile) {
         .unwrap();
 
     println!("* Constraint compilation success!");
+
+    Ok(())
 }
 
 /* Implements the subcommand that creates a proof from interactively entered
@@ -92,7 +95,7 @@ fn prove_halo2_cmd(
         output,
         inputs,
     }: &Halo2Prove,
-) {
+) -> Result<(), Error> {
     println!("* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
 
@@ -152,10 +155,11 @@ fn prove_halo2_cmd(
         .expect("Proof serialization failed");
 
     println!("* Proof generation success!");
+    Ok(())
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
-fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) {
+fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) -> Result<(), Error> {
     println!("* Reading arithmetic circuit...");
     let circuit_file = File::open(circuit).expect("unable to load circuit file");
     let HaloCircuitData { params, circuit } = HaloCircuitData::read(&circuit_file).unwrap();
@@ -173,9 +177,10 @@ fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) {
 
     if let Ok(()) = verifier_result {
         println!("* Zero-knowledge proof is valid");
+        Ok(())
     } else {
         println!("* Result from verifier: {:?}", verifier_result);
-        std::process::exit(88);
+        Err(Error::ProofVerificationFailure)
     }
 }
 
@@ -215,7 +220,7 @@ impl HaloCircuitData {
     }
 }
 
-pub fn halo2(halo2_commands: &Halo2Commands) {
+pub fn halo2(halo2_commands: &Halo2Commands) -> Result<(), Error> {
     match halo2_commands {
         Halo2Commands::Compile(args) => compile_halo2_cmd(args),
         Halo2Commands::Prove(args) => prove_halo2_cmd(args),
