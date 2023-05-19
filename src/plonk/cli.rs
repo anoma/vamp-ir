@@ -23,6 +23,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::process;
 
 use clap::{Args, Subcommand};
 
@@ -344,9 +345,14 @@ fn verify_plonk_cmd(
         &verifier_data.pi,
         b"Test",
     );
-    if let Ok(()) = verifier_result {
-        println!("* Zero-knowledge proof is valid");
-    } else {
-        println!("* Result from verifier: {:?}", verifier_result);
+
+    match verifier_result {
+        Ok(()) => {
+            println!("* Zero-knowledge proof is valid");
+        },
+        Err(e) => {
+            println!("* Result from verifier: {:?}", e);
+            process::exit(1); // Exit the process with a code of 1 if an error occurred
+        }
     }
 }
