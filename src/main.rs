@@ -1,3 +1,4 @@
+use vamp_ir::file_gen::cli::{generate, GenerateCommands};
 use vamp_ir::halo2::cli::{halo2, Halo2Commands};
 use vamp_ir::plonk::cli::{plonk, PlonkCommands};
 use clap::{Parser, Subcommand, ValueEnum};
