@@ -2,7 +2,9 @@ use crate::ast::{
     Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, TExpr, TPat, Variable,
     VariableId,
 };
+use crate::qprintln;
 use crate::transform::{collect_pattern_variables, VarGen};
+use crate::util::Config;
 use bincode::{Decode, Encode};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display};
@@ -819,10 +821,10 @@ pub fn expand_expr_variables(
 }
 
 /* Print out the types of top-level program definitions. */
-pub fn print_types(module: &Module, types: &HashMap<VariableId, Type>) {
+pub fn print_types(module: &Module, types: &HashMap<VariableId, Type>, config: &Config) {
     for def in &module.defs {
         if let Some(typ) = &def.0 .1.t {
-            println!("{}: {}", def.0 .0, expand_type(typ, types));
+            qprintln!(config, "{}: {}", def.0 .0, expand_type(typ, types));
         }
     }
 }

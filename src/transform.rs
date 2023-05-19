@@ -2,10 +2,12 @@ use crate::ast::{
     Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, TExpr, TPat, Variable,
     VariableId,
 };
+use crate::qprintln;
 use crate::typecheck::{
     expand_expr_variables, expand_pattern_variables, infer_module_types, print_types,
     strip_module_types, Type,
 };
+use crate::util::Config;
 use ark_ff::{One, Zero};
 use num_bigint::BigInt;
 use num_traits::sign::Signed;
@@ -833,10 +835,14 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
             map.entry(var.id).or_insert_with(|| var.clone());
         }
         Expr::Sequence(exprs) => {
-            exprs.iter().for_each(|expr| collect_expr_variables(expr, map));
+            exprs
+                .iter()
+                .for_each(|expr| collect_expr_variables(expr, map));
         }
         Expr::Intrinsic(Intrinsic { params, .. }) => {
-            params.iter().for_each(|param| collect_pattern_variables(param, map));
+            params
+                .iter()
+                .for_each(|param| collect_pattern_variables(param, map));
         }
         Expr::Infix(_, expr1, expr2)
         | Expr::Application(expr1, expr2)
@@ -849,7 +855,9 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
             collect_expr_variables(expr1, map);
         }
         Expr::Function(fun) => {
-            fun.params.iter().for_each(|param| collect_pattern_variables(param, map));
+            fun.params
+                .iter()
+                .for_each(|param| collect_pattern_variables(param, map));
             collect_expr_variables(&*fun.body, map);
         }
         Expr::LetBinding(binding, body) => {
@@ -863,7 +871,6 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
                 collect_pattern_variables(pat, map);
                 collect_expr_variables(expr2, map);
             });
-
         }
         Expr::Constant(_) | Expr::Unit | Expr::Nil => {}
     }
@@ -1217,7 +1224,7 @@ fn expand_global_variables(
 }
 
 /* Compile the given module down into three-address codes. */
-pub fn compile(mut module: Module, field_ops: &dyn FieldOps) -> Module {
+pub fn compile(mut module: Module, field_ops: &dyn FieldOps, config: &Config) -> Module {
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
     let mut bindings = HashMap::new();
@@ -1234,8 +1241,8 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps) -> Module {
         &mut prog_types,
         &mut vg,
     );
-    println!("** Inferring types...");
-    print_types(&module, &prog_types);
+    qprintln!(config, "** Inferring types...");
+    print_types(&module, &prog_types, config);
     // Global variables may have further internal structure, determine this
     // using derived type information
     expand_global_variables(
