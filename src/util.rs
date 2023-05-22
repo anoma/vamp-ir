@@ -120,3 +120,18 @@ where
     // Combine magnitude and sign
     Ok(if pos { magnitude } else { -magnitude })
 }
+
+// Config to be shuffled around clis.
+pub struct Config {
+    pub quiet: bool,
+}
+
+// Macro for a potentially quiet print line.
+#[macro_export]
+macro_rules! qprintln {
+    ($config:expr, $($arg:tt)*) => {
+        if !$config.quiet {
+            println!($($arg)*);
+        }
+    }
+}
