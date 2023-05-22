@@ -181,7 +181,7 @@ fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify, config: &Confi
             qprintln!(config, "* Zero-knowledge proof is valid");
         },
         Err(e) => {
-            qprintln!(config, "* Result from verifier: {:?}", verifier_result);
+            qprintln!(config, "* Result from verifier: {:?}", e);
             process::exit(1); // Exit the process with a code of 1 if an error occurred
         }
     }
