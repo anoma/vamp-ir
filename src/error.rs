@@ -66,14 +66,13 @@ pub enum Error {
     // the global list {} is undefined
     UndefinedGlobalList { v: Variable },
 
-    // Proof System errors
+    // not enough parameters are available for this circuit
     InsufficientParameters,
-    MalformedParameters,
-    MalformedProof,
-    MalformedProverKey,
-    MalformedVerifierKey,
-    MalformedWitness,
-    MalformedPublicInput,
+
+    // general error from backend
+    BackendError {e: String},
+
+    // proof fails to verify
     ProofVerificationFailure,
 }
 
@@ -83,35 +82,35 @@ impl std::fmt::Display for Error {
         match self {
             // cannot apply {} to {}
             Self::ApplicationError { e2,e1 } => 
-                write!(f, "cannot apply {} to {}", e2, e1),
+                write!(f, "Cannot apply {} to {}", e2, e1),
 
             // enountered empty sequence
             Self::EmptySequenceError =>
-                write!(f, "enountered empty sequence"),
+                write!(f, "Enountered empty sequence"),
 
             // variables are not permitted in expression exponents
             Self::VariableExponentError =>
-                write!(f, "variables are not permitted in expression exponents"),
+                write!(f, "Variables are not permitted in expression exponents"),
 
             // only constant arguments to iter supported
             Self::NonConstantIterArgumentError =>
-                write!(f, "only constant arguments to iter supported"),
+                write!(f, "Only constant arguments to iter supported"),
 
             // cannot statically match {} against {}
             Self::StaticMatchError { e, p } =>
-                write!(f, "cannot statically match {} against {}", e, p),
+                write!(f, "Cannot statically match {} against {}", e, p),
 
             // cannot match {} to any pattern in {}
             Self::MatchError { e1, e2 } =>
-                write!(f, "cannot match {} to any pattern in {}", e1, e2),
+                write!(f, "Cannot match {} to any pattern in {}", e1, e2),
 
             // only list arguments to fold supported
             Self::NonListArgumentsInFoldError =>
-                write!(f, "only list arguments to fold supported"),
+                write!(f, "Only list arguments to fold supported"),
 
             // encountered unexpected expression: {}
             Self::UnexpectedExpression { e } =>
-                write!(f, "encountered unexpected expression: {}", e),
+                write!(f, "Encountered unexpected expression: {}", e),
 
             // unexpected parameters for fresh: {:?}
             Self::UnexpectedFreshParameters { params } =>
@@ -119,74 +118,61 @@ impl std::fmt::Display for Error {
 
             // unexpected arguments to iter: {:?}
             Self::UnexpectedIterArguments { params} =>
-                write!(f, "unexpected arguments to iter: {:?}", params),
+                write!(f, "Unexpected arguments to iter: {:?}", params),
 
             // unexpected arguments to fold: {:?}
             Self::UnexpectedArgumentsInFold { params} =>
-                write!(f, "unexpected arguments to fold: {:?}", params),          
+                write!(f, "Unexpected arguments to fold: {:?}", params),          
 
             // functions should have at least one parameter
             Self::NoParameterInFunction =>
-                write!(f, "functions should have at least one parameter"),
+                write!(f, "Functions should have at least one parameter"),
                 
             // Type errors
 
             // universally quantified types cannot be occurs checked
             Self::OccursCheckError =>
-                write!(f, "universally quantified types cannot be occurs checked"),
+                write!(f, "Universally quantified types cannot be occurs-checked"),
 
             // unable to match {:?} with {}
             Self::VariableTypeError {v, t} =>
-                write!(f, "unable to match {:?} with {}", v, t),
+                write!(f, "Unable to match {:?} with {}", v, t),
             
             // unable to match {} with {}
             Self::TypeError {t1, t2} =>
-                write!(f, "unable to match {} with {}", t1, t2),
+                write!(f, "Unable to match {} with {}", t1, t2),
             
             // pattern {} cannot match {}
             Self::PatternMatchError { p, e} =>
-                write!(f, "pattern {} cannot match {}", p, e),
+                write!(f, "Pattern {} cannot match {}", p, e),
             
             // the global function {} is undefined
             Self::UndefinedGlobalFunction { v } =>
-                write!(f, "the global function {} is undefined", v),
+                write!(f, "The global function {} is undefined", v),
             
             // unable to determine type of global variable {}
             Self::UnableDetermineType { v } =>
-                write!(f, "unable to determine type of global variable {}", v),
+                write!(f, "Unable to determine type of global variable {}: was this variable never used?", v),
             
             // expression {} cannot have type {}
             Self::ImpossibleType { e, t} =>
-                write!(f, "expression {} cannot have type {}", e, t),
-            
+                write!(f, "Expression {} cannot have type {}", e, t),
+
             // the global list {} is undefined
             Self::UndefinedGlobalList { v } =>
-                write!(f, "the global list {} is undefined", v),
+            write!(f, "The global list {} is undefined", v),
             
-            // Proof System errors
-            Self::InsufficientParameters =>
-                write!(f, "not enough parameters"),
-            
-            Self::MalformedParameters =>
-                write!(f, "malformed parameters"),
-            
-            Self::MalformedProof =>
-                write!(f, "malformed proof"),
-            
-            Self::MalformedProverKey =>
-                write!(f, "malformed prover key"),
-            
-            Self::MalformedVerifierKey =>
-                write!(f, "malformed verifier key"),
-            
-            Self::MalformedWitness =>
-                write!(f, "malformed witness"),
+            // not enough parameters are available for this circuit
+            Self::InsufficientParameters => 
+                write!(f, "Not enough parameters"),
 
-            Self::MalformedPublicInput =>
-                write!(f, "malformed public input"),
-            
-            Self::ProofVerificationFailure =>
-                write!(f, "proof verification failure"),
+            // general error from backend
+            Self::BackendError {e} =>
+                write!(f, "Error in backend: {}", e),
+
+            // proof fails to verify
+            Self::ProofVerificationFailure => 
+                write!(f, "Proof failed to verify"),
         }
     }
 }
