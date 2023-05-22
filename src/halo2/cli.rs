@@ -20,6 +20,7 @@ use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::process;
 
 #[derive(Subcommand)]
 pub enum Halo2Commands {
@@ -175,10 +176,14 @@ fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify, config: &Confi
     qprintln!(config, "* Verifying proof validity...");
     let verifier_result = verifier(&params, &vk, &proof);
 
-    if let Ok(()) = verifier_result {
-        qprintln!(config, "* Zero-knowledge proof is valid");
-    } else {
-        qprintln!(config, "* Result from verifier: {:?}", verifier_result);
+    match verifier_result {
+        Ok(()) => {
+            qprintln!(config, "* Zero-knowledge proof is valid");
+        },
+        Err(e) => {
+            qprintln!(config, "* Result from verifier: {:?}", e);
+            process::exit(1); // Exit the process with a code of 1 if an error occurred
+        }
     }
 }
 
