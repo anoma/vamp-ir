@@ -1,5 +1,5 @@
-use group::ff::{Field, FromUniformBytes};
 use ff::PrimeField;
+use group::ff::{Field, FromUniformBytes};
 use halo2_proofs::circuit::{Cell, Layouter, SimpleFloorPlanner, Value};
 use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::plonk::*;
@@ -150,7 +150,7 @@ where
 
 impl<F> FieldOps for PrimeFieldOps<F>
 where
-    F: ff::FromUniformBytes<64> + std::cmp::Ord ,
+    F: ff::FromUniformBytes<64> + std::cmp::Ord,
 {
     /* Evaluate the given negation expression in the given prime field. */
     fn canonical(&self, a: BigInt) -> BigInt {
@@ -202,11 +202,11 @@ where
                     } else {
                         c.pow(&limbs)
                     }
-                        .to_repr()
-                        .as_ref(),
+                    .to_repr()
+                    .as_ref(),
                 )
-                    .to_bigint()
-                    .unwrap()
+                .to_bigint()
+                .unwrap()
             }
             InfixOp::Equal => panic!("cannot evaluate equals expression"),
         }
@@ -1094,23 +1094,22 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
 pub fn keygen(
     circuit: &Halo2Module<Fp>,
     params: &Params<EqAffine>,
-) -> (ProvingKey<EqAffine>, VerifyingKey<EqAffine>) {
-    let vk = keygen_vk(&params, circuit).expect("keygen_vk should not fail");
+) -> Result<(ProvingKey<EqAffine>, VerifyingKey<EqAffine>), Error> {
+    let vk = keygen_vk(&params, circuit)?;
     let vk_return = vk.clone();
-    let pk = keygen_pk(&params, vk, circuit).expect("keygen_pk should not fail");
-    (pk, vk_return)
+    let pk = keygen_pk(&params, vk, circuit)?;
+    Ok((pk, vk_return))
 }
 
 pub fn prover(
     circuit: Halo2Module<Fp>,
     params: &Params<EqAffine>,
     pk: &ProvingKey<EqAffine>,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, Error> {
     let rng = OsRng;
     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-    create_proof(params, pk, &[circuit], &[&[]], rng, &mut transcript)
-        .expect("proof generation should not fail");
-    transcript.finalize()
+    create_proof(params, pk, &[circuit], &[&[]], rng, &mut transcript)?;
+    Ok(transcript.finalize())
 }
 
 pub fn verifier(

@@ -1,8 +1,8 @@
 use crate::ast::Module;
+use crate::error::Error;
 use crate::halo2::synth::{keygen, make_constant, prover, verifier, Halo2Module, PrimeFieldOps};
 use crate::transform::compile;
 use crate::util::{prompt_inputs, read_inputs_from_file};
-use crate::error::Error;
 
 use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::plonk::keygen_vk;
@@ -140,11 +140,11 @@ fn prove_halo2_cmd(
 
     // Generating proving key
     println!("* Generating proving key...");
-    let (pk, _vk) = keygen(&circuit, &params);
+    let (pk, _vk) = keygen(&circuit, &params)?;
 
     // Start proving witnesses
     println!("* Proving knowledge of witnesses...");
-    let proof = prover(circuit, &params, &pk);
+    let proof = prover(circuit, &params, &pk)?;
 
     // verifier(&params, &vk, &proof);
 
@@ -165,7 +165,7 @@ fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) -> Result<(), 
     let HaloCircuitData { params, circuit } = HaloCircuitData::read(&circuit_file).unwrap();
 
     println!("* Generating verifying key...");
-    let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
+    let vk = keygen_vk(&params, &circuit)?;
 
     println!("* Reading zero-knowledge proof...");
     let mut proof_file = File::open(proof).expect("unable to load proof file");
