@@ -1,7 +1,8 @@
 use crate::ast::Module;
 use crate::halo2::synth::{keygen, make_constant, prover, verifier, Halo2Module, PrimeFieldOps};
+use crate::qprintln;
 use crate::transform::compile;
-use crate::util::{prompt_inputs, read_inputs_from_file};
+use crate::util::{prompt_inputs, read_inputs_from_file, Config};
 
 use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::plonk::keygen_vk;
@@ -66,13 +67,13 @@ pub struct Halo2Verify {
 
 /* Implements the subcommand that compiles a vamp-ir file into a Halo2 circuit.
  */
-fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile) {
-    println!("* Compiling constraints...");
+fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile, config: &Config) {
+    qprintln!(config, "* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module, &PrimeFieldOps::<Fp>::default());
+    let module_3ac = compile(module, &PrimeFieldOps::<Fp>::default(), config);
 
-    println!("* Synthesizing arithmetic circuit...");
+    qprintln!(config, "* Synthesizing arithmetic circuit...");
     //let circuit = Halo2Module::<Fp>::new(module_3ac.clone());
     let module_rc = Rc::new(module_3ac);
     let circuit = Halo2Module::<Fp>::new(module_rc);
@@ -82,7 +83,7 @@ fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile) {
         .write(&mut circuit_file)
         .unwrap();
 
-    println!("* Constraint compilation success!");
+    qprintln!(config, "* Constraint compilation success!");
 }
 
 /* Implements the subcommand that creates a proof from interactively entered
@@ -93,8 +94,9 @@ fn prove_halo2_cmd(
         output,
         inputs,
     }: &Halo2Prove,
+    config: &Config,
 ) {
-    println!("* Reading arithmetic circuit...");
+    qprintln!(config, "* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
 
     let mut expected_path_to_inputs = circuit.clone();
@@ -108,7 +110,8 @@ fn prove_halo2_cmd(
     // Prompt for program inputs
     let var_assignments_ints = match inputs {
         Some(path_to_inputs) => {
-            println!(
+            qprintln!(
+                config,
                 "* Reading inputs from file {}...",
                 path_to_inputs.to_string_lossy()
             );
@@ -116,13 +119,14 @@ fn prove_halo2_cmd(
         }
         None => {
             if expected_path_to_inputs.exists() {
-                println!(
+                qprintln!(
+                    config,
                     "* Reading inputs from file {}...",
                     expected_path_to_inputs.to_string_lossy()
                 );
                 read_inputs_from_file(&circuit.module, &expected_path_to_inputs)
             } else {
-                println!("* Soliciting circuit witnesses...");
+                qprintln!(config, "* Soliciting circuit witnesses...");
                 prompt_inputs(&circuit.module)
             }
         }
@@ -137,47 +141,47 @@ fn prove_halo2_cmd(
     circuit.populate_variables(var_assignments);
 
     // Generating proving key
-    println!("* Generating proving key...");
+    qprintln!(config, "* Generating proving key...");
     let (pk, _vk) = keygen(&circuit, &params);
 
     // Start proving witnesses
-    println!("* Proving knowledge of witnesses...");
+    qprintln!(config, "* Proving knowledge of witnesses...");
     let proof = prover(circuit, &params, &pk);
 
     // verifier(&params, &vk, &proof);
 
-    println!("* Serializing proof to storage...");
+    qprintln!(config, "* Serializing proof to storage...");
     let mut proof_file = File::create(output).expect("unable to create proof file");
     ProofDataHalo2 { proof }
         .serialize(&mut proof_file)
         .expect("Proof serialization failed");
 
-    println!("* Proof generation success!");
+    qprintln!(config, "* Proof generation success!");
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
-fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) {
-    println!("* Reading arithmetic circuit...");
+fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify, config: &Config) {
+    qprintln!(config, "* Reading arithmetic circuit...");
     let circuit_file = File::open(circuit).expect("unable to load circuit file");
     let HaloCircuitData { params, circuit } = HaloCircuitData::read(&circuit_file).unwrap();
 
-    println!("* Generating verifying key...");
+    qprintln!(config, "* Generating verifying key...");
     let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
 
-    println!("* Reading zero-knowledge proof...");
+    qprintln!(config, "* Reading zero-knowledge proof...");
     let mut proof_file = File::open(proof).expect("unable to load proof file");
     let ProofDataHalo2 { proof } = ProofDataHalo2::deserialize(&mut proof_file).unwrap();
 
     // Veryfing proof
-    println!("* Verifying proof validity...");
+    qprintln!(config, "* Verifying proof validity...");
     let verifier_result = verifier(&params, &vk, &proof);
 
     match verifier_result {
         Ok(()) => {
-            println!("* Zero-knowledge proof is valid");
+            qprintln!(config, "* Zero-knowledge proof is valid");
         },
         Err(e) => {
-            println!("* Result from verifier: {:?}", e);
+            qprintln!(config, "* Result from verifier: {:?}", verifier_result);
             process::exit(1); // Exit the process with a code of 1 if an error occurred
         }
     }
@@ -219,10 +223,10 @@ impl HaloCircuitData {
     }
 }
 
-pub fn halo2(halo2_commands: &Halo2Commands) {
+pub fn halo2(halo2_commands: &Halo2Commands, config: &Config) {
     match halo2_commands {
-        Halo2Commands::Compile(args) => compile_halo2_cmd(args),
-        Halo2Commands::Prove(args) => prove_halo2_cmd(args),
-        Halo2Commands::Verify(args) => verify_halo2_cmd(args),
+        Halo2Commands::Compile(args) => compile_halo2_cmd(args, &config),
+        Halo2Commands::Prove(args) => prove_halo2_cmd(args, &config),
+        Halo2Commands::Verify(args) => verify_halo2_cmd(args, &config),
     }
 }

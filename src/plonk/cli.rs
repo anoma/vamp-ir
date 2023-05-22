@@ -1,7 +1,8 @@
 use crate::ast::Module;
 use crate::plonk::synth::{make_constant, PlonkModule, PrimeFieldOps};
+use crate::qprintln;
 use crate::transform::compile;
-use crate::util::{prompt_inputs, read_inputs_from_file};
+use crate::util::{prompt_inputs, read_inputs_from_file, Config};
 
 use ark_bls12_381::{Bls12_381, Fr as BlsScalar};
 use ark_ec::PairingEngine;
@@ -109,12 +110,12 @@ pub struct PlonkVerify {
     unchecked: bool,
 }
 
-pub fn plonk(plonk_commands: &PlonkCommands) {
+pub fn plonk(plonk_commands: &PlonkCommands, config: &Config) {
     match plonk_commands {
-        PlonkCommands::Setup(args) => setup_plonk_cmd(args),
-        PlonkCommands::Compile(args) => compile_plonk_cmd(args),
-        PlonkCommands::Prove(args) => prove_plonk_cmd(args),
-        PlonkCommands::Verify(args) => verify_plonk_cmd(args),
+        PlonkCommands::Setup(args) => setup_plonk_cmd(args, config),
+        PlonkCommands::Compile(args) => compile_plonk_cmd(args, config),
+        PlonkCommands::Prove(args) => prove_plonk_cmd(args, config),
+        PlonkCommands::Verify(args) => verify_plonk_cmd(args, config),
     }
 }
 
@@ -168,9 +169,10 @@ fn setup_plonk_cmd(
         output,
         unchecked,
     }: &Setup,
+    config: &Config,
 ) {
     // Generate CRS
-    println!("* Setting up public parameters...");
+    qprintln!(config, "* Setting up public parameters...");
     let pp = PC::setup(1 << max_degree, None, &mut OsRng)
         .map_err(to_pc_error::<BlsScalar, PC>)
         .expect("unable to setup polynomial commitment scheme public parameters");
@@ -181,7 +183,7 @@ fn setup_plonk_cmd(
         pp.serialize(&mut pp_file)
     }
     .unwrap();
-    println!("* Public parameter setup success!");
+    qprintln!(config, "* Public parameter setup success!");
 }
 
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
@@ -193,13 +195,14 @@ fn compile_plonk_cmd(
         output,
         unchecked,
     }: &PlonkCompile,
+    config: &Config,
 ) {
-    println!("* Compiling constraints...");
+    qprintln!(config, "* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module, &PrimeFieldOps::<BlsScalar>::default());
+    let module_3ac = compile(module, &PrimeFieldOps::<BlsScalar>::default(), config);
 
-    println!("* Reading public parameters...");
+    qprintln!(config, "* Reading public parameters...");
     let mut pp_file = File::open(universal_params).expect("unable to load public parameters file");
     let pp = if *unchecked {
         UniversalParams::deserialize_unchecked(&mut pp_file)
@@ -208,7 +211,7 @@ fn compile_plonk_cmd(
     }
     .unwrap();
 
-    println!("* Synthesizing arithmetic circuit...");
+    qprintln!(config, "* Synthesizing arithmetic circuit...");
     //let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(&module_3ac);
     let module_rc = Rc::new(module_3ac);
     let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_rc);
@@ -217,13 +220,13 @@ fn compile_plonk_cmd(
     let (pk_p, vk) = circuit
         .compile::<PC>(&pp)
         .expect("unable to compile circuit");
-    println!("* Serializing circuit to storage...");
+    qprintln!(config, "* Serializing circuit to storage...");
     let mut circuit_file = File::create(output).expect("unable to create circuit file");
     PlonkCircuitData { pk_p, vk, circuit }
         .write(&mut circuit_file)
         .unwrap();
 
-    println!("* Constraint compilation success!");
+    qprintln!(config, "* Constraint compilation success!");
 }
 
 /* Implements the subcommand that creates a proof from interactively entered
@@ -236,8 +239,9 @@ fn prove_plonk_cmd(
         unchecked,
         inputs,
     }: &PlonkProve,
+    config: &Config,
 ) {
-    println!("* Reading arithmetic circuit...");
+    qprintln!(config, "* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
 
     let mut expected_path_to_inputs = circuit.clone();
@@ -252,7 +256,8 @@ fn prove_plonk_cmd(
     // Prompt for program inputs
     let var_assignments_ints = match inputs {
         Some(path_to_inputs) => {
-            println!(
+            qprintln!(
+                config,
                 "* Reading inputs from file {}...",
                 path_to_inputs.to_string_lossy()
             );
@@ -260,13 +265,14 @@ fn prove_plonk_cmd(
         }
         None => {
             if expected_path_to_inputs.exists() {
-                println!(
+                qprintln!(
+                    config,
                     "* Reading inputs from file {}...",
                     expected_path_to_inputs.to_string_lossy()
                 );
                 read_inputs_from_file(&circuit.module, &expected_path_to_inputs)
             } else {
-                println!("* Soliciting circuit witnesses...");
+                qprintln!(config, "* Soliciting circuit witnesses...");
                 prompt_inputs(&circuit.module)
             }
         }
@@ -280,7 +286,7 @@ fn prove_plonk_cmd(
     // Populate variable definitions
     circuit.populate_variables(var_assignments);
 
-    println!("* Reading public parameters...");
+    qprintln!(config, "* Reading public parameters...");
     let mut pp_file = File::open(universal_params).expect("unable to load public parameters file");
     let pp = if *unchecked {
         UniversalParams::deserialize_unchecked(&mut pp_file)
@@ -290,14 +296,14 @@ fn prove_plonk_cmd(
     .unwrap();
 
     // Start proving witnesses
-    println!("* Proving knowledge of witnesses...");
+    qprintln!(config, "* Proving knowledge of witnesses...");
     let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
 
-    println!("* Serializing proof to storage...");
+    qprintln!(config, "* Serializing proof to storage...");
     let mut proof_file = File::create(output).expect("unable to create proof file");
     ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
 
-    println!("* Proof generation success!");
+    qprintln!(config, "* Proof generation success!");
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
@@ -308,8 +314,9 @@ fn verify_plonk_cmd(
         proof,
         unchecked,
     }: &PlonkVerify,
+    config: &Config,
 ) {
-    println!("* Reading arithmetic circuit...");
+    qprintln!(config, "* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
     let PlonkCircuitData {
         pk_p: _pk_p,
@@ -317,16 +324,16 @@ fn verify_plonk_cmd(
         circuit,
     } = PlonkCircuitData::read(&mut circuit_file).unwrap();
 
-    println!("* Reading zero-knowledge proof...");
+    qprintln!(config, "* Reading zero-knowledge proof...");
     let mut proof_file = File::open(proof).expect("unable to load proof file");
     let ProofData { proof, pi } = ProofData::deserialize(&mut proof_file).unwrap();
 
-    println!("* Public inputs:");
+    qprintln!(config, "* Public inputs:");
     for (var, val) in circuit.annotate_public_inputs(&vk.1, &pi).values() {
-        println!("{} = {}", var, val);
+        qprintln!(config, "{} = {}", var, val);
     }
 
-    println!("* Reading public parameters...");
+    qprintln!(config, "* Reading public parameters...");
     let mut pp_file = File::open(universal_params).expect("unable to load public parameters file");
     let pp = if *unchecked {
         UniversalParams::deserialize_unchecked(&mut pp_file)
@@ -336,7 +343,7 @@ fn verify_plonk_cmd(
     .unwrap();
 
     // Verifier POV
-    println!("* Verifying proof validity...");
+    qprintln!(config, "* Verifying proof validity...");
     let verifier_data = VerifierData::new(vk.0, pi);
     let verifier_result = verify_proof::<BlsScalar, JubJubParameters, PC>(
         &pp,
@@ -348,10 +355,10 @@ fn verify_plonk_cmd(
 
     match verifier_result {
         Ok(()) => {
-            println!("* Zero-knowledge proof is valid");
+            qprintln!(config, "* Zero-knowledge proof is valid");
         },
         Err(e) => {
-            println!("* Result from verifier: {:?}", e);
+            qprintln!(config, "* Result from verifier: {:?}", e);
             process::exit(1); // Exit the process with a code of 1 if an error occurred
         }
     }
