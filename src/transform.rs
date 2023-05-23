@@ -3,10 +3,12 @@ use crate::ast::{
     VariableId,
 };
 use crate::error::*;
+use crate::qprintln;
 use crate::typecheck::{
     expand_expr_variables, expand_pattern_variables, infer_module_types, print_types,
     strip_module_types, Type,
 };
+use crate::util::Config;
 use ark_ff::{One, Zero};
 use num_bigint::BigInt;
 use num_traits::sign::Signed;
@@ -1245,7 +1247,7 @@ fn expand_global_variables(
 }
 
 /* Compile the given module down into three-address codes. */
-pub fn compile(mut module: Module, field_ops: &dyn FieldOps) -> Module {
+pub fn compile(mut module: Module, field_ops: &dyn FieldOps, config: &Config) -> Module {
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
     let mut bindings = HashMap::new();
@@ -1262,8 +1264,8 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps) -> Module {
         &mut prog_types,
         &mut vg,
     );
-    println!("** Inferring types...");
-    print_types(&module, &prog_types);
+    qprintln!(config, "** Inferring types...");
+    print_types(&module, &prog_types, config);
     // Global variables may have further internal structure, determine this
     // using derived type information
     expand_global_variables(

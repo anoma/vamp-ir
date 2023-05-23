@@ -1,12 +1,16 @@
+use clap::{Parser, Subcommand, ValueEnum};
 use vamp_ir::halo2::cli::{halo2, Halo2Commands};
 use vamp_ir::plonk::cli::{plonk, PlonkCommands};
-use clap::{Parser, Subcommand, ValueEnum};
+use vamp_ir::util::Config;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     backend: Backend,
+
+    #[clap(short, long, default_value = "false")]
+    quiet: bool,
 }
 
 #[derive(Subcommand)]
@@ -29,9 +33,11 @@ enum ProofSystems {
 fn main() {
 
     let cli = Cli::parse();
+    let config = Config { quiet: cli.quiet };
+
     match &cli.backend {
-        Backend::Plonk(plonk_commands) => plonk(plonk_commands).unwrap(),
-        Backend::Halo2(halo2_commands) => halo2(halo2_commands).unwrap(),
+        Backend::Plonk(plonk_commands) => plonk(plonk_commands, &config).unwrap(),
+        Backend::Halo2(halo2_commands) => halo2(halo2_commands, &config).unwrap(),
     };
     
 }
