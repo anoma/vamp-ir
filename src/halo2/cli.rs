@@ -135,18 +135,29 @@ fn prove_halo2_cmd(
     // Populate variable definitions
     circuit.populate_variables(var_assignments.clone());
 
+    // Get public inputs Fp
+    let binding = circuit.module.pubs
+        .iter()
+        .map(|inst| var_assignments[&inst.id])
+        .collect::<Vec<Fp>>();
+    let instances = binding.as_slice();
+
     // Generating proving key
     println!("* Generating proving key...");
     let (pk, _vk) = keygen(&circuit, &params);
 
     // Start proving witnesses
     println!("* Proving knowledge of witnesses...");
-    let proof = prover(circuit, &params, &pk,&mut var_assignments);
+    let proof = prover(circuit, &params, &pk, instances);
 
     // Serilize Public Inputs
-    let public_inputs: Vec<Vec<u8>> = var_assignments
+    // Convert Vec<Fp> to Vec<u8>
+    let public_inputs: Vec<u8> = instances
         .iter()
-        .map(|(_, fp)| fp.to_repr().as_ref().to_vec())
+        .flat_map(|fp| {
+            let repr = fp.to_repr();
+            repr.as_ref().to_vec()
+        })
         .collect();
 
     println!("* Serializing proof to storage...");
@@ -170,10 +181,10 @@ fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) {
     let ProofDataHalo2 { proof, public_inputs } = ProofDataHalo2::deserialize(&mut proof_file).unwrap();
 
     let instances_vec: Vec<Fp> = public_inputs
-        .into_iter()
-        .map(|vec| {
+        .chunks(32)
+        .map(|chunk| {
             let mut array = [0u8; 32];
-            array.copy_from_slice(&vec[..32]);
+            array.copy_from_slice(&chunk[..32]);
             Fp::from_repr(array).unwrap()
         })
         .collect();
@@ -194,7 +205,7 @@ fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) {
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 struct ProofDataHalo2 {
     proof: Vec<u8>,
-    public_inputs: Vec<Vec<u8>>
+    public_inputs: Vec<u8>
 }
 
 /* Captures all the data required to use a Halo2 circuit. */

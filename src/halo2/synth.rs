@@ -1146,31 +1146,13 @@ pub fn prover(
     circuit: Halo2Module<Fp>,
     params: &Params<EqAffine>,
     pk: &ProvingKey<EqAffine>,
-    inputs: &mut HashMap<VariableId, Fp>
+    instances: &[Fp]
 ) -> Vec<u8> {
     let rng = OsRng;
-    let binding = circuit.module.pubs
-        .iter()
-        .map(|inst| inputs[&inst.id])
-        .collect::<Vec<Fp>>();
-    let instances = binding.as_slice();
-
-    // Create a new HashMap to store the selected values
-    let mut selected_inputs = HashMap::new();
-
-    // Populate the new HashMap with the selected values
-    for (index, value) in circuit.module.pubs.iter().enumerate() {
-        selected_inputs.insert(value.id, binding[index]);
-    }
-
-    // Replace the original inputs HashMap with the selected inputs HashMap
-    *inputs = selected_inputs.clone();
-
     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
     create_proof(params, pk, &[circuit], &[&[instances]], rng, &mut transcript)
         .expect("proof generation should not fail");
     transcript.finalize()
-
 }
 
 pub fn verifier(
