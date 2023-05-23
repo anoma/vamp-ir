@@ -31,7 +31,6 @@ enum ProofSystems {
 
 /* Main entry point for vamp-ir compiler, prover, and verifier. */
 fn main() {
-
     let cli = Cli::parse();
     let config = Config { quiet: cli.quiet };
 
@@ -39,5 +38,4 @@ fn main() {
         Backend::Plonk(plonk_commands) => plonk(plonk_commands, &config).unwrap(),
         Backend::Halo2(halo2_commands) => halo2(halo2_commands, &config).unwrap(),
     };
-    
 }

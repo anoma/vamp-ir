@@ -145,7 +145,11 @@ pub fn expr_type_var(expr: &TExpr) -> &Type {
 }
 
 /* Check if the given variable occurs in the type expression. */
-fn occurs_in(var1: &Variable, type2: &Type, types: &mut HashMap<VariableId, Type>) -> Result<bool, Error> {
+fn occurs_in(
+    var1: &Variable,
+    type2: &Type,
+    types: &mut HashMap<VariableId, Type>,
+) -> Result<bool, Error> {
     match type2 {
         Type::Variable(var2) if var1.id == var2.id => Ok(true),
         Type::Variable(var2) if types.contains_key(&var2.id) => {
@@ -168,7 +172,7 @@ fn unify_variable(
     inserts: &mut Option<HashSet<VariableId>>,
 ) -> Result<(), Error> {
     match (var1, type2) {
-        (var1, Type::Variable(var2)) if var1.id == var2.id => {Ok(())}
+        (var1, Type::Variable(var2)) if var1.id == var2.id => Ok(()),
         (var1, type2) if types.contains_key(&var1.id) => {
             unify_types(&types[&var1.id].clone(), type2, types, inserts)?;
             Ok(())
@@ -189,7 +193,10 @@ fn unify_variable(
             }
             Ok(())
         }
-        _ => Err(Error::VariableTypeError{v: var1.clone(), t: type2.clone()}),
+        _ => Err(Error::VariableTypeError {
+            v: var1.clone(),
+            t: type2.clone(),
+        }),
     }
 }
 
@@ -201,7 +208,7 @@ pub fn unify_types(
     inserts: &mut Option<HashSet<VariableId>>,
 ) -> Result<(), Error> {
     match (type1, type2) {
-        (Type::Int, Type::Int) | (Type::Unit, Type::Unit) => {Ok(())}
+        (Type::Int, Type::Int) | (Type::Unit, Type::Unit) => Ok(()),
         (Type::List(a), Type::List(b)) => unify_types(a, b, types, inserts),
         (Type::Function(a1, b1), Type::Function(a2, b2))
         | (Type::Product(a1, b1), Type::Product(a2, b2)) => {
@@ -212,7 +219,10 @@ pub fn unify_types(
         (Type::Variable(v1), type2) | (type2, Type::Variable(v1)) => {
             unify_variable(v1, type2, types, inserts)
         }
-        _ => Err(Error::TypeError{t1: type1.clone(), t2: type2.clone()}),
+        _ => Err(Error::TypeError {
+            t1: type1.clone(),
+            t2: type2.clone(),
+        }),
     }
 }
 
@@ -373,7 +383,8 @@ fn infer_binding_types(
         expr_type_var(&def.1),
         types,
         &mut None,
-    ).unwrap();
+    )
+    .unwrap();
     // Compute the set of free variables occuring in RHS' TYPE that
     // do not occur in the type environment
     let mut quant_vars = HashMap::new();
@@ -452,7 +463,8 @@ pub fn infer_pat_types(
                 &Type::Product(Box::new(pat1_var.clone()), Box::new(pat2_var.clone())),
                 types,
                 &mut None,
-            ).unwrap();
+            )
+            .unwrap();
             infer_pat_types(pat1, vars, types, gen);
             infer_pat_types(pat2, vars, types, gen);
         }
@@ -466,7 +478,8 @@ pub fn infer_pat_types(
                 &Type::List(Box::new(pat1_var.clone())),
                 types,
                 &mut None,
-            ).unwrap();
+            )
+            .unwrap();
             unify_types(&pat_var, &pat2_var, types, &mut None).unwrap();
             infer_pat_types(pat1, vars, types, gen);
             infer_pat_types(pat2, vars, types, gen);
@@ -565,7 +578,8 @@ fn infer_expr_types(
                 &Type::Product(Box::new(expr1_var.clone()), Box::new(expr2_var.clone())),
                 types,
                 &mut None,
-            ).unwrap();
+            )
+            .unwrap();
             infer_expr_types(expr1, env, vars, types, gen);
             infer_expr_types(expr2, env, vars, types, gen);
         }
@@ -579,7 +593,8 @@ fn infer_expr_types(
                 &Type::List(Box::new(expr1_var.clone())),
                 types,
                 &mut None,
-            ).unwrap();
+            )
+            .unwrap();
             unify_types(&expr_var, &expr2_var, types, &mut None).unwrap();
             infer_expr_types(expr1, env, vars, types, gen);
             infer_expr_types(expr2, env, vars, types, gen);
@@ -594,7 +609,8 @@ fn infer_expr_types(
                 &Type::Function(Box::new(expr2_var.clone()), Box::new(expr_var.clone())),
                 types,
                 &mut None,
-            ).unwrap();
+            )
+            .unwrap();
             infer_expr_types(expr1, env, vars, types, gen);
             infer_expr_types(expr2, env, vars, types, gen);
         }
@@ -762,7 +778,7 @@ pub fn expand_pattern_variables(
             *pat = map[&var.id].clone();
             Ok(())
         }
-        (Pat::Variable(_), _) => {Ok(())}
+        (Pat::Variable(_), _) => Ok(()),
         (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
             expand_pattern_variables(pat1, &expr1, map, gen)?;
             expand_pattern_variables(pat2, &expr2, map, gen)?;
@@ -773,15 +789,17 @@ pub fn expand_pattern_variables(
             expand_pattern_variables(pat2, &expr2, map, gen)?;
             Ok(())
         }
-        (Pat::Constant(_), _) => {Ok(())}
-        (Pat::Unit, _) => {Ok(())}
-        (Pat::Nil, Expr::Nil) => {Ok(())}
+        (Pat::Constant(_), _) => Ok(()),
+        (Pat::Unit, _) => Ok(()),
+        (Pat::Nil, Expr::Nil) => Ok(()),
         (Pat::As(pat1, _name), _) => {
             expand_pattern_variables(pat1, expr, map, gen)?;
             Ok(())
         }
-        _ => Err(Error::PatternMatchError { e: expr.clone(), p: pat.clone() }),
-
+        _ => Err(Error::PatternMatchError {
+            e: expr.clone(),
+            p: pat.clone(),
+        }),
     }
 }
 
@@ -820,22 +838,24 @@ pub fn expand_expr_variables(
             *expr = map[&var.id].clone();
             Ok(())
         }
-        (Expr::Variable(_), Type::Int) => {Ok(())}
+        (Expr::Variable(_), Type::Int) => Ok(()),
         (Expr::Variable(var), Type::Function(_, _)) => {
             Err(Error::UndefinedGlobalFunction { v: var.clone() })
         }
-        (Expr::Variable(var), Type::List(_)) => 
-            Err(Error::UndefinedGlobalList { v: var.clone() }),
+        (Expr::Variable(var), Type::List(_)) => Err(Error::UndefinedGlobalList { v: var.clone() }),
         (Expr::Variable(var), Type::Variable(_)) => {
-            Err(Error::UnableDetermineType{v: var.clone() })
+            Err(Error::UnableDetermineType { v: var.clone() })
         }
         (Expr::Product(expr1, expr2), _) => {
             expand_expr_variables(expr1, map, types, gen)?;
             expand_expr_variables(expr2, map, types, gen)?;
             Ok(())
         }
-        (Expr::Constant(_), Type::Int) | (Expr::Unit, Type::Unit) => {Ok(())}
-        _ => Err(Error::ImpossibleType{e: expr.clone(), t: expand_type(expr_type_var(expr), types) })
+        (Expr::Constant(_), Type::Int) | (Expr::Unit, Type::Unit) => Ok(()),
+        _ => Err(Error::ImpossibleType {
+            e: expr.clone(),
+            t: expand_type(expr_type_var(expr), types),
+        }),
     }
 }
 

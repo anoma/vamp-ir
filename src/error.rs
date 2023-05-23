@@ -1,4 +1,7 @@
-use crate::{ast::{TExpr, TPat, Variable}, typecheck::Type};
+use crate::{
+    ast::{TExpr, TPat, Variable},
+    typecheck::Type,
+};
 
 #[derive(Debug)]
 pub enum Error {
@@ -36,7 +39,7 @@ pub enum Error {
 
     // unexpected arguments to fold: {:?}
     UnexpectedArgumentsInFold { params: Vec<TPat> },
-    
+
     // functions should have at least one parameter
     NoParameterInFunction,
 
@@ -46,13 +49,13 @@ pub enum Error {
     OccursCheckError,
 
     // unable to match {:?} with {}
-    VariableTypeError {v: Variable, t: Type},
+    VariableTypeError { v: Variable, t: Type },
 
     // unable to match {} with {}
-    TypeError {t1: Type, t2: Type},
+    TypeError { t1: Type, t2: Type },
 
     // pattern {} cannot match {}
-    PatternMatchError { p: TPat, e: TExpr},
+    PatternMatchError { p: TPat, e: TExpr },
 
     // the global function {} is undefined
     UndefinedGlobalFunction { v: Variable },
@@ -61,7 +64,7 @@ pub enum Error {
     UnableDetermineType { v: Variable },
 
     // expression {} cannot have type {}
-    ImpossibleType { e: TExpr, t: Type},
+    ImpossibleType { e: TExpr, t: Type },
 
     // the global list {} is undefined
     UndefinedGlobalList { v: Variable },
@@ -70,109 +73,111 @@ pub enum Error {
     InsufficientParameters,
 
     // general error from backend
-    BackendError {e: String},
+    BackendError { e: String },
 
     // proof fails to verify
     ProofVerificationFailure,
 }
 
-
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             // cannot apply {} to {}
-            Self::ApplicationError { e2,e1 } => 
-                write!(f, "Cannot apply {} to {}", e2, e1),
+            Self::ApplicationError { e2, e1 } => write!(f, "Cannot apply {} to {}", e2, e1),
 
             // enountered empty sequence
-            Self::EmptySequenceError =>
-                write!(f, "Enountered empty sequence"),
+            Self::EmptySequenceError => write!(f, "Enountered empty sequence"),
 
             // variables are not permitted in expression exponents
-            Self::VariableExponentError =>
-                write!(f, "Variables are not permitted in expression exponents"),
+            Self::VariableExponentError => {
+                write!(f, "Variables are not permitted in expression exponents")
+            }
 
             // only constant arguments to iter supported
-            Self::NonConstantIterArgumentError =>
-                write!(f, "Only constant arguments to iter supported"),
+            Self::NonConstantIterArgumentError => {
+                write!(f, "Only constant arguments to iter supported")
+            }
 
             // cannot statically match {} against {}
-            Self::StaticMatchError { e, p } =>
-                write!(f, "Cannot statically match {} against {}", e, p),
+            Self::StaticMatchError { e, p } => {
+                write!(f, "Cannot statically match {} against {}", e, p)
+            }
 
             // cannot match {} to any pattern in {}
-            Self::MatchError { e1, e2 } =>
-                write!(f, "Cannot match {} to any pattern in {}", e1, e2),
+            Self::MatchError { e1, e2 } => {
+                write!(f, "Cannot match {} to any pattern in {}", e1, e2)
+            }
 
             // only list arguments to fold supported
-            Self::NonListArgumentsInFoldError =>
-                write!(f, "Only list arguments to fold supported"),
+            Self::NonListArgumentsInFoldError => write!(f, "Only list arguments to fold supported"),
 
             // encountered unexpected expression: {}
-            Self::UnexpectedExpression { e } =>
-                write!(f, "Encountered unexpected expression: {}", e),
+            Self::UnexpectedExpression { e } => {
+                write!(f, "Encountered unexpected expression: {}", e)
+            }
 
             // unexpected parameters for fresh: {:?}
-            Self::UnexpectedFreshParameters { params } =>
-                write!(f, "unexpected parameters for fresh: {:?}", params),
+            Self::UnexpectedFreshParameters { params } => {
+                write!(f, "unexpected parameters for fresh: {:?}", params)
+            }
 
             // unexpected arguments to iter: {:?}
-            Self::UnexpectedIterArguments { params} =>
-                write!(f, "Unexpected arguments to iter: {:?}", params),
+            Self::UnexpectedIterArguments { params } => {
+                write!(f, "Unexpected arguments to iter: {:?}", params)
+            }
 
             // unexpected arguments to fold: {:?}
-            Self::UnexpectedArgumentsInFold { params} =>
-                write!(f, "Unexpected arguments to fold: {:?}", params),          
+            Self::UnexpectedArgumentsInFold { params } => {
+                write!(f, "Unexpected arguments to fold: {:?}", params)
+            }
 
             // functions should have at least one parameter
-            Self::NoParameterInFunction =>
-                write!(f, "Functions should have at least one parameter"),
-                
+            Self::NoParameterInFunction => {
+                write!(f, "Functions should have at least one parameter")
+            }
+
             // Type errors
 
             // universally quantified types cannot be occurs checked
-            Self::OccursCheckError =>
-                write!(f, "Universally quantified types cannot be occurs-checked"),
+            Self::OccursCheckError => {
+                write!(f, "Universally quantified types cannot be occurs-checked")
+            }
 
             // unable to match {:?} with {}
-            Self::VariableTypeError {v, t} =>
-                write!(f, "Unable to match {:?} with {}", v, t),
-            
+            Self::VariableTypeError { v, t } => write!(f, "Unable to match {:?} with {}", v, t),
+
             // unable to match {} with {}
-            Self::TypeError {t1, t2} =>
-                write!(f, "Unable to match {} with {}", t1, t2),
-            
+            Self::TypeError { t1, t2 } => write!(f, "Unable to match {} with {}", t1, t2),
+
             // pattern {} cannot match {}
-            Self::PatternMatchError { p, e} =>
-                write!(f, "Pattern {} cannot match {}", p, e),
-            
+            Self::PatternMatchError { p, e } => write!(f, "Pattern {} cannot match {}", p, e),
+
             // the global function {} is undefined
-            Self::UndefinedGlobalFunction { v } =>
-                write!(f, "The global function {} is undefined", v),
-            
+            Self::UndefinedGlobalFunction { v } => {
+                write!(f, "The global function {} is undefined", v)
+            }
+
             // unable to determine type of global variable {}
-            Self::UnableDetermineType { v } =>
-                write!(f, "Unable to determine type of global variable {}: was this variable never used?", v),
-            
+            Self::UnableDetermineType { v } => write!(
+                f,
+                "Unable to determine type of global variable {}: was this variable never used?",
+                v
+            ),
+
             // expression {} cannot have type {}
-            Self::ImpossibleType { e, t} =>
-                write!(f, "Expression {} cannot have type {}", e, t),
+            Self::ImpossibleType { e, t } => write!(f, "Expression {} cannot have type {}", e, t),
 
             // the global list {} is undefined
-            Self::UndefinedGlobalList { v } =>
-            write!(f, "The global list {} is undefined", v),
-            
+            Self::UndefinedGlobalList { v } => write!(f, "The global list {} is undefined", v),
+
             // not enough parameters are available for this circuit
-            Self::InsufficientParameters => 
-                write!(f, "Not enough parameters"),
+            Self::InsufficientParameters => write!(f, "Not enough parameters"),
 
             // general error from backend
-            Self::BackendError {e} =>
-                write!(f, "Error in backend: {}", e),
+            Self::BackendError { e } => write!(f, "Error in backend: {}", e),
 
             // proof fails to verify
-            Self::ProofVerificationFailure => 
-                write!(f, "Proof failed to verify"),
+            Self::ProofVerificationFailure => write!(f, "Proof failed to verify"),
         }
     }
 }

@@ -511,9 +511,7 @@ fn evaluate(
                     capture_env(&mut val, new_bindings)?;
                     Ok(val)
                 }
-                Expr::Function(fun) if fun.params.is_empty() => {
-                    Err(Error::NoParameterInFunction)
-                }
+                Expr::Function(fun) if fun.params.is_empty() => Err(Error::NoParameterInFunction),
                 Expr::Function(fun) => {
                     // Now that we have an assignment, move the function
                     // parameter into the environment
@@ -786,7 +784,10 @@ fn evaluate(
                     Tribool::False => continue,
                 }
             }
-            Err(Error::MatchError{e1: *matche.0.clone(), e2: expr.clone()})
+            Err(Error::MatchError {
+                e1: *matche.0.clone(),
+                e2: expr.clone(),
+            })
         }
     }
 }
@@ -1534,7 +1535,9 @@ fn expand_iter_intrinsic(
                 }),
             })
         }
-        _ => Err(Error::UnexpectedIterArguments{params: params.to_vec()})
+        _ => Err(Error::UnexpectedIterArguments {
+            params: params.to_vec(),
+        }),
     }
 }
 
@@ -1618,7 +1621,7 @@ fn expand_fold_intrinsic(
                 } else if let Expr::Nil = &param_val.v {
                     break param_list;
                 } else {
-                    return Err(Error::NonListArgumentsInFoldError)
+                    return Err(Error::NonListArgumentsInFoldError);
                 };
             };
             let mut body = TExpr {
