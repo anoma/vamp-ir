@@ -65,7 +65,7 @@ fn bench(pir_file: &str) {
     // Generating proving key
     println!("* Generating proving key...");
     let inst8 = Instant::now();
-    let (pk, _vk) = keygen(&circuit, &params);
+    let (pk, _vk) = keygen(&circuit, &params).expect("Keygen failed in halo2 benchmark");
     let inst9 = Instant::now();
     file.write_all(format!("Generating proving key time: {:?}\n", inst9.duration_since(inst8)).as_bytes()).unwrap();
 
@@ -73,7 +73,7 @@ fn bench(pir_file: &str) {
     // Start proving witnesses
     println!("* Proving knowledge of witnesses...");
     let inst10 = Instant::now();
-    let proof = prover(circuit.clone(), &params, &pk);
+    let proof = prover(circuit.clone(), &params, &pk).expect("prover failed in halo2 benchmark");
     let inst11 = Instant::now();
     file.write_all(format!("Proving knowledge of witnesses time: {:?}\n", inst11.duration_since(inst10)).as_bytes()).unwrap();
 
