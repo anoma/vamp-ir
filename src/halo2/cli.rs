@@ -21,7 +21,6 @@ use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::process;
 
 #[derive(Subcommand)]
 pub enum Halo2Commands {
@@ -68,7 +67,10 @@ pub struct Halo2Verify {
 
 /* Implements the subcommand that compiles a vamp-ir file into a Halo2 circuit.
  */
-fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile) -> Result<(), Error> {
+fn compile_halo2_cmd(
+    Halo2Compile { source, output }: &Halo2Compile,
+    config: &Config,
+) -> Result<(), Error> {
     qprintln!(config, "* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
@@ -97,6 +99,7 @@ fn prove_halo2_cmd(
         output,
         inputs,
     }: &Halo2Prove,
+    config: &Config,
 ) -> Result<(), Error> {
     qprintln!(config, "* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
@@ -163,7 +166,10 @@ fn prove_halo2_cmd(
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
-fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) -> Result<(), Error> {
+fn verify_halo2_cmd(
+    Halo2Verify { circuit, proof }: &Halo2Verify,
+    config: &Config,
+) -> Result<(), Error> {
     qprintln!(config, "* Reading arithmetic circuit...");
     let circuit_file = File::open(circuit).expect("unable to load circuit file");
     let HaloCircuitData { params, circuit } = HaloCircuitData::read(&circuit_file).unwrap();
@@ -183,7 +189,7 @@ fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify) -> Result<(), 
         qprintln!(config, "* Zero-knowledge proof is valid");
         Ok(())
     } else {
-        qprintln!(config, "* Result from verifier: {:?}", e);
+        qprintln!(config, "* Result from verifier: {:?}", verifier_result);
         Err(Error::ProofVerificationFailure)
     }
 }

@@ -25,7 +25,6 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::process;
 
 use clap::{Args, Subcommand};
 
@@ -199,7 +198,7 @@ fn compile_plonk_cmd(
         unchecked,
     }: &PlonkCompile,
     config: &Config,
-) -> Result<(), Error>{
+) -> Result<(), Error> {
     qprintln!(config, "* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
@@ -220,9 +219,8 @@ fn compile_plonk_cmd(
     let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_rc);
 
     // Compile the circuit
-    let (pk_p, vk) = circuit
-        .compile::<PC>(&pp)?;
-        //.expect("unable to compile circuit");
+    let (pk_p, vk) = circuit.compile::<PC>(&pp)?;
+    //.expect("unable to compile circuit");
     qprintln!(config, "* Serializing circuit to storage...");
     let mut circuit_file = File::create(output).expect("unable to create circuit file");
     PlonkCircuitData { pk_p, vk, circuit }
