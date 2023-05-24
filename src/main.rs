@@ -2,6 +2,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use vamp_ir::halo2::cli::{halo2, Halo2Commands};
 use vamp_ir::plonk::cli::{plonk, PlonkCommands};
 use vamp_ir::util::Config;
+use vamp_ir::error::Error;
+
+const VERIF_FAILURE_CODE: i32 = 1;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -34,8 +37,13 @@ fn main() {
     let cli = Cli::parse();
     let config = Config { quiet: cli.quiet };
 
-    match &cli.backend {
-        Backend::Plonk(plonk_commands) => plonk(plonk_commands, &config).unwrap(),
-        Backend::Halo2(halo2_commands) => halo2(halo2_commands, &config).unwrap(),
+    let res = match &cli.backend {
+        Backend::Plonk(plonk_commands) => plonk(plonk_commands, &config),
+        Backend::Halo2(halo2_commands) => halo2(halo2_commands, &config),
     };
+
+    match res {
+        Err(Error::ProofVerificationFailure) => std::process::exit(VERIF_FAILURE_CODE),
+        _ => res.unwrap(),
+    }
 }
