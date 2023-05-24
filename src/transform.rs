@@ -2,10 +2,12 @@ use crate::ast::{
     Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, TExpr, TPat, Variable,
     VariableId,
 };
+use crate::qprintln;
 use crate::typecheck::{
     expand_expr_variables, expand_pattern_variables, infer_module_types, print_types,
     strip_module_types, Type,
 };
+use crate::util::Config;
 use ark_ff::{One, Zero};
 use num_bigint::BigInt;
 use num_traits::sign::Signed;
@@ -400,7 +402,9 @@ fn evaluate_binding(
     // Now expand the environment to reflect the binding that has been effected
     let mut new_bindings = HashMap::new();
     for (var, pat) in pat_exps {
-        new_bindings.insert(var, pat.to_expr());
+        if let Some(pat) = pat {
+            new_bindings.insert(var, pat.to_expr());
+        }
     }
     match_pattern_expr(
         &new_binding.0 .0,
@@ -833,10 +837,14 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
             map.entry(var.id).or_insert_with(|| var.clone());
         }
         Expr::Sequence(exprs) => {
-            exprs.iter().for_each(|expr| collect_expr_variables(expr, map));
+            exprs
+                .iter()
+                .for_each(|expr| collect_expr_variables(expr, map));
         }
         Expr::Intrinsic(Intrinsic { params, .. }) => {
-            params.iter().for_each(|param| collect_pattern_variables(param, map));
+            params
+                .iter()
+                .for_each(|param| collect_pattern_variables(param, map));
         }
         Expr::Infix(_, expr1, expr2)
         | Expr::Application(expr1, expr2)
@@ -849,7 +857,9 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
             collect_expr_variables(expr1, map);
         }
         Expr::Function(fun) => {
-            fun.params.iter().for_each(|param| collect_pattern_variables(param, map));
+            fun.params
+                .iter()
+                .for_each(|param| collect_pattern_variables(param, map));
             collect_expr_variables(&*fun.body, map);
         }
         Expr::LetBinding(binding, body) => {
@@ -863,7 +873,6 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
                 collect_pattern_variables(pat, map);
                 collect_expr_variables(expr2, map);
             });
-
         }
         Expr::Constant(_) | Expr::Unit | Expr::Nil => {}
     }
@@ -932,28 +941,23 @@ fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
 /* Flatten the given binding down into the set of constraints it defines. */
 fn flatten_binding(pat: &TPat, expr: &TExpr, flattened: &mut Module) {
     match (&pat.v, &expr.v) {
-        (Pat::Variable(_), Expr::Function(_)) => {}
-        (
-            Pat::Variable(_),
-            Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
-        ) => {
-            flattened
-                .defs
-                .push(Definition(LetBinding(pat.clone(), Box::new(expr.clone()))));
-        }
-        (
-            Pat::Constant(pat),
-            Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
-        ) => {
-            flattened.exprs.push(
-                Expr::Infix(
-                    InfixOp::Equal,
-                    Box::new(Expr::Constant(pat.clone()).type_expr(Some(Type::Int))),
-                    Box::new(expr.clone()),
-                )
-                .type_expr(Some(Type::Unit)),
-            );
-        }
+        (Pat::Variable(_), Expr::Function(_) | Expr::Intrinsic(_)) => {},
+        (Pat::Variable(_),
+         Expr::Variable(_) | Expr::Constant(_) |
+         Expr::Infix(_, _, _) | Expr::Negate(_)) => {
+            flattened.defs.push(Definition(LetBinding(
+                pat.clone(),
+                Box::new(expr.clone()))));
+        },
+        (Pat::Constant(pat),
+         Expr::Variable(_) | Expr::Constant(_) |
+                 Expr::Infix(_, _, _) | Expr::Negate(_)) => {
+            flattened.exprs.push(Expr::Infix(
+                InfixOp::Equal,
+                Box::new(Expr::Constant(pat.clone()).type_expr(Some(Type::Int))),
+                Box::new(expr.clone()),
+            ).type_expr(Some(Type::Unit)));
+        },
         (Pat::As(pat, _name), _) => {
             flatten_binding(pat, expr, flattened);
         }
@@ -1217,7 +1221,7 @@ fn expand_global_variables(
 }
 
 /* Compile the given module down into three-address codes. */
-pub fn compile(mut module: Module, field_ops: &dyn FieldOps) -> Module {
+pub fn compile(mut module: Module, field_ops: &dyn FieldOps, config: &Config) -> Module {
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
     let mut bindings = HashMap::new();
@@ -1234,8 +1238,8 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps) -> Module {
         &mut prog_types,
         &mut vg,
     );
-    println!("** Inferring types...");
-    print_types(&module, &prog_types);
+    qprintln!(config, "** Inferring types...");
+    print_types(&module, &prog_types, config);
     // Global variables may have further internal structure, determine this
     // using derived type information
     expand_global_variables(
@@ -1391,23 +1395,38 @@ fn register_fresh_intrinsic(
     );
 }
 
-/* fresh x returns a fresh unconstrained variable whose prover definition equals
- * the supplied expression. */
+/* fresh x returns a fresh unconstrained expression whose prover definition
+ * equals the supplied expression. */
 fn expand_fresh_intrinsic(
     params: &Vec<TPat>,
-    _bindings: &HashMap<VariableId, TExpr>,
+    bindings: &HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
-    _gen: &mut VarGen,
+    gen: &mut VarGen,
 ) -> TExpr {
     match &params[..] {
-        [param]
-            if matches!(param.v, Pat::Variable(param_var) if {
-                prover_defs.insert(param_var.id);
-                return param.to_expr();
-            }) =>
-        {
-            unreachable!()
-        }
+        [param] if matches!(param.v, Pat::Variable(param_var) if {
+            let val = bindings[&param_var.id].clone();
+            // Make a new prover definition that is equal to the argument
+            let fresh_arg = Variable::new(gen.generate_id());
+            let mut fresh_pat = Pat::Variable(fresh_arg.clone()).type_pat(val.t.clone());
+            let mut pat_exps = HashMap::new();
+            // Expand the pattern using our knowledge of the expression's form
+            expand_pattern_variables(&mut fresh_pat, &val, &mut pat_exps, gen);
+            // Make sure every part of expanded expression is a prover variable
+            for var in pat_exps.keys() {
+                prover_defs.insert(*var);
+            }
+            return TExpr {
+                t: val.t.clone(),
+                v: Expr::LetBinding(
+                    LetBinding(
+                        fresh_pat.clone(),
+                        Box::new(val.clone()),
+                    ),
+                    Box::new(fresh_pat.to_expr())
+                ),
+            }
+        }) => unreachable!(),
         _ => panic!("unexpected parameters for fresh: {:?}", params),
     }
 }

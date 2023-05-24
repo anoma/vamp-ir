@@ -2,7 +2,9 @@ use crate::ast::{
     Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, TExpr, TPat, Variable,
     VariableId,
 };
+use crate::qprintln;
 use crate::transform::{collect_pattern_variables, VarGen};
+use crate::util::Config;
 use bincode::{Decode, Encode};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display};
@@ -700,13 +702,15 @@ pub fn infer_module_types(
 pub fn expand_pattern_variables(
     pat: &mut TPat,
     expr: &TExpr,
-    map: &mut HashMap<VariableId, TPat>,
+    map: &mut HashMap<VariableId, Option<TPat>>,
     gen: &mut VarGen,
 ) {
     match (&mut pat.v, &expr.v) {
         (Pat::Variable(var), _) if map.contains_key(&var.id) => {
-            *pat = map[&var.id].clone();
-        }
+            if let Some(equiv_pat) = &map[&var.id] {
+                *pat = equiv_pat.clone();
+            }
+        },
         (Pat::Variable(var), Expr::Product(expr1, expr2)) => {
             let mut new_var1 = Variable::new(gen.generate_id());
             new_var1.name = var.name.as_ref().map(|x| x.to_owned() + ".0");
@@ -720,8 +724,8 @@ pub fn expand_pattern_variables(
 
             let curr_id = var.id;
             pat.v = Pat::Product(Box::new(var1), Box::new(var2));
-            map.insert(curr_id, pat.clone());
-        }
+            map.insert(curr_id, Some(pat.clone()));
+        },
 
         (Pat::Variable(var), Expr::Cons(expr1, expr2)) => {
             let mut new_var1 = Variable::new(gen.generate_id());
@@ -736,17 +740,21 @@ pub fn expand_pattern_variables(
 
             let curr_id = var.id;
             pat.v = Pat::Cons(Box::new(var1), Box::new(var2));
-            map.insert(curr_id, pat.clone());
-        }
+            map.insert(curr_id, Some(pat.clone()));
+        },
         (Pat::Variable(var), Expr::Unit) => {
-            map.insert(var.id, Pat::Unit.type_pat(Some(Type::Unit)));
-            *pat = map[&var.id].clone();
-        }
+            let equiv_pat = Pat::Unit.type_pat(Some(Type::Unit));
+            map.insert(var.id, Some(equiv_pat.clone()));
+            *pat = equiv_pat;
+        },
         (Pat::Variable(var), Expr::Nil) => {
-            map.insert(var.id, Pat::Nil.type_pat(None));
-            *pat = map[&var.id].clone();
-        }
-        (Pat::Variable(_), _) => {}
+            let equiv_pat = Pat::Nil.type_pat(None);
+            map.insert(var.id, Some(equiv_pat.clone()));
+            *pat = equiv_pat;
+        },
+        (Pat::Variable(var), _) => {
+            map.insert(var.id, None);
+        },
         (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
             expand_pattern_variables(pat1, &expr1, map, gen);
             expand_pattern_variables(pat2, &expr2, map, gen);
@@ -819,10 +827,10 @@ pub fn expand_expr_variables(
 }
 
 /* Print out the types of top-level program definitions. */
-pub fn print_types(module: &Module, types: &HashMap<VariableId, Type>) {
+pub fn print_types(module: &Module, types: &HashMap<VariableId, Type>, config: &Config) {
     for def in &module.defs {
         if let Some(typ) = &def.0 .1.t {
-            println!("{}: {}", def.0 .0, expand_type(typ, types));
+            qprintln!(config, "{}: {}", def.0 .0, expand_type(typ, types));
         }
     }
 }
