@@ -1,11 +1,3 @@
-/* An implementation of standard arithmetic logic unit operations in vampir. Run
-   as follows:
-   vamp-ir setup params.pp
-   vamp-ir compile tests/alu.pir params.pp circuit.plonk
-   vamp-ir prove circuit.plonk params.pp proof.plonk
-   vamp-ir verify circuit.plonk params.pp proof.plonk
-*/
-
 // Ensure that the given argument is 1 or 0, and returns it
 def bool x = { x*(x-1) = 0; x };
 
@@ -70,20 +62,11 @@ def bitwise32 g a b = {
     combine32 new_bits
 };
 
-def bitwise_single g a = {
-    def a_bits = range32 a;
-    def new_bits = map g a_bits;
-    combine32 new_bits
-};
-
 // Definition of xor for domain {0, 1}^2
 def bit_xor (a,b) = { a*(1-b)+(1-a)*b };
 
 // Definition of and for domain {0, 1}^2
 def bit_and (a,b) = { a*b };
-
-// Definition of not for domain {0, 1}
-def bit_not a = { 1-a };
 
 // Definition of bitwise xor for 32 bit values
 def xor32 = bitwise32 bit_xor;
@@ -91,9 +74,24 @@ def xor32 = bitwise32 bit_xor;
 // Definition of bitwise and for 32 bit values
 def and32 = bitwise32 bit_and;
 
-// Definition of bitwise not for 32 bit values
-def not32 = bitwise_single bit_not;
-// 3284400724 = not32 1010566571;
+
+// Reminder operation
+def rem32 x = {
+    def q = fresh(x \ 4294967296);
+    def r = fresh(x % 4294967296);
+    x = q * 4294967296 + r;
+    range32 q;
+    r
+};
+
+def rem2 x = {
+    def q = fresh(x \ 2);
+    def r = fresh(x % 2);
+    x = q * 4294967296 + r;
+    range32 q;
+    r
+};
+
 
 
 // SHA256 constants
@@ -168,7 +166,7 @@ def sigma0 x = {
     def (x0,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22,x23,x24,x25,x26,x27,x28,x29,x30,x31,xr) = (a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,());
     def (y0,y1,y2,y3,y4,y5,y6,y7,y8,y9,y10,y11,y12,y13,y14,y15,y16,y17,y18,y19,y20,y21,y22,y23,y24,y25,y26,y27,y28,y29,y30,y31,yr) = (a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,());
     def (z0,z1,z2,z3,z4,z5,z6,z7,z8,z9,z10,z11,z12,z13,z14,z15,z16,z17,z18,z19,z20,z21,z22,z23,z24,z25,z26,z27,z28,z29,z30,z31,zr) = (a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,0,0,0,());
-    combine32 (fresh((x0+y0+z0)%2), fresh((x1+y1+z1)%2), fresh((x2+y2+z2)%2), fresh((x3+y3+z3)%2), fresh((x4+y4+z4)%2), fresh((x5+y5+z5)%2), fresh((x6+y6+z6)%2), fresh((x7+y7+z7)%2), fresh((x8+y8+z8)%2), fresh((x9+y9+z9)%2), fresh((x10+y10+z10)%2), fresh((x11+y11+z11)%2), fresh((x12+y12+z12)%2), fresh((x13+y13+z13)%2), fresh((x14+y14+z14)%2), fresh((x15+y15+z15)%2), fresh((x16+y16+z16)%2), fresh((x17+y17+z17)%2), fresh((x18+y18+z18)%2), fresh((x19+y19+z19)%2), fresh((x20+y20+z20)%2), fresh((x21+y21+z21)%2), fresh((x22+y22+z22)%2), fresh((x23+y23+z23)%2), fresh((x24+y24+z24)%2), fresh((x25+y25+z25)%2), fresh((x26+y26+z26)%2), fresh((x27+y27+z27)%2), fresh((x28+y28+z28)%2), fresh((x29+y29+z29)%2), fresh((x30+y30+z30)%2), fresh((x31+y31+z31)%2), ())
+    combine32 (rem2((x0+y0+z0)%2), rem2((x1+y1+z1)%2), rem2((x2+y2+z2)%2), rem2((x3+y3+z3)%2), rem2((x4+y4+z4)%2), rem2((x5+y5+z5)%2), rem2((x6+y6+z6)%2), rem2((x7+y7+z7)%2), rem2((x8+y8+z8)%2), rem2((x9+y9+z9)%2), rem2((x10+y10+z10)%2), rem2((x11+y11+z11)%2), rem2((x12+y12+z12)%2), rem2((x13+y13+z13)%2), rem2((x14+y14+z14)%2), rem2((x15+y15+z15)%2), rem2((x16+y16+z16)%2), rem2((x17+y17+z17)%2), rem2((x18+y18+z18)%2), rem2((x19+y19+z19)%2), rem2((x20+y20+z20)%2), rem2((x21+y21+z21)%2), rem2((x22+y22+z22)%2), rem2((x23+y23+z23)%2), rem2((x24+y24+z24)%2), rem2((x25+y25+z25)%2), rem2((x26+y26+z26)%2), rem2((x27+y27+z27)%2), rem2((x28+y28+z28)%2), rem2((x29+y29+z29)%2), rem2((x30+y30+z30)%2), rem2((x31+y31+z31)%2), ())
     };
 
 def sigma1 x = {
@@ -176,7 +174,7 @@ def sigma1 x = {
     def (x0,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22,x23,x24,x25,x26,x27,x28,x29,x30,x31,xr) = (a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,());
     def (y0,y1,y2,y3,y4,y5,y6,y7,y8,y9,y10,y11,y12,y13,y14,y15,y16,y17,y18,y19,y20,y21,y22,y23,y24,y25,y26,y27,y28,y29,y30,y31,yr) = (a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,());
     def (z0,z1,z2,z3,z4,z5,z6,z7,z8,z9,z10,z11,z12,z13,z14,z15,z16,z17,z18,z19,z20,z21,z22,z23,z24,z25,z26,z27,z28,z29,z30,z31,zr) = (a10, a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,0,0,0,0,0,0,0,0,0,0,());
-    combine32 (fresh((x0+y0+z0)%2), fresh((x1+y1+z1)%2), fresh((x2+y2+z2)%2), fresh((x3+y3+z3)%2), fresh((x4+y4+z4)%2), fresh((x5+y5+z5)%2), fresh((x6+y6+z6)%2), fresh((x7+y7+z7)%2), fresh((x8+y8+z8)%2), fresh((x9+y9+z9)%2), fresh((x10+y10+z10)%2), fresh((x11+y11+z11)%2), fresh((x12+y12+z12)%2), fresh((x13+y13+z13)%2), fresh((x14+y14+z14)%2), fresh((x15+y15+z15)%2), fresh((x16+y16+z16)%2), fresh((x17+y17+z17)%2), fresh((x18+y18+z18)%2), fresh((x19+y19+z19)%2), fresh((x20+y20+z20)%2), fresh((x21+y21+z21)%2), fresh((x22+y22+z22)%2), fresh((x23+y23+z23)%2), fresh((x24+y24+z24)%2), fresh((x25+y25+z25)%2), fresh((x26+y26+z26)%2), fresh((x27+y27+z27)%2), fresh((x28+y28+z28)%2), fresh((x29+y29+z29)%2), fresh((x30+y30+z30)%2), fresh((x31+y31+z31)%2), ())
+    combine32 (rem2((x0+y0+z0)%2), rem2((x1+y1+z1)%2), rem2((x2+y2+z2)%2), rem2((x3+y3+z3)%2), rem2((x4+y4+z4)%2), rem2((x5+y5+z5)%2), rem2((x6+y6+z6)%2), rem2((x7+y7+z7)%2), rem2((x8+y8+z8)%2), rem2((x9+y9+z9)%2), rem2((x10+y10+z10)%2), rem2((x11+y11+z11)%2), rem2((x12+y12+z12)%2), rem2((x13+y13+z13)%2), rem2((x14+y14+z14)%2), rem2((x15+y15+z15)%2), rem2((x16+y16+z16)%2), rem2((x17+y17+z17)%2), rem2((x18+y18+z18)%2), rem2((x19+y19+z19)%2), rem2((x20+y20+z20)%2), rem2((x21+y21+z21)%2), rem2((x22+y22+z22)%2), rem2((x23+y23+z23)%2), rem2((x24+y24+z24)%2), rem2((x25+y25+z25)%2), rem2((x26+y26+z26)%2), rem2((x27+y27+z27)%2), rem2((x28+y28+z28)%2), rem2((x29+y29+z29)%2), rem2((x30+y30+z30)%2), rem2((x31+y31+z31)%2), ())
     };
 
 def SIGMA0 x = {
@@ -184,7 +182,7 @@ def SIGMA0 x = {
     def (x0,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22,x23,x24,x25,x26,x27,x28,x29,x30,x31,xr) = (a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,());
     def (y0,y1,y2,y3,y4,y5,y6,y7,y8,y9,y10,y11,y12,y13,y14,y15,y16,y17,y18,y19,y20,y21,y22,y23,y24,y25,y26,y27,y28,y29,y30,y31,yr) = (a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,());
     def (z0,z1,z2,z3,z4,z5,z6,z7,z8,z9,z10,z11,z12,z13,z14,z15,z16,z17,z18,z19,z20,z21,z22,z23,z24,z25,z26,z27,z28,z29,z30,z31,zr) = (a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,());
-    combine32 (fresh((x0+y0+z0)%2), fresh((x1+y1+z1)%2), fresh((x2+y2+z2)%2), fresh((x3+y3+z3)%2), fresh((x4+y4+z4)%2), fresh((x5+y5+z5)%2), fresh((x6+y6+z6)%2), fresh((x7+y7+z7)%2), fresh((x8+y8+z8)%2), fresh((x9+y9+z9)%2), fresh((x10+y10+z10)%2), fresh((x11+y11+z11)%2), fresh((x12+y12+z12)%2), fresh((x13+y13+z13)%2), fresh((x14+y14+z14)%2), fresh((x15+y15+z15)%2), fresh((x16+y16+z16)%2), fresh((x17+y17+z17)%2), fresh((x18+y18+z18)%2), fresh((x19+y19+z19)%2), fresh((x20+y20+z20)%2), fresh((x21+y21+z21)%2), fresh((x22+y22+z22)%2), fresh((x23+y23+z23)%2), fresh((x24+y24+z24)%2), fresh((x25+y25+z25)%2), fresh((x26+y26+z26)%2), fresh((x27+y27+z27)%2), fresh((x28+y28+z28)%2), fresh((x29+y29+z29)%2), fresh((x30+y30+z30)%2), fresh((x31+y31+z31)%2), ())
+    combine32 (rem2((x0+y0+z0)%2), rem2((x1+y1+z1)%2), rem2((x2+y2+z2)%2), rem2((x3+y3+z3)%2), rem2((x4+y4+z4)%2), rem2((x5+y5+z5)%2), rem2((x6+y6+z6)%2), rem2((x7+y7+z7)%2), rem2((x8+y8+z8)%2), rem2((x9+y9+z9)%2), rem2((x10+y10+z10)%2), rem2((x11+y11+z11)%2), rem2((x12+y12+z12)%2), rem2((x13+y13+z13)%2), rem2((x14+y14+z14)%2), rem2((x15+y15+z15)%2), rem2((x16+y16+z16)%2), rem2((x17+y17+z17)%2), rem2((x18+y18+z18)%2), rem2((x19+y19+z19)%2), rem2((x20+y20+z20)%2), rem2((x21+y21+z21)%2), rem2((x22+y22+z22)%2), rem2((x23+y23+z23)%2), rem2((x24+y24+z24)%2), rem2((x25+y25+z25)%2), rem2((x26+y26+z26)%2), rem2((x27+y27+z27)%2), rem2((x28+y28+z28)%2), rem2((x29+y29+z29)%2), rem2((x30+y30+z30)%2), rem2((x31+y31+z31)%2), ())
     };
 
 def SIGMA1 x = {
@@ -192,7 +190,7 @@ def SIGMA1 x = {
     def (x0,x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,x11,x12,x13,x14,x15,x16,x17,x18,x19,x20,x21,x22,x23,x24,x25,x26,x27,x28,x29,x30,x31,xr) = (a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,());
     def (y0,y1,y2,y3,y4,y5,y6,y7,y8,y9,y10,y11,y12,y13,y14,y15,y16,y17,y18,y19,y20,y21,y22,y23,y24,y25,y26,y27,y28,y29,y30,y31,yr) = (a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,());
     def (z0,z1,z2,z3,z4,z5,z6,z7,z8,z9,z10,z11,z12,z13,z14,z15,z16,z17,z18,z19,z20,z21,z22,z23,z24,z25,z26,z27,z28,z29,z30,z31,zr) = (a25,a26,a27,a28,a29,a30,a31,a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,());
-    combine32 (fresh((x0+y0+z0)%2), fresh((x1+y1+z1)%2), fresh((x2+y2+z2)%2), fresh((x3+y3+z3)%2), fresh((x4+y4+z4)%2), fresh((x5+y5+z5)%2), fresh((x6+y6+z6)%2), fresh((x7+y7+z7)%2), fresh((x8+y8+z8)%2), fresh((x9+y9+z9)%2), fresh((x10+y10+z10)%2), fresh((x11+y11+z11)%2), fresh((x12+y12+z12)%2), fresh((x13+y13+z13)%2), fresh((x14+y14+z14)%2), fresh((x15+y15+z15)%2), fresh((x16+y16+z16)%2), fresh((x17+y17+z17)%2), fresh((x18+y18+z18)%2), fresh((x19+y19+z19)%2), fresh((x20+y20+z20)%2), fresh((x21+y21+z21)%2), fresh((x22+y22+z22)%2), fresh((x23+y23+z23)%2), fresh((x24+y24+z24)%2), fresh((x25+y25+z25)%2), fresh((x26+y26+z26)%2), fresh((x27+y27+z27)%2), fresh((x28+y28+z28)%2), fresh((x29+y29+z29)%2), fresh((x30+y30+z30)%2), fresh((x31+y31+z31)%2), ())
+    combine32 (rem2((x0+y0+z0)%2), rem2((x1+y1+z1)%2), rem2((x2+y2+z2)%2), rem2((x3+y3+z3)%2), rem2((x4+y4+z4)%2), rem2((x5+y5+z5)%2), rem2((x6+y6+z6)%2), rem2((x7+y7+z7)%2), rem2((x8+y8+z8)%2), rem2((x9+y9+z9)%2), rem2((x10+y10+z10)%2), rem2((x11+y11+z11)%2), rem2((x12+y12+z12)%2), rem2((x13+y13+z13)%2), rem2((x14+y14+z14)%2), rem2((x15+y15+z15)%2), rem2((x16+y16+z16)%2), rem2((x17+y17+z17)%2), rem2((x18+y18+z18)%2), rem2((x19+y19+z19)%2), rem2((x20+y20+z20)%2), rem2((x21+y21+z21)%2), rem2((x22+y22+z22)%2), rem2((x23+y23+z23)%2), rem2((x24+y24+z24)%2), rem2((x25+y25+z25)%2), rem2((x26+y26+z26)%2), rem2((x27+y27+z27)%2), rem2((x28+y28+z28)%2), rem2((x29+y29+z29)%2), rem2((x30+y30+z30)%2), rem2((x31+y31+z31)%2), ())
     };
 
 
@@ -201,7 +199,7 @@ def ch x y z = {
     def (a0,a1,a2,a3,a4,a5,a6,a7,a8,a9,a10,a11,a12,a13,a14,a15,a16,a17,a18,a19,a20,a21,a22,a23,a24,a25,a26,a27,a28,a29,a30,a31,ar) = range32 x;
     def (b0,b1,b2,b3,b4,b5,b6,b7,b8,b9,b10,b11,b12,b13,b14,b15,b16,b17,b18,b19,b20,b21,b22,b23,b24,b25,b26,b27,b28,b29,b30,b31,br) = range32 y;
     def (c0,c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11,c12,c13,c14,c15,c16,c17,c18,c19,c20,c21,c22,c23,c24,c25,c26,c27,c28,c29,c30,c31,cr) = range32 z;
-    combine32 (fresh((a0*b0)+(1-a0)*(c0)), fresh((a1*b1)+(1-a1)*(c1)), fresh((a2*b2)+(1-a2)*(c2)), fresh((a3*b3)+(1-a3)*(c3)), fresh((a4*b4)+(1-a4)*(c4)), fresh((a5*b5)+(1-a5)*(c5)), fresh((a6*b6)+(1-a6)*(c6)), fresh((a7*b7)+(1-a7)*(c7)), fresh((a8*b8)+(1-a8)*(c8)), fresh((a9*b9)+(1-a9)*(c9)), fresh((a10*b10)+(1-a10)*(c10)), fresh((a11*b11)+(1-a11)*(c11)), fresh((a12*b12)+(1-a12)*(c12)), fresh((a13*b13)+(1-a13)*(c13)), fresh((a14*b14)+(1-a14)*(c14)), fresh((a15*b15)+(1-a15)*(c15)), fresh((a16*b16)+(1-a16)*(c16)), fresh((a17*b17)+(1-a17)*(c17)), fresh((a18*b18)+(1-a18)*(c18)), fresh((a19*b19)+(1-a19)*(c19)), fresh((a20*b20)+(1-a20)*(c20)), fresh((a21*b21)+(1-a21)*(c21)), fresh((a22*b22)+(1-a22)*(c22)), fresh((a23*b23)+(1-a23)*(c23)), fresh((a24*b24)+(1-a24)*(c24)), fresh((a25*b25)+(1-a25)*(c25)), fresh((a26*b26)+(1-a26)*(c26)), fresh((a27*b27)+(1-a27)*(c27)), fresh((a28*b28)+(1-a28)*(c28)), fresh((a29*b29)+(1-a29)*(c29)), fresh((a30*b30)+(1-a30)*(c30)), fresh((a31*b31)+(1-a31)*(c31)), ())
+    combine32 (rem2((a0*b0)+(1-a0)*(c0)), rem2((a1*b1)+(1-a1)*(c1)), rem2((a2*b2)+(1-a2)*(c2)), rem2((a3*b3)+(1-a3)*(c3)), rem2((a4*b4)+(1-a4)*(c4)), rem2((a5*b5)+(1-a5)*(c5)), rem2((a6*b6)+(1-a6)*(c6)), rem2((a7*b7)+(1-a7)*(c7)), rem2((a8*b8)+(1-a8)*(c8)), rem2((a9*b9)+(1-a9)*(c9)), rem2((a10*b10)+(1-a10)*(c10)), rem2((a11*b11)+(1-a11)*(c11)), rem2((a12*b12)+(1-a12)*(c12)), rem2((a13*b13)+(1-a13)*(c13)), rem2((a14*b14)+(1-a14)*(c14)), rem2((a15*b15)+(1-a15)*(c15)), rem2((a16*b16)+(1-a16)*(c16)), rem2((a17*b17)+(1-a17)*(c17)), rem2((a18*b18)+(1-a18)*(c18)), rem2((a19*b19)+(1-a19)*(c19)), rem2((a20*b20)+(1-a20)*(c20)), rem2((a21*b21)+(1-a21)*(c21)), rem2((a22*b22)+(1-a22)*(c22)), rem2((a23*b23)+(1-a23)*(c23)), rem2((a24*b24)+(1-a24)*(c24)), rem2((a25*b25)+(1-a25)*(c25)), rem2((a26*b26)+(1-a26)*(c26)), rem2((a27*b27)+(1-a27)*(c27)), rem2((a28*b28)+(1-a28)*(c28)), rem2((a29*b29)+(1-a29)*(c29)), rem2((a30*b30)+(1-a30)*(c30)), rem2((a31*b31)+(1-a31)*(c31)), ())
     };
 // 528861580 = ch 0x510e527f 0x9b05688c 0x1f83d9ab;
 
@@ -260,54 +258,54 @@ def w13 = m13;
 def w14 = m14;
 def w15 = m15;
 // from 16 to 63 wi = sigma1(wi-2) + wi-7 + sigma0(wi-15) + wi-16
-def w16 = fresh( (sigma1 w14 + w9 + sigma0 w1 + w0) % 4294967296 );
-def w17 = fresh( (sigma1 w15 + w10 + sigma0 w2 + w1) % 4294967296 );
-def w18 = fresh( (sigma1 w16 + w11 + sigma0 w3 + w2) % 4294967296 );
-def w19 = fresh( (sigma1 w17 + w12 + sigma0 w4 + w3) % 4294967296 );
-def w20 = fresh( (sigma1 w18 + w13 + sigma0 w5 + w4) % 4294967296 );
-def w21 = fresh( (sigma1 w19 + w14 + sigma0 w6 + w5) % 4294967296 );
-def w22 = fresh( (sigma1 w20 + w15 + sigma0 w7 + w6) % 4294967296 );
-def w23 = fresh( (sigma1 w21 + w16 + sigma0 w8 + w7) % 4294967296 );
-def w24 = fresh( (sigma1 w22 + w17 + sigma0 w9 + w8) % 4294967296 );
-def w25 = fresh( (sigma1 w23 + w18 + sigma0 w10 + w9) % 4294967296 );
-def w26 = fresh( (sigma1 w24 + w19 + sigma0 w11 + w10) % 4294967296 );
-def w27 = fresh( (sigma1 w25 + w20 + sigma0 w12 + w11) % 4294967296 );
-def w28 = fresh( (sigma1 w26 + w21 + sigma0 w13 + w12) % 4294967296 );
-def w29 = fresh( (sigma1 w27 + w22 + sigma0 w14 + w13) % 4294967296 );
-def w30 = fresh( (sigma1 w28 + w23 + sigma0 w15 + w14) % 4294967296 );
-def w31 = fresh( (sigma1 w29 + w24 + sigma0 w16 + w15) % 4294967296 );
-def w32 = fresh( (sigma1 w30 + w25 + sigma0 w17 + w16) % 4294967296 );
-def w33 = fresh( (sigma1 w31 + w26 + sigma0 w18 + w17) % 4294967296 );
-def w34 = fresh( (sigma1 w32 + w27 + sigma0 w19 + w18) % 4294967296 );
-def w35 = fresh( (sigma1 w33 + w28 + sigma0 w20 + w19) % 4294967296 );
-def w36 = fresh( (sigma1 w34 + w29 + sigma0 w21 + w20) % 4294967296 );
-def w37 = fresh( (sigma1 w35 + w30 + sigma0 w22 + w21) % 4294967296 );
-def w38 = fresh( (sigma1 w36 + w31 + sigma0 w23 + w22) % 4294967296 );
-def w39 = fresh( (sigma1 w37 + w32 + sigma0 w24 + w23) % 4294967296 );
-def w40 = fresh( (sigma1 w38 + w33 + sigma0 w25 + w24) % 4294967296 );
-def w41 = fresh( (sigma1 w39 + w34 + sigma0 w26 + w25) % 4294967296 );
-def w42 = fresh( (sigma1 w40 + w35 + sigma0 w27 + w26) % 4294967296 );
-def w43 = fresh( (sigma1 w41 + w36 + sigma0 w28 + w27) % 4294967296 );
-def w44 = fresh( (sigma1 w42 + w37 + sigma0 w29 + w28) % 4294967296 );
-def w45 = fresh( (sigma1 w43 + w38 + sigma0 w30 + w29) % 4294967296 );
-def w46 = fresh( (sigma1 w44 + w39 + sigma0 w31 + w30) % 4294967296 );
-def w47 = fresh( (sigma1 w45 + w40 + sigma0 w32 + w31) % 4294967296 );
-def w48 = fresh( (sigma1 w46 + w41 + sigma0 w33 + w32) % 4294967296 );
-def w49 = fresh( (sigma1 w47 + w42 + sigma0 w34 + w33) % 4294967296 );
-def w50 = fresh( (sigma1 w48 + w43 + sigma0 w35 + w34) % 4294967296 );
-def w51 = fresh( (sigma1 w49 + w44 + sigma0 w36 + w35) % 4294967296 );
-def w52 = fresh( (sigma1 w50 + w45 + sigma0 w37 + w36) % 4294967296 );
-def w53 = fresh( (sigma1 w51 + w46 + sigma0 w38 + w37) % 4294967296 );
-def w54 = fresh( (sigma1 w52 + w47 + sigma0 w39 + w38) % 4294967296 );
-def w55 = fresh( (sigma1 w53 + w48 + sigma0 w40 + w39) % 4294967296 );
-def w56 = fresh( (sigma1 w54 + w49 + sigma0 w41 + w40) % 4294967296 );
-def w57 = fresh( (sigma1 w55 + w50 + sigma0 w42 + w41) % 4294967296 );
-def w58 = fresh( (sigma1 w56 + w51 + sigma0 w43 + w42) % 4294967296 );
-def w59 = fresh( (sigma1 w57 + w52 + sigma0 w44 + w43) % 4294967296 );
-def w60 = fresh( (sigma1 w58 + w53 + sigma0 w45 + w44) % 4294967296 );
-def w61 = fresh( (sigma1 w59 + w54 + sigma0 w46 + w45) % 4294967296 );
-def w62 = fresh( (sigma1 w60 + w55 + sigma0 w47 + w46) % 4294967296 );
-def w63 = fresh( (sigma1 w61 + w56 + sigma0 w48 + w47) % 4294967296 );
+def w16 = rem32( (sigma1 w14 + w9 + sigma0 w1 + w0));
+def w17 = rem32( (sigma1 w15 + w10 + sigma0 w2 + w1));
+def w18 = rem32( (sigma1 w16 + w11 + sigma0 w3 + w2));
+def w19 = rem32( (sigma1 w17 + w12 + sigma0 w4 + w3));
+def w20 = rem32( (sigma1 w18 + w13 + sigma0 w5 + w4));
+def w21 = rem32( (sigma1 w19 + w14 + sigma0 w6 + w5));
+def w22 = rem32( (sigma1 w20 + w15 + sigma0 w7 + w6));
+def w23 = rem32( (sigma1 w21 + w16 + sigma0 w8 + w7));
+def w24 = rem32( (sigma1 w22 + w17 + sigma0 w9 + w8));
+def w25 = rem32( (sigma1 w23 + w18 + sigma0 w10 + w9));
+def w26 = rem32( (sigma1 w24 + w19 + sigma0 w11 + w10));
+def w27 = rem32( (sigma1 w25 + w20 + sigma0 w12 + w11));
+def w28 = rem32( (sigma1 w26 + w21 + sigma0 w13 + w12));
+def w29 = rem32( (sigma1 w27 + w22 + sigma0 w14 + w13));
+def w30 = rem32( (sigma1 w28 + w23 + sigma0 w15 + w14));
+def w31 = rem32( (sigma1 w29 + w24 + sigma0 w16 + w15));
+def w32 = rem32( (sigma1 w30 + w25 + sigma0 w17 + w16));
+def w33 = rem32( (sigma1 w31 + w26 + sigma0 w18 + w17));
+def w34 = rem32( (sigma1 w32 + w27 + sigma0 w19 + w18));
+def w35 = rem32( (sigma1 w33 + w28 + sigma0 w20 + w19));
+def w36 = rem32( (sigma1 w34 + w29 + sigma0 w21 + w20));
+def w37 = rem32( (sigma1 w35 + w30 + sigma0 w22 + w21));
+def w38 = rem32( (sigma1 w36 + w31 + sigma0 w23 + w22));
+def w39 = rem32( (sigma1 w37 + w32 + sigma0 w24 + w23));
+def w40 = rem32( (sigma1 w38 + w33 + sigma0 w25 + w24));
+def w41 = rem32( (sigma1 w39 + w34 + sigma0 w26 + w25));
+def w42 = rem32( (sigma1 w40 + w35 + sigma0 w27 + w26));
+def w43 = rem32( (sigma1 w41 + w36 + sigma0 w28 + w27));
+def w44 = rem32( (sigma1 w42 + w37 + sigma0 w29 + w28));
+def w45 = rem32( (sigma1 w43 + w38 + sigma0 w30 + w29));
+def w46 = rem32( (sigma1 w44 + w39 + sigma0 w31 + w30));
+def w47 = rem32( (sigma1 w45 + w40 + sigma0 w32 + w31));
+def w48 = rem32( (sigma1 w46 + w41 + sigma0 w33 + w32));
+def w49 = rem32( (sigma1 w47 + w42 + sigma0 w34 + w33));
+def w50 = rem32( (sigma1 w48 + w43 + sigma0 w35 + w34));
+def w51 = rem32( (sigma1 w49 + w44 + sigma0 w36 + w35));
+def w52 = rem32( (sigma1 w50 + w45 + sigma0 w37 + w36));
+def w53 = rem32( (sigma1 w51 + w46 + sigma0 w38 + w37));
+def w54 = rem32( (sigma1 w52 + w47 + sigma0 w39 + w38));
+def w55 = rem32( (sigma1 w53 + w48 + sigma0 w40 + w39));
+def w56 = rem32( (sigma1 w54 + w49 + sigma0 w41 + w40));
+def w57 = rem32( (sigma1 w55 + w50 + sigma0 w42 + w41));
+def w58 = rem32( (sigma1 w56 + w51 + sigma0 w43 + w42));
+def w59 = rem32( (sigma1 w57 + w52 + sigma0 w44 + w43));
+def w60 = rem32( (sigma1 w58 + w53 + sigma0 w45 + w44));
+def w61 = rem32( (sigma1 w59 + w54 + sigma0 w46 + w45));
+def w62 = rem32( (sigma1 w60 + w55 + sigma0 w47 + w46));
+def w63 = rem32( (sigma1 w61 + w56 + sigma0 w48 + w47));
 
 def H0 = 0x6a09e667;
 def H1 = 0xbb67ae85;
@@ -328,16 +326,16 @@ def g = H6;
 def h = H7;
 
 def step a b c d e f g h K w = {
-    def t1 = fresh (( h + (SIGMA1 e) + (ch e f g) + K + w) % 4294967296);
-    def t2 = fresh ((SIGMA0 a + (maj a b c)) % 4294967296);
+    def t1 = rem32 ( h + (SIGMA1 e) + (ch e f g) + K + w);
+    def t2 = rem32 (SIGMA0 a + (maj a b c));
     def h = g;
     def g = f;
     def f = e;
-    def e = fresh ((d + t1) % 4294967296);
+    def e = rem32 (d + t1);
     def d = c;
     def c = b;
     def b = a;
-    def a = fresh ((t1 + t2) % 4294967296);
+    def a = rem32 (t1 + t2);
     (a, b, c, d, e, f, g, h)
 };
 
@@ -407,13 +405,13 @@ def (a_61, b_61, c_61, d_61, e_61, f_61, g_61, h_61) = step a_60 b_60 c_60 d_60 
 def (a_62, b_62, c_62, d_62, e_62, f_62, g_62, h_62) = step a_61 b_61 c_61 d_61 e_61 f_61 g_61 h_61 K62 w62;
 def (a_63, b_63, c_63, d_63, e_63, f_63, g_63, h_63) = step a_62 b_62 c_62 d_62 e_62 f_62 g_62 h_62 K63 w63;
 
-def H0_f = fresh ((H0 + a_63) % 4294967296);
-def H1_f = fresh ((H1 + b_63) % 4294967296);
-def H2_f = fresh ((H2 + c_63) % 4294967296);
-def H3_f = fresh ((H3 + d_63) % 4294967296);
-def H4_f = fresh ((H4 + e_63) % 4294967296);
-def H5_f = fresh ((H5 + f_63) % 4294967296);
-def H6_f = fresh ((H6 + g_63) % 4294967296);
-def H7_f = fresh ((H7 + h_63) % 4294967296);
+def H0_f = rem32 ((H0 + a_63));
+def H1_f = rem32 ((H1 + b_63));
+def H2_f = rem32 ((H2 + c_63));
+def H3_f = rem32 ((H3 + d_63));
+def H4_f = rem32 ((H4 + e_63));
+def H5_f = rem32 ((H5 + f_63));
+def H6_f = rem32 ((H6 + g_63));
+def H7_f = rem32 ((H7 + h_63));
 
 (0xba7816bf, 0x8f01cfea, 0x414140de, 0x5dae2223, 0xb00361a3, 0x96177a9c, 0xb410ff61, 0xf20015ad) = (H0_f, H1_f, H2_f, H3_f, H4_f, H5_f, H6_f, H7_f);
