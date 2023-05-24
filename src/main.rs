@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand, ValueEnum};
+use vamp_ir::file_gen::cli::{generate, GenerateCommands};
 use vamp_ir::halo2::cli::{halo2, Halo2Commands};
 use vamp_ir::plonk::cli::{plonk, PlonkCommands};
 use vamp_ir::util::Config;
@@ -15,6 +16,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Backend {
+    #[command(subcommand)]
+    Generate(GenerateCommands),
     #[command(subcommand)]
     Plonk(PlonkCommands),
     #[command(subcommand)]
@@ -36,6 +39,7 @@ fn main() {
     let config = Config { quiet: cli.quiet };
 
     match &cli.backend {
+        Backend::Generate(generate_commands) => generate(generate_commands, &config),
         Backend::Plonk(plonk_commands) => plonk(plonk_commands, &config),
         Backend::Halo2(halo2_commands) => halo2(halo2_commands, &config),
     }
