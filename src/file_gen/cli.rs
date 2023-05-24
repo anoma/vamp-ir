@@ -11,6 +11,8 @@ use std::path::PathBuf;
 
 use num_bigint::BigInt;
 
+use crate::qprintln;
+use crate::util::{Config};
 
 #[derive(Subcommand)]
 pub enum GenerateCommands {
@@ -37,13 +39,13 @@ impl FieldOps for () {
 }
 
 /* Implements the subcommand that writes witnesses to a JSON file. */
-pub fn witness_file_cmd(JSONWitnessFile { source, output }: &JSONWitnessFile) {
-    println!("** Reading file...");
+pub fn witness_file_cmd(JSONWitnessFile { source, output }: &JSONWitnessFile, config: &Config) {
+    qprintln!(config, "** Reading file...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module.clone(), &());
+    let module_3ac = compile(module.clone(), &(), config);
     
-    println!("** Collecting variables...");
+    qprintln!(config, "** Collecting variables...");
     // Collect unbound variables from module
     let mut input_variables = HashMap::new();
     collect_module_variables(&module_3ac, &mut input_variables);
@@ -64,19 +66,19 @@ pub fn witness_file_cmd(JSONWitnessFile { source, output }: &JSONWitnessFile) {
       }
     }
     
-    println!("** Writing witnesses to file...");
+    qprintln!(config, "** Writing witnesses to file...");
     std::fs::write(
         output,
         serde_json::to_string_pretty(&input_variables_m).unwrap(),
     ).unwrap();
 
-    println!("** Witnesses file generation success!");
+    qprintln!(config, "** Witnesses file generation success!");
 }
 
 
-pub fn generate(generate_commands: &GenerateCommands) {
+pub fn generate(generate_commands: &GenerateCommands, config: &Config) {
     match generate_commands {
-        GenerateCommands::WitnessFile(args) => witness_file_cmd(args),
+        GenerateCommands::WitnessFile(args) => witness_file_cmd(args, config),
     }
 }
 
