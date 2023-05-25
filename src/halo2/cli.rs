@@ -21,6 +21,7 @@ use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::rc::Rc;
+use ff::{PrimeField};
 
 #[derive(Subcommand)]
 pub enum Halo2Commands {
@@ -77,7 +78,6 @@ fn compile_halo2_cmd(
     let module_3ac = compile(module, &PrimeFieldOps::<Fp>::default(), config);
 
     qprintln!(config, "* Synthesizing arithmetic circuit...");
-    //let circuit = Halo2Module::<Fp>::new(module_3ac.clone());
     let module_rc = Rc::new(module_3ac);
     let circuit = Halo2Module::<Fp>::new(module_rc);
     let params: Params<EqAffine> = Params::new(circuit.k);
@@ -143,7 +143,14 @@ fn prove_halo2_cmd(
     }
 
     // Populate variable definitions
-    circuit.populate_variables(var_assignments);
+    circuit.populate_variables(var_assignments.clone());
+
+    // Get public inputs Fp
+    let binding = circuit.module.pubs
+        .iter()
+        .map(|inst| var_assignments[&inst.id])
+        .collect::<Vec<Fp>>();
+    let instances = binding.as_slice();
 
     // Generating proving key
     qprintln!(config, "* Generating proving key...");
@@ -151,16 +158,24 @@ fn prove_halo2_cmd(
 
     // Start proving witnesses
     qprintln!(config, "* Proving knowledge of witnesses...");
-    let proof = prover(circuit, &params, &pk)?;
+    let proof = prover(circuit, &params, &pk, instances)?;
 
-    // verifier(&params, &vk, &proof);
+    // Serilize Public Inputs
+    // Convert Vec<Fp> to Vec<u8>
+    let public_inputs: Vec<u8> = instances
+        .iter()
+        .flat_map(|fp| {
+            let repr = fp.to_repr();
+            repr.as_ref().to_vec()
+        })
+        .collect();
 
     qprintln!(config, "* Serializing proof to storage...");
     let mut proof_file = File::create(output).expect("unable to create proof file");
-    ProofDataHalo2 { proof }
+    ProofDataHalo2 { proof , public_inputs}
         .serialize(&mut proof_file)
         .expect("Proof serialization failed");
-
+  
     qprintln!(config, "* Proof generation success!");
     Ok(())
 }
@@ -179,11 +194,22 @@ fn verify_halo2_cmd(
 
     qprintln!(config, "* Reading zero-knowledge proof...");
     let mut proof_file = File::open(proof).expect("unable to load proof file");
-    let ProofDataHalo2 { proof } = ProofDataHalo2::deserialize(&mut proof_file).unwrap();
+    let ProofDataHalo2 { proof, public_inputs } = ProofDataHalo2::deserialize(&mut proof_file).unwrap();
+
+    let instances_vec: Vec<Fp> = public_inputs
+        .chunks(32)
+        .map(|chunk| {
+            let mut array = [0u8; 32];
+            array.copy_from_slice(&chunk[..32]);
+            Fp::from_repr(array).unwrap()
+        })
+        .collect();
+
+    let instances: &[Fp] = instances_vec.as_slice();
 
     // Veryfing proof
     qprintln!(config, "* Verifying proof validity...");
-    let verifier_result = verifier(&params, &vk, &proof);
+    let verifier_result = verifier(&params, &vk, &proof, instances);
 
     if let Ok(()) = verifier_result {
         qprintln!(config, "* Zero-knowledge proof is valid");
@@ -197,6 +223,7 @@ fn verify_halo2_cmd(
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 struct ProofDataHalo2 {
     proof: Vec<u8>,
+    public_inputs: Vec<u8>
 }
 
 /* Captures all the data required to use a Halo2 circuit. */
