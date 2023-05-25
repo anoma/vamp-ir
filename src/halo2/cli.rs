@@ -22,7 +22,6 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::rc::Rc;
 use ff::{PrimeField};
-use std::process;
 
 #[derive(Subcommand)]
 pub enum Halo2Commands {
@@ -159,7 +158,7 @@ fn prove_halo2_cmd(
 
     // Start proving witnesses
     qprintln!(config, "* Proving knowledge of witnesses...");
-    let proof = prover(circuit, &params, &pk, instances);
+    let proof = prover(circuit, &params, &pk, instances)?;
 
     // Serilize Public Inputs
     // Convert Vec<Fp> to Vec<u8>
