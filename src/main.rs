@@ -3,6 +3,9 @@ use vamp_ir::file_gen::cli::{generate, GenerateCommands};
 use vamp_ir::halo2::cli::{halo2, Halo2Commands};
 use vamp_ir::plonk::cli::{plonk, PlonkCommands};
 use vamp_ir::util::Config;
+use vamp_ir::error::Error;
+
+const VERIF_FAILURE_CODE: i32 = 1;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -34,13 +37,17 @@ enum ProofSystems {
 
 /* Main entry point for vamp-ir compiler, prover, and verifier. */
 fn main() {
-
     let cli = Cli::parse();
     let config = Config { quiet: cli.quiet };
 
-    match &cli.backend {
+    let res = match &cli.backend {
         Backend::Generate(generate_commands) => generate(generate_commands, &config),
         Backend::Plonk(plonk_commands) => plonk(plonk_commands, &config),
         Backend::Halo2(halo2_commands) => halo2(halo2_commands, &config),
+    };
+
+    match res {
+        Err(Error::ProofVerificationFailure) => std::process::exit(VERIF_FAILURE_CODE),
+        _ => res.unwrap(),
     }
 }

@@ -1,4 +1,5 @@
 use crate::ast::Module;
+use crate::error::Error;
 use crate::plonk::synth::{make_constant, PlonkModule, PrimeFieldOps};
 use crate::qprintln;
 use crate::transform::compile;
@@ -24,7 +25,6 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::process;
 
 use clap::{Args, Subcommand};
 
@@ -110,7 +110,7 @@ pub struct PlonkVerify {
     unchecked: bool,
 }
 
-pub fn plonk(plonk_commands: &PlonkCommands, config: &Config) {
+pub fn plonk(plonk_commands: &PlonkCommands, config: &Config) -> Result<(), Error> {
     match plonk_commands {
         PlonkCommands::Setup(args) => setup_plonk_cmd(args, config),
         PlonkCommands::Compile(args) => compile_plonk_cmd(args, config),
@@ -170,7 +170,7 @@ fn setup_plonk_cmd(
         unchecked,
     }: &Setup,
     config: &Config,
-) {
+) -> Result<(), Error> {
     // Generate CRS
     qprintln!(config, "* Setting up public parameters...");
     let pp = PC::setup(1 << max_degree, None, &mut OsRng)
@@ -184,6 +184,8 @@ fn setup_plonk_cmd(
     }
     .unwrap();
     qprintln!(config, "* Public parameter setup success!");
+
+    Ok(())
 }
 
 /* Implements the subcommand that compiles a vamp-ir file into a PLONK circuit.
@@ -196,7 +198,7 @@ fn compile_plonk_cmd(
         unchecked,
     }: &PlonkCompile,
     config: &Config,
-) {
+) -> Result<(), Error> {
     qprintln!(config, "* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
@@ -217,9 +219,8 @@ fn compile_plonk_cmd(
     let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_rc);
 
     // Compile the circuit
-    let (pk_p, vk) = circuit
-        .compile::<PC>(&pp)
-        .expect("unable to compile circuit");
+    let (pk_p, vk) = circuit.compile::<PC>(&pp)?;
+    //.expect("unable to compile circuit");
     qprintln!(config, "* Serializing circuit to storage...");
     let mut circuit_file = File::create(output).expect("unable to create circuit file");
     PlonkCircuitData { pk_p, vk, circuit }
@@ -227,6 +228,8 @@ fn compile_plonk_cmd(
         .unwrap();
 
     qprintln!(config, "* Constraint compilation success!");
+
+    Ok(())
 }
 
 /* Implements the subcommand that creates a proof from interactively entered
@@ -240,7 +243,7 @@ fn prove_plonk_cmd(
         inputs,
     }: &PlonkProve,
     config: &Config,
-) {
+) -> Result<(), Error> {
     qprintln!(config, "* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
 
@@ -304,6 +307,8 @@ fn prove_plonk_cmd(
     ProofData { proof, pi }.serialize(&mut proof_file).unwrap();
 
     qprintln!(config, "* Proof generation success!");
+
+    Ok(())
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
@@ -315,7 +320,7 @@ fn verify_plonk_cmd(
         unchecked,
     }: &PlonkVerify,
     config: &Config,
-) {
+) -> Result<(), Error> {
     qprintln!(config, "* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
     let PlonkCircuitData {
@@ -352,14 +357,11 @@ fn verify_plonk_cmd(
         &verifier_data.pi,
         b"Test",
     );
-
-    match verifier_result {
-        Ok(()) => {
-            qprintln!(config, "* Zero-knowledge proof is valid");
-        },
-        Err(e) => {
-            qprintln!(config, "* Result from verifier: {:?}", e);
-            process::exit(1); // Exit the process with a code of 1 if an error occurred
-        }
+    if let Ok(()) = verifier_result {
+        qprintln!(config, "* Zero-knowledge proof is valid");
+        Ok(())
+    } else {
+        qprintln!(config, "* Result from verifier: {:?}", verifier_result);
+        Err(Error::ProofVerificationFailure)
     }
 }
