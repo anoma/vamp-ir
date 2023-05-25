@@ -1,4 +1,5 @@
 use crate::ast::Module;
+use crate::error::Error;
 use crate::transform::{compile_repl, FieldOps};
 
 use crate::plonk::synth::PrimeFieldOps as PlonkPrimeFieldOps;
@@ -24,7 +25,7 @@ pub struct REPL {
     field: String,
 }
 
-pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
+pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) -> Result<(), Error> {
     let mut module: Module = Module::default();
 
     if let Some(path) = source {
@@ -39,17 +40,16 @@ pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
     compile_repl(&mut module, field_ops)
 }
 
-pub fn repl(args: &REPL) {
+pub fn repl(args: &REPL) -> Result<(), Error> {
     match args.field.as_str() {
-        "Halo2" | "halo2" => repl_cmd(&args.source, &Halo2PrimeFieldOps::<Fp>::default()),
-        "Plonk" | "plonk" => repl_cmd(&args.source, &PlonkPrimeFieldOps::<Fr>::default()),
+        "Halo2" | "halo2" => return repl_cmd(&args.source, &Halo2PrimeFieldOps::<Fp>::default()),
+        "Plonk" | "plonk" => return repl_cmd(&args.source, &PlonkPrimeFieldOps::<Fr>::default()),
         field_str => {
             if let Ok(_) = field_str.parse::<usize>() {
-                //repl_cmd(&args.source, &fin_field(n))
-                eprintln!("Arbitrary finite fields not implemented");
+                // This is for arbitrary finite fields described by a number
+                return Err(Error::InvalidField);
             } else {
-                eprintln!("Invalid field value");
-                return;
+                return Err(Error::InvalidField);
             }
         }
     };

@@ -1727,7 +1727,7 @@ fn expand_fold_intrinsic(
 }
 
 /* Version of compile for repl. Does everything compile does to evaluate a module, but split between repl interactions. */
-pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) {
+pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result<(), Error> {
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
     let mut bindings = HashMap::new();
@@ -1882,4 +1882,6 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) {
             Err(e) => eprintln!("Parse Error: {:?}", e),
         }
     }
+
+    return Ok(());
 }
