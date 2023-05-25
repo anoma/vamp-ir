@@ -3,6 +3,7 @@ use crate::ast::{
     VampirParser, Variable, VariableId,
 };
 use crate::error::*;
+use crate::pest::Parser;
 use crate::qprintln;
 use crate::pest::Parser;
 use crate::typecheck::{
@@ -961,7 +962,7 @@ fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
 fn flatten_binding(pat: &TPat, expr: &TExpr, oflattened: &mut Option<Module>) {
     if let Some(flattened) = oflattened {
         match (&pat.v, &expr.v) {
-            (Pat::Variable(_), Expr::Function(_)) => {}
+            (Pat::Variable(_), Expr::Function(_) | Expr::Intrinsic(_)) => {}
             (
                 Pat::Variable(_),
                 Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
@@ -1121,7 +1122,8 @@ pub fn flatten_module_to_3ac(
                             ohs,
                             flattened,
                             gen,
-                        ).unwrap();
+                        )
+                        .unwrap();
                     }
                     (_, Expr::Constant(val), ohs, _) | (ohs, _, _, Expr::Constant(val)) => {
                         flatten_expr_to_3ac(
@@ -1129,7 +1131,8 @@ pub fn flatten_module_to_3ac(
                             ohs,
                             flattened,
                             gen,
-                        ).unwrap();
+                        )
+                        .unwrap();
                     }
                     (_, _, _, _) => {
                         let lhs = flatten_expr_to_3ac(None, lhs, flattened, gen).unwrap();
@@ -1441,7 +1444,7 @@ fn expand_fresh_intrinsic(
                 let val = bindings[&param_var.id].clone();
                 // Make a new prover definition that is equal to the argument
                 let fresh_arg = Variable::new(gen.generate_id());
-                let mut fresh_pat = Pat::Variable(fresh_arg).type_pat(val.t.clone());
+                let mut fresh_pat = Pat::Variable(fresh_arg.clone()).type_pat(val.t.clone());
                 let mut pat_exps = HashMap::new();
                 // Expand the pattern using our knowledge of the expression's form
                 expand_pattern_variables(&mut fresh_pat, &val, &mut pat_exps, gen).expect("Pattern variable expantion shouldn't fail.");
@@ -1866,8 +1869,9 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) {
                             &mut bindings,
                             &mut prover_defs,
                             field_ops,
-                            &mut vg
-                        ).unwrap()
+                            &mut vg,
+                        )
+                        .unwrap()
                     );
                 }
 
