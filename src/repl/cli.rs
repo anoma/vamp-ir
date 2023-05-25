@@ -41,8 +41,8 @@ pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) {
 
 pub fn repl(args: &REPL) {
     match args.field.as_str() {
-        "Halo2" => repl_cmd(&args.source, &Halo2PrimeFieldOps::<Fp>::default()),
-        "Plonk" => repl_cmd(&args.source, &PlonkPrimeFieldOps::<Fr>::default()),
+        "Halo2" | "halo2" => repl_cmd(&args.source, &Halo2PrimeFieldOps::<Fp>::default()),
+        "Plonk" | "plonk" => repl_cmd(&args.source, &PlonkPrimeFieldOps::<Fr>::default()),
         field_str => {
             if let Ok(_) = field_str.parse::<usize>() {
                 //repl_cmd(&args.source, &fin_field(n))
