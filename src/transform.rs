@@ -1735,39 +1735,42 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) {
     register_fold_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
 
     let mut locals = HashMap::new();
-    number_module_variables(&mut module, &mut globals, &mut vg, &mut locals);
-    infer_module_types(
-        &mut module,
-        &globals,
-        &mut global_types,
-        &mut prog_types,
-        &mut vg,
-    );
-    println!("** Inferring types...");
-    print_types(&module, &prog_types, &Config { quiet: false });
-    // Global variables may have further internal structure, determine this
-    // using derived type information
-    expand_global_variables(
-        &mut module,
-        &globals,
-        &global_types,
-        &mut prog_types,
-        &bindings,
-        &mut vg,
-    );
-    // Type information is no longer required since we do symbolic
-    // execution from now on
-    strip_module_types(&mut module);
     let mut prover_defs = HashSet::new();
-    // Start generating arithmetic constraints
-    evaluate_module(
-        &module,
-        &mut None,
-        &mut bindings,
-        &mut prover_defs,
-        field_ops,
-        &mut vg,
-    );
+    if module.defs.len() != 0 || module.exprs.len() != 0 || module.pubs.len() != 0 {
+        number_module_variables(&mut module, &mut globals, &mut vg, &mut locals);
+        infer_module_types(
+            &mut module,
+            &globals,
+            &mut global_types,
+            &mut prog_types,
+            &mut vg,
+        );
+        println!("** Inferring types...");
+        print_types(&module, &prog_types, &Config { quiet: false });
+        // Global variables may have further internal structure, determine this
+        // using derived type information
+        expand_global_variables(
+            &mut module,
+            &globals,
+            &global_types,
+            &mut prog_types,
+            &bindings,
+            &mut vg,
+        );
+        // Type information is no longer required since we do symbolic
+        // execution from now on
+        strip_module_types(&mut module);
+        // Start generating arithmetic constraints
+
+        evaluate_module(
+            &module,
+            &mut None,
+            &mut bindings,
+            &mut prover_defs,
+            field_ops,
+            &mut vg,
+        );
+    }
 
     loop {
         print!("In : ");
