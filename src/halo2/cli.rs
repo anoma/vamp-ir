@@ -1,4 +1,5 @@
 use crate::ast::Module;
+use crate::error::Error;
 use crate::halo2::synth::{keygen, make_constant, prover, verifier, Halo2Module, PrimeFieldOps};
 use crate::qprintln;
 use crate::transform::compile;
@@ -68,7 +69,10 @@ pub struct Halo2Verify {
 
 /* Implements the subcommand that compiles a vamp-ir file into a Halo2 circuit.
  */
-fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile, config: &Config) {
+fn compile_halo2_cmd(
+    Halo2Compile { source, output }: &Halo2Compile,
+    config: &Config,
+) -> Result<(), Error> {
     qprintln!(config, "* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
@@ -84,6 +88,8 @@ fn compile_halo2_cmd(Halo2Compile { source, output }: &Halo2Compile, config: &Co
         .unwrap();
 
     qprintln!(config, "* Constraint compilation success!");
+
+    Ok(())
 }
 
 /* Implements the subcommand that creates a proof from interactively entered
@@ -95,7 +101,7 @@ fn prove_halo2_cmd(
         inputs,
     }: &Halo2Prove,
     config: &Config,
-) {
+) -> Result<(), Error> {
     qprintln!(config, "* Reading arithmetic circuit...");
     let mut circuit_file = File::open(circuit).expect("unable to load circuit file");
 
@@ -149,7 +155,7 @@ fn prove_halo2_cmd(
 
     // Generating proving key
     qprintln!(config, "* Generating proving key...");
-    let (pk, _vk) = keygen(&circuit, &params);
+    let (pk, _vk) = keygen(&circuit, &params)?;
 
     // Start proving witnesses
     qprintln!(config, "* Proving knowledge of witnesses...");
@@ -172,16 +178,20 @@ fn prove_halo2_cmd(
         .expect("Proof serialization failed");
   
     qprintln!(config, "* Proof generation success!");
+    Ok(())
 }
 
 /* Implements the subcommand that verifies that a proof is correct. */
-fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify, config: &Config) {
+fn verify_halo2_cmd(
+    Halo2Verify { circuit, proof }: &Halo2Verify,
+    config: &Config,
+) -> Result<(), Error> {
     qprintln!(config, "* Reading arithmetic circuit...");
     let circuit_file = File::open(circuit).expect("unable to load circuit file");
     let HaloCircuitData { params, circuit } = HaloCircuitData::read(&circuit_file).unwrap();
 
     qprintln!(config, "* Generating verifying key...");
-    let vk = keygen_vk(&params, &circuit).expect("keygen_vk should not fail");
+    let vk = keygen_vk(&params, &circuit)?;
 
     qprintln!(config, "* Reading zero-knowledge proof...");
     let mut proof_file = File::open(proof).expect("unable to load proof file");
@@ -202,14 +212,12 @@ fn verify_halo2_cmd(Halo2Verify { circuit, proof }: &Halo2Verify, config: &Confi
     qprintln!(config, "* Verifying proof validity...");
     let verifier_result = verifier(&params, &vk, &proof, instances);
 
-    match verifier_result {
-        Ok(()) => {
-            qprintln!(config, "* Zero-knowledge proof is valid");
-        },
-        Err(e) => {
-            qprintln!(config, "* Result from verifier: {:?}", e);
-            process::exit(1); // Exit the process with a code of 1 if an error occurred
-        }
+    if let Ok(()) = verifier_result {
+        qprintln!(config, "* Zero-knowledge proof is valid");
+        Ok(())
+    } else {
+        qprintln!(config, "* Result from verifier: {:?}", verifier_result);
+        Err(Error::ProofVerificationFailure)
     }
 }
 
@@ -250,7 +258,7 @@ impl HaloCircuitData {
     }
 }
 
-pub fn halo2(halo2_commands: &Halo2Commands, config: &Config) {
+pub fn halo2(halo2_commands: &Halo2Commands, config: &Config) -> Result<(), Error> {
     match halo2_commands {
         Halo2Commands::Compile(args) => compile_halo2_cmd(args, &config),
         Halo2Commands::Prove(args) => prove_halo2_cmd(args, &config),

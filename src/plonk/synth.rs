@@ -208,7 +208,7 @@ where
         for (k, v) in encoded_variable_map {
             variable_map.insert(k, v.0);
         }
-        let module =  Rc::new(Module::decode(decoder)?);
+        let module = Rc::new(Module::decode(decoder)?);
         Ok(PlonkModule {
             module,
             variable_map,

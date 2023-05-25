@@ -1,42 +1,39 @@
-use criterion::{criterion_group, criterion_main, Criterion};
-use plonk_core::prelude::VerifierData;
-use plonk_core::proof_system::{ProverKey, VerifierKey, Proof};
-use plonk_core::proof_system::pi::PublicInputs;
-use plonk::error::to_pc_error;
-use ark_serialize::{Read, SerializationError, CanonicalSerialize, CanonicalDeserialize};
 use ark_bls12_381::{Bls12_381, Fr as BlsScalar};
 use ark_ed_on_bls12_381::EdwardsParameters as JubJubParameters;
-use ark_poly_commit::{sonic_pc::SonicKZG10, PolynomialCommitment};
 use ark_poly::polynomial::univariate::DensePolynomial;
-use plonk_core::circuit::{Circuit, verify_proof};
+use ark_poly_commit::{sonic_pc::SonicKZG10, PolynomialCommitment};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, SerializationError};
+use criterion::{criterion_group, criterion_main, Criterion};
+use plonk::error::to_pc_error;
+use plonk_core::circuit::{verify_proof, Circuit};
+use plonk_core::prelude::VerifierData;
+use plonk_core::proof_system::pi::PublicInputs;
+use plonk_core::proof_system::{Proof, ProverKey, VerifierKey};
 
+use rand_core::OsRng;
 use std::collections::HashMap;
-use std::fs::File;
 use std::fs;
+use std::fs::File;
 use std::io::Write;
 use std::rc::Rc;
-use rand_core::OsRng;
 
-use vamp_ir::plonk::synth::PlonkModule;
 use vamp_ir::ast::Module;
+use vamp_ir::plonk::synth::PlonkModule;
+use vamp_ir::plonk::synth::{make_constant, PrimeFieldOps};
 use vamp_ir::transform::compile;
-use vamp_ir::plonk::synth::{PrimeFieldOps, make_constant};
-use vamp_ir::util::prompt_inputs;
+use vamp_ir::util::{prompt_inputs, Config};
 
 use std::time::Instant;
 
 type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
 
-
-
 #[allow(dead_code)]
 fn bench(pir_file: &str, max_degree: u32) {
-
     /* Captures all the data required to use a PLONK circuit. */
     struct PlonkCircuitData {
-        pk_p: ProverKey::<BlsScalar>,
-        vk: (VerifierKey::<BlsScalar, PC>, Vec<usize>),
-        circuit: PlonkModule::<BlsScalar, JubJubParameters>,
+        pk_p: ProverKey<BlsScalar>,
+        vk: (VerifierKey<BlsScalar, PC>, Vec<usize>),
+        circuit: PlonkModule<BlsScalar, JubJubParameters>,
     }
 
     /* Captures all the data generated from proving circuit witnesses. */
@@ -55,27 +52,52 @@ fn bench(pir_file: &str, max_degree: u32) {
         .map_err(to_pc_error::<BlsScalar, PC>)
         .expect("unable to setup polynomial commitment scheme public parameters");
     let inst1 = Instant::now();
-    file.write_all(format!("Setting up public parameters time: {:?}\n", inst1.duration_since(inst0)).as_bytes()).unwrap();
-
+    file.write_all(
+        format!(
+            "Setting up public parameters time: {:?}\n",
+            inst1.duration_since(inst0)
+        )
+        .as_bytes(),
+    )
+    .unwrap();
 
     // COMPILATION
     println!("* Compiling constraints...");
     let inst2 = Instant::now();
     let unparsed_file = fs::read_to_string(pir_file).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module, &PrimeFieldOps::<BlsScalar>::default());
+    let module_3ac = compile(
+        module,
+        &PrimeFieldOps::<BlsScalar>::default(),
+        &Config { quiet: false },
+    );
     let inst3 = Instant::now();
-    file.write_all(format!("Compiling constraints time: {:?}\n", inst3.duration_since(inst2)).as_bytes()).unwrap();
+    file.write_all(
+        format!(
+            "Compiling constraints time: {:?}\n",
+            inst3.duration_since(inst2)
+        )
+        .as_bytes(),
+    )
+    .unwrap();
 
     println!("* Synthesizing arithmetic circuit...");
     let inst4 = Instant::now();
     let module_rc = Rc::new(module_3ac);
     let mut circuit = PlonkModule::<BlsScalar, JubJubParameters>::new(module_rc);
     // Compile the circuit
-    let (pk_p, vk) = circuit.compile::<PC>(&pp)
+    let (pk_p, vk) = circuit
+        .compile::<PC>(&pp)
         .expect("unable to compile circuit");
     let inst5 = Instant::now();
-    file.write_all(format!("Synthesizing arithmetic circuit time: {:?}\n", inst5.duration_since(inst4)).as_bytes()).unwrap();
+    file.write_all(
+        format!(
+            "Synthesizing arithmetic circuit time: {:?}\n",
+            inst5.duration_since(inst4)
+        )
+        .as_bytes(),
+    )
+    .unwrap();
     println!("* Constraint compilation success!");
 
     // PROOF GENERATION
@@ -90,7 +112,14 @@ fn bench(pir_file: &str, max_degree: u32) {
         var_assignments.insert(k, make_constant(&v));
     }
     let inst7 = Instant::now();
-    file.write_all(format!("Soliciting circuit witnesses time: {:?}\n", inst7.duration_since(inst6)).as_bytes()).unwrap();
+    file.write_all(
+        format!(
+            "Soliciting circuit witnesses time: {:?}\n",
+            inst7.duration_since(inst6)
+        )
+        .as_bytes(),
+    )
+    .unwrap();
 
     // Populate variable definitions
     circuit.populate_variables(var_assignments);
@@ -100,8 +129,14 @@ fn bench(pir_file: &str, max_degree: u32) {
     let inst7 = Instant::now();
     let (proof, pi) = circuit.gen_proof::<PC>(&pp, pk_p, b"Test").unwrap();
     let inst8 = Instant::now();
-    file.write_all(format!("Proving knowledge of witnesses time: {:?}\n", inst8.duration_since(inst7)).as_bytes()).unwrap();
-
+    file.write_all(
+        format!(
+            "Proving knowledge of witnesses time: {:?}\n",
+            inst8.duration_since(inst7)
+        )
+        .as_bytes(),
+    )
+    .unwrap();
 
     // Verifier POV
     println!("* Verifying proof validity...");
@@ -115,7 +150,14 @@ fn bench(pir_file: &str, max_degree: u32) {
         b"Test",
     );
     let inst10 = Instant::now();
-    file.write_all(format!("Verifying proof validity time: {:?}\n", inst10.duration_since(inst9)).as_bytes()).unwrap();
+    file.write_all(
+        format!(
+            "Verifying proof validity time: {:?}\n",
+            inst10.duration_since(inst9)
+        )
+        .as_bytes(),
+    )
+    .unwrap();
     if let Ok(()) = verifier_result {
         println!("* Zero-knowledge proof is valid");
     } else {
