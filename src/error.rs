@@ -83,7 +83,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             // cannot apply {} to {}
-            Self::ApplicationError { e2, e1 } => write!(f, "Cannot apply {} to {}", e2, e1),
+            Self::ApplicationError { e2, e1 } => write!(f, "Cannot apply {e2} to {e1}"),
 
             // enountered empty sequence
             Self::EmptySequenceError => write!(f, "Enountered empty sequence"),
@@ -100,12 +100,12 @@ impl std::fmt::Display for Error {
 
             // cannot statically match {} against {}
             Self::StaticMatchError { e, p } => {
-                write!(f, "Cannot statically match {} against {}", e, p)
+                write!(f, "Cannot statically match {e} against {p}")
             }
 
             // cannot match {} to any pattern in {}
             Self::MatchError { e1, e2 } => {
-                write!(f, "Cannot match {} to any pattern in {}", e1, e2)
+                write!(f, "Cannot match {e1} to any pattern in {e2}")
             }
 
             // only list arguments to fold supported
@@ -113,22 +113,22 @@ impl std::fmt::Display for Error {
 
             // encountered unexpected expression: {}
             Self::UnexpectedExpression { e } => {
-                write!(f, "Encountered unexpected expression: {}", e)
+                write!(f, "Encountered unexpected expression: {e}")
             }
 
             // unexpected parameters for fresh: {:?}
             Self::UnexpectedFreshParameters { params } => {
-                write!(f, "unexpected parameters for fresh: {:?}", params)
+                write!(f, "unexpected parameters for fresh: {params:?}")
             }
 
             // unexpected arguments to iter: {:?}
             Self::UnexpectedIterArguments { params } => {
-                write!(f, "Unexpected arguments to iter: {:?}", params)
+                write!(f, "Unexpected arguments to iter: {params:?}")
             }
 
             // unexpected arguments to fold: {:?}
             Self::UnexpectedArgumentsInFold { params } => {
-                write!(f, "Unexpected arguments to fold: {:?}", params)
+                write!(f, "Unexpected arguments to fold: {params:?}")
             }
 
             // functions should have at least one parameter
@@ -144,37 +144,36 @@ impl std::fmt::Display for Error {
             }
 
             // unable to match {:?} with {}
-            Self::VariableTypeError { v, t } => write!(f, "Unable to match {:?} with {}", v, t),
+            Self::VariableTypeError { v, t } => write!(f, "Unable to match {v:?} with {t}"),
 
             // unable to match {} with {}
-            Self::TypeError { t1, t2 } => write!(f, "Unable to match {} with {}", t1, t2),
+            Self::TypeError { t1, t2 } => write!(f, "Unable to match {t1} with {t2}"),
 
             // pattern {} cannot match {}
-            Self::PatternMatchError { p, e } => write!(f, "Pattern {} cannot match {}", p, e),
+            Self::PatternMatchError { p, e } => write!(f, "Pattern {p} cannot match {e}"),
 
             // the global function {} is undefined
             Self::UndefinedGlobalFunction { v } => {
-                write!(f, "The global function {} is undefined", v)
+                write!(f, "The global function {v} is undefined")
             }
 
             // unable to determine type of global variable {}
             Self::UnableDetermineType { v } => write!(
                 f,
-                "Unable to determine type of global variable {}: was this variable never used?",
-                v
+                "Unable to determine type of global variable {v}: was this variable never used?"
             ),
 
             // expression {} cannot have type {}
-            Self::ImpossibleType { e, t } => write!(f, "Expression {} cannot have type {}", e, t),
+            Self::ImpossibleType { e, t } => write!(f, "Expression {e} cannot have type {t}"),
 
             // the global list {} is undefined
-            Self::UndefinedGlobalList { v } => write!(f, "The global list {} is undefined", v),
+            Self::UndefinedGlobalList { v } => write!(f, "The global list {v} is undefined"),
 
             // not enough parameters are available for this circuit
             Self::InsufficientParameters => write!(f, "Not enough parameters"),
 
             // general error from backend
-            Self::BackendError { e } => write!(f, "Error in backend: {}", e),
+            Self::BackendError { e } => write!(f, "Error in backend: {e}"),
 
             // proof fails to verify
             Self::ProofVerificationFailure => write!(f, "Proof failed to verify"),

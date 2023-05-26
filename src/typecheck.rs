@@ -77,11 +77,11 @@ fn allocate_expr_types(expr: &mut TExpr, gen: &mut VarGen) {
             for param in &mut fun.params {
                 allocate_pat_types(param, gen);
             }
-            allocate_expr_types(&mut *fun.body, gen);
+            allocate_expr_types(&mut fun.body, gen);
         }
         Expr::LetBinding(binding, body) => {
             allocate_pat_types(&mut binding.0, gen);
-            allocate_expr_types(&mut *binding.1, gen);
+            allocate_expr_types(&mut binding.1, gen);
             allocate_expr_types(body, gen);
         }
         Expr::Match(matche) => {
@@ -100,7 +100,7 @@ fn allocate_expr_types(expr: &mut TExpr, gen: &mut VarGen) {
 /* Generate unique type variables for everything within this definition. */
 fn allocate_def_types(def: &mut Definition, gen: &mut VarGen) {
     allocate_pat_types(&mut def.0 .0, gen);
-    allocate_expr_types(&mut *def.0 .1, gen);
+    allocate_expr_types(&mut def.0 .1, gen);
 }
 
 /* Generate unique type variables for everything within the given module. */
@@ -130,11 +130,11 @@ impl Display for Type {
         match self {
             Type::Unit => write!(f, "()"),
             Type::Int => write!(f, "int"),
-            Type::List(a) => write!(f, "[{}]", a),
-            Type::Variable(var) => write!(f, "{}", var),
-            Type::Function(a, b) => write!(f, "({} -> {})", a, b),
-            Type::Product(a, b) => write!(f, "({}, {})", a, b),
-            Type::Forall(var, b) => write!(f, "forall {}. {}", var, b),
+            Type::List(a) => write!(f, "[{a}]"),
+            Type::Variable(var) => write!(f, "{var}"),
+            Type::Function(a, b) => write!(f, "({a} -> {b})"),
+            Type::Product(a, b) => write!(f, "({a}, {b})"),
+            Type::Forall(var, b) => write!(f, "forall {var}. {b}"),
         }
     }
 }
@@ -212,8 +212,8 @@ pub fn unify_types(
         (Type::List(a), Type::List(b)) => unify_types(a, b, types, inserts),
         (Type::Function(a1, b1), Type::Function(a2, b2))
         | (Type::Product(a1, b1), Type::Product(a2, b2)) => {
-            unify_types(&*a1, &*a2, types, inserts)?;
-            unify_types(&*b1, &*b2, types, inserts)?;
+            unify_types(a1, a2, types, inserts)?;
+            unify_types(b1, b2, types, inserts)?;
             Ok(())
         }
         (Type::Variable(v1), type2) | (type2, Type::Variable(v1)) => {
@@ -375,8 +375,8 @@ fn infer_binding_types(
     types: &mut HashMap<VariableId, Type>,
     gen: &mut VarGen,
 ) {
-    let expr1_var = expr_type_var(&*def.1);
-    infer_expr_types(&*def.1, env_ftvs, vars, types, gen);
+    let expr1_var = expr_type_var(&def.1);
+    infer_expr_types(&def.1, env_ftvs, vars, types, gen);
     infer_pat_types(&def.0, vars, types, gen);
     unify_types(
         pat_type_var(&def.0),
@@ -397,7 +397,7 @@ fn infer_binding_types(
     let mut pat_vars = HashMap::new();
     collect_pattern_variables(&def.0, &mut pat_vars);
     for pat_var in pat_vars.keys() {
-        let quant_expr = vars.get_mut(&pat_var).unwrap();
+        let quant_expr = vars.get_mut(pat_var).unwrap();
         // Quantify every free variable unique to the RHS' type
         for qvar in quant_vars.values() {
             *quant_expr = Type::Forall(qvar.clone(), Box::new(quant_expr.clone()));
@@ -448,8 +448,8 @@ pub fn infer_pat_types(
             let pat1_var = pat_type_var(pat1);
             let pat_var = pat_type_var(pat);
             // a1: t1 |- a1 as _: t1
-            unify_types(&pat_var, &pat1_var, types, &mut None).unwrap();
-            infer_pat_types(&pat1, vars, types, gen);
+            unify_types(pat_var, pat1_var, types, &mut None).unwrap();
+            infer_pat_types(pat1, vars, types, gen);
             // Map the pattern name to its type
             vars.insert(name.id, pat_var.clone());
         }
@@ -459,7 +459,7 @@ pub fn infer_pat_types(
             let pat_var = pat_type_var(pat);
             // a1: t1, a2: t2 |- (a1, a2): (t1, tN)
             unify_types(
-                &pat_var,
+                pat_var,
                 &Type::Product(Box::new(pat1_var.clone()), Box::new(pat2_var.clone())),
                 types,
                 &mut None,
@@ -474,13 +474,13 @@ pub fn infer_pat_types(
             let pat_var = pat_type_var(pat);
             // a1: t1, a2: [t1] |- (a1:a2): [t1]
             unify_types(
-                &pat2_var,
+                pat2_var,
                 &Type::List(Box::new(pat1_var.clone())),
                 types,
                 &mut None,
             )
             .unwrap();
-            unify_types(&pat_var, &pat2_var, types, &mut None).unwrap();
+            unify_types(pat_var, pat2_var, types, &mut None).unwrap();
             infer_pat_types(pat1, vars, types, gen);
             infer_pat_types(pat2, vars, types, gen);
         }
@@ -519,9 +519,9 @@ fn infer_expr_types(
             let expr1_var = expr_type_var(expr1);
             let expr2_var = expr_type_var(expr2);
             // a = b: ()
-            unify_types(&expr_var, &Type::Unit, types, &mut None).unwrap();
+            unify_types(expr_var, &Type::Unit, types, &mut None).unwrap();
             // a: c |- b: c
-            unify_types(&expr1_var, &expr2_var, types, &mut None).unwrap();
+            unify_types(expr1_var, expr2_var, types, &mut None).unwrap();
             infer_expr_types(expr1, env, vars, types, gen);
             infer_expr_types(expr2, env, vars, types, gen);
         }
@@ -541,11 +541,11 @@ fn infer_expr_types(
             let expr1_var = expr_type_var(expr1);
             let expr2_var = expr_type_var(expr2);
             // a op b: int
-            unify_types(&expr_var, &Type::Int, types, &mut None).unwrap();
+            unify_types(expr_var, &Type::Int, types, &mut None).unwrap();
             // a: int
-            unify_types(&expr1_var, &Type::Int, types, &mut None).unwrap();
+            unify_types(expr1_var, &Type::Int, types, &mut None).unwrap();
             // b: int
-            unify_types(&expr2_var, &Type::Int, types, &mut None).unwrap();
+            unify_types(expr2_var, &Type::Int, types, &mut None).unwrap();
             infer_expr_types(expr1, env, vars, types, gen);
             infer_expr_types(expr2, env, vars, types, gen);
         }
@@ -553,9 +553,9 @@ fn infer_expr_types(
             let expr_var = expr_type_var(expr);
             let expr1_var = expr_type_var(expr1);
             // (-a): int
-            unify_types(&expr_var, &Type::Int, types, &mut None).unwrap();
+            unify_types(expr_var, &Type::Int, types, &mut None).unwrap();
             // a: int
-            unify_types(&expr1_var, &Type::Int, types, &mut None).unwrap();
+            unify_types(expr1_var, &Type::Int, types, &mut None).unwrap();
             infer_expr_types(expr1, env, vars, types, gen);
         }
         Expr::Sequence(seq) => {
@@ -563,7 +563,7 @@ fn infer_expr_types(
             let expr_var = expr_type_var(expr);
             let last_expr_var = expr_type_var(last_expr);
             // aN: c |- (a1; ...; aN): c
-            unify_types(&expr_var, &last_expr_var, types, &mut None).unwrap();
+            unify_types(expr_var, last_expr_var, types, &mut None).unwrap();
             for expr in seq {
                 infer_expr_types(expr, env, vars, types, gen);
             }
@@ -574,7 +574,7 @@ fn infer_expr_types(
             let expr_var = expr_type_var(expr);
             // a1: t1, a2: t2 |- (a1, a2): (t1, t2)
             unify_types(
-                &expr_var,
+                expr_var,
                 &Type::Product(Box::new(expr1_var.clone()), Box::new(expr2_var.clone())),
                 types,
                 &mut None,
@@ -589,13 +589,13 @@ fn infer_expr_types(
             let expr_var = expr_type_var(expr);
             // a1: t1, a2: [t1] |- (a1:a2): [t1]
             unify_types(
-                &expr2_var,
+                expr2_var,
                 &Type::List(Box::new(expr1_var.clone())),
                 types,
                 &mut None,
             )
             .unwrap();
-            unify_types(&expr_var, &expr2_var, types, &mut None).unwrap();
+            unify_types(expr_var, expr2_var, types, &mut None).unwrap();
             infer_expr_types(expr1, env, vars, types, gen);
             infer_expr_types(expr2, env, vars, types, gen);
         }
@@ -605,7 +605,7 @@ fn infer_expr_types(
             let expr2_var = expr_type_var(expr2);
             // b: t, a b: u |- a: t -> u
             unify_types(
-                &expr1_var,
+                expr1_var,
                 &Type::Function(Box::new(expr2_var.clone()), Box::new(expr_var.clone())),
                 types,
                 &mut None,
@@ -627,12 +627,12 @@ fn infer_expr_types(
             for param in params.iter().rev() {
                 infer_pat_types(param, &mut vars, types, gen);
                 let param_type = pat_type_var(param);
-                collect_free_type_vars(&expand_type(&param_type, types), &mut env);
+                collect_free_type_vars(&expand_type(param_type, types), &mut env);
                 func_var = Type::Function(Box::new(param_type.clone()), Box::new(func_var));
             }
             // a1: t1, ..., aN: tN |- b: u
             // fun a1 ... aN -> b : t1 -> ... -> tN -> u
-            unify_types(&expr_var, &func_var, types, &mut None).unwrap();
+            unify_types(expr_var, &func_var, types, &mut None).unwrap();
             infer_expr_types(expr1, &env, &vars, types, gen);
         }
         Expr::Match(matche) => {
@@ -643,10 +643,10 @@ fn infer_expr_types(
                 let mut env = env.clone();
                 infer_pat_types(pat, &mut vars, types, gen);
                 let pat_type = pat_type_var(pat);
-                unify_types(&pat_type, &expr1_var, types, &mut None).unwrap();
+                unify_types(pat_type, expr1_var, types, &mut None).unwrap();
                 let expr2_var = expr_type_var(expr2);
-                unify_types(&expr_var, &expr2_var, types, &mut None).unwrap();
-                collect_free_type_vars(&expand_type(&pat_type, types), &mut env);
+                unify_types(expr_var, expr2_var, types, &mut None).unwrap();
+                collect_free_type_vars(&expand_type(pat_type, types), &mut env);
                 infer_expr_types(expr2, &env, &vars, types, gen);
             }
         }
@@ -659,7 +659,7 @@ fn infer_expr_types(
                 let param_type = pat_type_var(param);
                 func_var = Type::Function(Box::new(param_type.clone()), Box::new(func_var));
             }
-            unify_types(&func_var, &expr_var, types, &mut None).unwrap();
+            unify_types(&func_var, expr_var, types, &mut None).unwrap();
         }
         Expr::LetBinding(def, expr2) => {
             let expr_var = expr_type_var(expr);
@@ -667,7 +667,7 @@ fn infer_expr_types(
             let mut env = env.clone();
             let mut vars = vars.clone();
             infer_binding_types(def, &mut env, &mut vars, types, gen);
-            unify_types(&expr_var, &expr2_var, types, &mut None).unwrap();
+            unify_types(expr_var, expr2_var, types, &mut None).unwrap();
             infer_expr_types(expr2, &env, &vars, types, gen);
         }
         Expr::Variable(var) => {
@@ -675,7 +675,7 @@ fn infer_expr_types(
             let mut fresh = expand_type(&vars[&var.id], types);
             let mut new_map = HashMap::new();
             instantiate_type_vars(&mut fresh, &mut new_map, gen);
-            unify_types(&expr_var, &fresh, types, &mut None).unwrap();
+            unify_types(expr_var, &fresh, types, &mut None).unwrap();
         }
     }
 }
@@ -739,12 +739,12 @@ pub fn expand_pattern_variables(
             let mut new_var1 = Variable::new(gen.generate_id());
             new_var1.name = var.name.as_ref().map(|x| x.to_owned() + ".0");
             let mut var1 = Pat::Variable(new_var1).type_pat(None);
-            expand_pattern_variables(&mut var1, &expr1, map, gen)?;
+            expand_pattern_variables(&mut var1, expr1, map, gen)?;
 
             let mut new_var2 = Variable::new(gen.generate_id());
             new_var2.name = var.name.as_ref().map(|x| x.to_owned() + ".1");
             let mut var2 = Pat::Variable(new_var2).type_pat(None);
-            expand_pattern_variables(&mut var2, &expr2, map, gen)?;
+            expand_pattern_variables(&mut var2, expr2, map, gen)?;
 
             let curr_id = var.id;
             pat.v = Pat::Product(Box::new(var1), Box::new(var2));
@@ -757,12 +757,12 @@ pub fn expand_pattern_variables(
             let mut new_var1 = Variable::new(gen.generate_id());
             new_var1.name = var.name.as_ref().map(|x| x.to_owned() + ".0");
             let mut var1 = Pat::Variable(new_var1).type_pat(expr1.t.clone());
-            expand_pattern_variables(&mut var1, &expr1, map, gen)?;
+            expand_pattern_variables(&mut var1, expr1, map, gen)?;
 
             let mut new_var2 = Variable::new(gen.generate_id());
             new_var2.name = var.name.as_ref().map(|x| x.to_owned() + ".1");
             let mut var2 = Pat::Variable(new_var2).type_pat(expr2.t.clone());
-            expand_pattern_variables(&mut var2, &expr2, map, gen)?;
+            expand_pattern_variables(&mut var2, expr2, map, gen)?;
 
             let curr_id = var.id;
             pat.v = Pat::Cons(Box::new(var1), Box::new(var2));
@@ -787,13 +787,13 @@ pub fn expand_pattern_variables(
             Ok(())
         }
         (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
-            expand_pattern_variables(pat1, &expr1, map, gen)?;
-            expand_pattern_variables(pat2, &expr2, map, gen)?;
+            expand_pattern_variables(pat1, expr1, map, gen)?;
+            expand_pattern_variables(pat2, expr2, map, gen)?;
             Ok(())
         }
         (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
-            expand_pattern_variables(pat1, &expr1, map, gen)?;
-            expand_pattern_variables(pat2, &expr2, map, gen)?;
+            expand_pattern_variables(pat1, expr1, map, gen)?;
+            expand_pattern_variables(pat2, expr2, map, gen)?;
             Ok(())
         }
         (Pat::Constant(_), _) => Ok(()),
@@ -827,12 +827,12 @@ pub fn expand_expr_variables(
         (Expr::Variable(var), Type::Product(typ1, typ2)) => {
             let mut new_var1 = Variable::new(gen.generate_id());
             new_var1.name = var.name.as_ref().map(|x| x.to_owned() + ".0");
-            let mut var1 = Expr::Variable(new_var1).type_expr(Some(*typ1.clone()));
+            let mut var1 = Expr::Variable(new_var1).type_expr(Some(*typ1));
             expand_expr_variables(&mut var1, map, types, gen)?;
 
             let mut new_var2 = Variable::new(gen.generate_id());
             new_var2.name = var.name.as_ref().map(|x| x.to_owned() + ".1");
-            let mut var2 = Expr::Variable(new_var2).type_expr(Some(*typ2.clone()));
+            let mut var2 = Expr::Variable(new_var2).type_expr(Some(*typ2));
             expand_expr_variables(&mut var2, map, types, gen)?;
 
             let curr_id = var.id;

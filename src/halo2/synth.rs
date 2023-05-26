@@ -91,28 +91,28 @@ where
         }
         Expr::Negate(e) => -evaluate_expr(e, defs, assigns),
         Expr::Infix(InfixOp::Add, a, b) => {
-            evaluate_expr(&a, defs, assigns) + evaluate_expr(&b, defs, assigns)
+            evaluate_expr(a, defs, assigns) + evaluate_expr(b, defs, assigns)
         }
         Expr::Infix(InfixOp::Subtract, a, b) => {
-            evaluate_expr(&a, defs, assigns) - evaluate_expr(&b, defs, assigns)
+            evaluate_expr(a, defs, assigns) - evaluate_expr(b, defs, assigns)
         }
         Expr::Infix(InfixOp::Multiply, a, b) => {
-            evaluate_expr(&a, defs, assigns) * evaluate_expr(&b, defs, assigns)
+            evaluate_expr(a, defs, assigns) * evaluate_expr(b, defs, assigns)
         }
         Expr::Infix(InfixOp::Divide, a, b) => {
-            evaluate_expr(&a, defs, assigns) * evaluate_expr(&b, defs, assigns).invert().unwrap()
+            evaluate_expr(a, defs, assigns) * evaluate_expr(b, defs, assigns).invert().unwrap()
         }
         Expr::Infix(InfixOp::DivideZ, a, b) => {
-            let divisor = evaluate_expr(&b, defs, assigns);
+            let divisor = evaluate_expr(b, defs, assigns);
             if divisor.is_zero().into() {
                 0.into()
             } else {
-                evaluate_expr(&a, defs, assigns) * divisor.invert().unwrap()
+                evaluate_expr(a, defs, assigns) * divisor.invert().unwrap()
             }
         }
         Expr::Infix(InfixOp::IntDivide, a, b) => {
-            let op1 = BigUint::from_bytes_le(evaluate_expr(&a, defs, assigns).to_repr().as_ref());
-            let op2 = BigUint::from_bytes_le(evaluate_expr(&b, defs, assigns).to_repr().as_ref());
+            let op1 = BigUint::from_bytes_le(evaluate_expr(a, defs, assigns).to_repr().as_ref());
+            let op2 = BigUint::from_bytes_le(evaluate_expr(b, defs, assigns).to_repr().as_ref());
             let bytes: Vec<u8> = (op1 / op2).to_bytes_le();
             let mut byte_array = [0u8; 64];
             let length = bytes.len();
@@ -124,8 +124,8 @@ where
             F::from_uniform_bytes(&byte_array)
         }
         Expr::Infix(InfixOp::Modulo, a, b) => {
-            let op1 = BigUint::from_bytes_le(evaluate_expr(&a, defs, assigns).to_repr().as_ref());
-            let op2 = BigUint::from_bytes_le(evaluate_expr(&b, defs, assigns).to_repr().as_ref());
+            let op1 = BigUint::from_bytes_le(evaluate_expr(a, defs, assigns).to_repr().as_ref());
+            let op2 = BigUint::from_bytes_le(evaluate_expr(b, defs, assigns).to_repr().as_ref());
             let bytes: Vec<u8> = (op1 % op2).to_bytes_le();
             let mut byte_array = [0u8; 64];
             let length = bytes.len();
@@ -1116,7 +1116,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                             self.make_gate(Some(v2.id), Some(v3.id), None, F::ZERO, F::ZERO, F::ZERO, F::ONE, -op1, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
-                    _ => panic!("unsupported constraint encountered: {}", expr),
+                    _ => panic!("unsupported constraint encountered: {expr}"),
                 }
             }
         }
@@ -1129,9 +1129,9 @@ pub fn keygen(
     circuit: &Halo2Module<Fp>,
     params: &Params<EqAffine>,
 ) -> Result<(ProvingKey<EqAffine>, VerifyingKey<EqAffine>), Error> {
-    let vk = keygen_vk(&params, circuit)?;
+    let vk = keygen_vk(params, circuit)?;
     let vk_return = vk.clone();
-    let pk = keygen_pk(&params, vk, circuit)?;
+    let pk = keygen_pk(params, vk, circuit)?;
     Ok((pk, vk_return))
 }
 

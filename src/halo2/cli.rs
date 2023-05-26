@@ -267,8 +267,8 @@ impl HaloCircuitData {
 
 pub fn halo2(halo2_commands: &Halo2Commands, config: &Config) -> Result<(), Error> {
     match halo2_commands {
-        Halo2Commands::Compile(args) => compile_halo2_cmd(args, &config),
-        Halo2Commands::Prove(args) => prove_halo2_cmd(args, &config),
-        Halo2Commands::Verify(args) => verify_halo2_cmd(args, &config),
+        Halo2Commands::Compile(args) => compile_halo2_cmd(args, config),
+        Halo2Commands::Prove(args) => prove_halo2_cmd(args, config),
+        Halo2Commands::Verify(args) => verify_halo2_cmd(args, config),
     }
 }
