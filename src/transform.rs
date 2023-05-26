@@ -1874,10 +1874,6 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result
                         .unwrap()
                     );
                 }
-
-                if module.exprs.len() == 0 {
-                    println!("No expression to evaluate.")
-                }
             }
             Err(e) => eprintln!("Parse Error: {:?}", e),
         }
