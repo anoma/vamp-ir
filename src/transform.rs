@@ -386,15 +386,7 @@ fn evaluate_binding(
     gen: &mut VarGen,
 ) -> HashMap<VariableId, TExpr> {
     // Evaluate the binding expression in the current environment
-    let mut val = evaluate(
-        &binding.1,
-        flattened,
-        bindings,
-        prover_defs,
-        field_ops,
-        gen,
-    )
-    .unwrap();
+    let mut val = evaluate(&binding.1, flattened, bindings, prover_defs, field_ops, gen).unwrap();
     // Allow binding value to carry around its own context
     capture_env(&mut val, capture).unwrap();
     // Now make a let binding for the expanded value whilst making sure that the
@@ -758,14 +750,8 @@ fn evaluate(
         Expr::Match(matche) => {
             let val = evaluate(&matche.0, flattened, bindings, prover_defs, field_ops, gen)?;
             for (pat, expr2) in matche.1.iter().zip(matche.2.iter()) {
-                let res = match_pattern_expr(
-                    pat,
-                    &val,
-                    bindings,
-                    &mut HashMap::new(),
-                    prover_defs,
-                    gen,
-                )?;
+                let res =
+                    match_pattern_expr(pat, &val, bindings, &mut HashMap::new(), prover_defs, gen)?;
                 match res {
                     Tribool::True => {
                         let expr = TExpr {

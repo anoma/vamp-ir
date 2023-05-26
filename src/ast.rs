@@ -13,8 +13,7 @@ use std::fmt::Write;
 #[grammar = "vampir.pest"]
 pub struct VampirParser;
 
-#[derive(Debug, Clone, Encode, Decode)]
-#[derive(Default)]
+#[derive(Debug, Clone, Encode, Decode, Default)]
 pub struct Module {
     pub pubs: Vec<Variable>,
     pub defs: Vec<Definition>,
@@ -51,8 +50,6 @@ impl Module {
         unreachable!("EOI should have been encountered")
     }
 }
-
-
 
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -259,12 +256,23 @@ impl ::bincode::Decode for Pat {
         let variant_index = <u32 as ::bincode::Decode>::decode(decoder)?;
         match variant_index {
             0u32 => Ok(Self::Unit {}),
-            1u32 => Ok(Self::As(::bincode::Decode::decode(decoder)?, ::bincode::Decode::decode(decoder)?)),
-            2u32 => Ok(Self::Product(::bincode::Decode::decode(decoder)?, ::bincode::Decode::decode(decoder)?)),
+            1u32 => Ok(Self::As(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
+            2u32 => Ok(Self::Product(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
             3u32 => Ok(Self::Variable(::bincode::Decode::decode(decoder)?)),
-            4u32 => Ok(Self::Constant(<BigIntBincode as ::bincode::Decode>::decode(decoder)?.0)),
+            4u32 => Ok(Self::Constant(
+                <BigIntBincode as ::bincode::Decode>::decode(decoder)?.0,
+            )),
             5u32 => Ok(Self::Nil {}),
-            6u32 => Ok(Self::Cons(::bincode::Decode::decode(decoder)?, ::bincode::Decode::decode(decoder)?)),
+            6u32 => Ok(Self::Cons(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
             variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
                 found: variant,
                 type_name: "Pattern",
@@ -555,18 +563,36 @@ impl ::bincode::Decode for Expr {
         match variant_index {
             0u32 => Ok(Self::Unit {}),
             1u32 => Ok(Self::Sequence(::bincode::Decode::decode(decoder)?)),
-            2u32 => Ok(Self::Product(::bincode::Decode::decode(decoder)?, ::bincode::Decode::decode(decoder)?)),
-            3u32 => Ok(Self::Infix(::bincode::Decode::decode(decoder)?, ::bincode::Decode::decode(decoder)?, ::bincode::Decode::decode(decoder)?)),
+            2u32 => Ok(Self::Product(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
+            3u32 => Ok(Self::Infix(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
             4u32 => Ok(Self::Negate(::bincode::Decode::decode(decoder)?)),
-            5u32 => Ok(Self::Application(::bincode::Decode::decode(decoder)?, ::bincode::Decode::decode(decoder)?)),
-            6u32 => Ok(Self::Constant(<BigIntBincode as ::bincode::Decode>::decode(decoder)?.0)),
+            5u32 => Ok(Self::Application(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
+            6u32 => Ok(Self::Constant(
+                <BigIntBincode as ::bincode::Decode>::decode(decoder)?.0,
+            )),
             7u32 => Ok(Self::Variable(::bincode::Decode::decode(decoder)?)),
             8u32 => Ok(Self::Function(::bincode::Decode::decode(decoder)?)),
             9u32 => Ok(Self::Intrinsic(::bincode::Decode::decode(decoder)?)),
-            10u32 => Ok(Self::LetBinding(::bincode::Decode::decode(decoder)?, ::bincode::Decode::decode(decoder)?)),
+            10u32 => Ok(Self::LetBinding(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
             11u32 => Ok(Self::Match(::bincode::Decode::decode(decoder)?)),
             12u32 => Ok(Self::Nil {}),
-            13u32 => Ok(Self::Cons(::bincode::Decode::decode(decoder)?, ::bincode::Decode::decode(decoder)?)),
+            13u32 => Ok(Self::Cons(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
             variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
                 found: variant,
                 type_name: "Expr",
