@@ -21,7 +21,7 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn parse(unparsed_file: &str) -> Result<Self, pest::error::Error<Rule>> {
+    pub fn parse(unparsed_file: &str) -> Result<Self, Box<pest::error::Error<Rule>>> {
         let pairs = VampirParser::parse(Rule::moduleItems, unparsed_file)?;
         let mut defs = vec![];
         let mut exprs = vec![];
@@ -367,7 +367,6 @@ impl TPat {
                 let value = pair
                     .as_str()
                     .parse()
-                    .ok()
                     .expect("constant should be an integer");
                 Some(Pat::Constant(value).type_pat(None))
             }

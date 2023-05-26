@@ -293,20 +293,20 @@ fn number_expr_variables(
             for param in &mut fun.params {
                 number_pattern_variables(param, &mut locals, gen);
             }
-            number_expr_variables(&mut fun.body, &mut locals, globals, gen);
+            number_expr_variables(&mut fun.body, &locals, globals, gen);
         }
         Expr::LetBinding(binding, expr) => {
             let mut locals = locals.clone();
-            number_expr_variables(&mut binding.1, &mut locals, globals, gen);
+            number_expr_variables(&mut binding.1, &locals, globals, gen);
             number_pattern_variables(&mut binding.0, &mut locals, gen);
-            number_expr_variables(expr, &mut locals, globals, gen);
+            number_expr_variables(expr, &locals, globals, gen);
         }
         Expr::Match(matche) => {
             number_expr_variables(&mut matche.0, locals, globals, gen);
             for (pat, expr2) in matche.1.iter_mut().zip(matche.2.iter_mut()) {
                 let mut locals = locals.clone();
                 number_pattern_variables(pat, &mut locals, gen);
-                number_expr_variables(expr2, &mut locals, globals, gen);
+                number_expr_variables(expr2, &locals, globals, gen);
             }
         }
     }
