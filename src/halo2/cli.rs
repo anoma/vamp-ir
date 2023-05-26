@@ -16,12 +16,12 @@ use std::io::Write;
 use clap::{Args, Subcommand};
 
 use bincode::error::{DecodeError, EncodeError};
+use ff::PrimeField;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
 use std::rc::Rc;
-use ff::{PrimeField};
 
 #[derive(Subcommand)]
 pub enum Halo2Commands {
@@ -146,7 +146,9 @@ fn prove_halo2_cmd(
     circuit.populate_variables(var_assignments.clone());
 
     // Get public inputs Fp
-    let binding = circuit.module.pubs
+    let binding = circuit
+        .module
+        .pubs
         .iter()
         .map(|inst| var_assignments[&inst.id])
         .collect::<Vec<Fp>>();
@@ -172,10 +174,13 @@ fn prove_halo2_cmd(
 
     qprintln!(config, "* Serializing proof to storage...");
     let mut proof_file = File::create(output).expect("unable to create proof file");
-    ProofDataHalo2 { proof , public_inputs}
-        .serialize(&mut proof_file)
-        .expect("Proof serialization failed");
-  
+    ProofDataHalo2 {
+        proof,
+        public_inputs,
+    }
+    .serialize(&mut proof_file)
+    .expect("Proof serialization failed");
+
     qprintln!(config, "* Proof generation success!");
     Ok(())
 }
@@ -194,7 +199,10 @@ fn verify_halo2_cmd(
 
     qprintln!(config, "* Reading zero-knowledge proof...");
     let mut proof_file = File::open(proof).expect("unable to load proof file");
-    let ProofDataHalo2 { proof, public_inputs } = ProofDataHalo2::deserialize(&mut proof_file).unwrap();
+    let ProofDataHalo2 {
+        proof,
+        public_inputs,
+    } = ProofDataHalo2::deserialize(&mut proof_file).unwrap();
 
     let instances_vec: Vec<Fp> = public_inputs
         .chunks(32)
@@ -223,7 +231,7 @@ fn verify_halo2_cmd(
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
 struct ProofDataHalo2 {
     proof: Vec<u8>,
-    public_inputs: Vec<u8>
+    public_inputs: Vec<u8>,
 }
 
 /* Captures all the data required to use a Halo2 circuit. */

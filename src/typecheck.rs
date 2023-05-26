@@ -734,7 +734,7 @@ pub fn expand_pattern_variables(
                 *pat = equiv_pat.clone();
             }
             Ok(())
-        },
+        }
         (Pat::Variable(var), Expr::Product(expr1, expr2)) => {
             let mut new_var1 = Variable::new(gen.generate_id());
             new_var1.name = var.name.as_ref().map(|x| x.to_owned() + ".0");
@@ -769,23 +769,23 @@ pub fn expand_pattern_variables(
             map.insert(curr_id, Some(pat.clone()));
 
             Ok(())
-        },
+        }
         (Pat::Variable(var), Expr::Unit) => {
             let equiv_pat = Pat::Unit.type_pat(Some(Type::Unit));
             map.insert(var.id, Some(equiv_pat.clone()));
             *pat = equiv_pat;
             Ok(())
-        },
+        }
         (Pat::Variable(var), Expr::Nil) => {
             let equiv_pat = Pat::Nil.type_pat(None);
             map.insert(var.id, Some(equiv_pat.clone()));
             *pat = equiv_pat;
             Ok(())
-        },
+        }
         (Pat::Variable(var), _) => {
             map.insert(var.id, None);
             Ok(())
-        },
+        }
         (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
             expand_pattern_variables(pat1, &expr1, map, gen)?;
             expand_pattern_variables(pat2, &expr2, map, gen)?;

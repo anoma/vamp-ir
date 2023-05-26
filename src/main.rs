@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand, ValueEnum};
+use vamp_ir::error::Error;
 use vamp_ir::file_gen::cli::{generate, GenerateCommands};
 use vamp_ir::halo2::cli::{halo2, Halo2Commands};
 use vamp_ir::plonk::cli::{plonk, PlonkCommands};
 use vamp_ir::util::Config;
-use vamp_ir::error::Error;
 
 const VERIF_FAILURE_CODE: i32 = 1;
 

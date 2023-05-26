@@ -19,13 +19,13 @@ use crate::ast::{Expr, InfixOp, Module, Pat, TExpr, VariableId};
 use crate::transform::{collect_module_variables, FieldOps};
 
 struct PrimeFieldBincode<T>(Value<T>)
-    where
-        T: PrimeField;
+where
+    T: PrimeField;
 
 impl<T> bincode::Encode for PrimeFieldBincode<T>
-    where
-        T: PrimeField,
-        T::Repr: bincode::Encode,
+where
+    T: PrimeField,
+    T::Repr: bincode::Encode,
 {
     fn encode<E: bincode::enc::Encoder>(
         &self,
@@ -38,9 +38,9 @@ impl<T> bincode::Encode for PrimeFieldBincode<T>
 }
 
 impl<T> bincode::Decode for PrimeFieldBincode<T>
-    where
-        T: PrimeField,
-        T::Repr: bincode::Decode,
+where
+    T: PrimeField,
+    T::Repr: bincode::Decode,
 {
     fn decode<D: bincode::de::Decoder>(
         decoder: &mut D,
@@ -73,8 +73,8 @@ fn evaluate_expr<F>(
     defs: &mut HashMap<VariableId, TExpr>,
     assigns: &mut HashMap<VariableId, F>,
 ) -> F
-    where
-        F: ff::FromUniformBytes<64> + std::cmp::Ord,
+where
+    F: ff::FromUniformBytes<64> + std::cmp::Ord,
 {
     match &expr.v {
         Expr::Constant(c) => make_constant(c.clone()),
@@ -142,15 +142,15 @@ fn evaluate_expr<F>(
 
 #[derive(Default)]
 pub struct PrimeFieldOps<F>
-    where
-        F: PrimeField,
+where
+    F: PrimeField,
 {
     phantom: PhantomData<F>,
 }
 
 impl<F> FieldOps for PrimeFieldOps<F>
-    where
-        F: ff::FromUniformBytes<64> + std::cmp::Ord ,
+where
+    F: ff::FromUniformBytes<64> + std::cmp::Ord,
 {
     /* Evaluate the given negation expression in the given prime field. */
     fn canonical(&self, a: BigInt) -> BigInt {
@@ -237,26 +237,26 @@ trait StandardCs<FF: Field> {
         layouter: &mut impl Layouter<FF>,
         f: F,
     ) -> Result<(Cell, Cell, Cell), Error>
-        where
-            F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>;
+    where
+        F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>;
     fn raw_add<F>(
         &self,
         layouter: &mut impl Layouter<FF>,
         f: F,
     ) -> Result<(Cell, Cell, Cell), Error>
-        where
-            F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>;
+    where
+        F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>;
     fn raw_poly<F>(
         &self,
         layouter: &mut impl Layouter<FF>,
         f: F,
     ) -> Result<(Cell, Cell, Cell), Error>
-        where
-            F: FnMut() -> PolyGate<Assigned<FF>>;
+    where
+        F: FnMut() -> PolyGate<Assigned<FF>>;
     fn copy(&self, layouter: &mut impl Layouter<FF>, a: Cell, b: Cell) -> Result<(), Error>;
     fn public_input<F>(&self, layouter: &mut impl Layouter<FF>, f: F) -> Result<Cell, Error>
-        where
-            F: FnMut() -> Value<FF>;
+    where
+        F: FnMut() -> Value<FF>;
 }
 
 #[derive(Clone)]
@@ -267,9 +267,9 @@ pub struct Halo2Module<F: PrimeField> {
 }
 
 impl<F> bincode::Encode for Halo2Module<F>
-    where
-        F: PrimeField,
-        F::Repr: bincode::Encode,
+where
+    F: PrimeField,
+    F::Repr: bincode::Encode,
 {
     fn encode<E: bincode::enc::Encoder>(
         &self,
@@ -287,9 +287,9 @@ impl<F> bincode::Encode for Halo2Module<F>
 }
 
 impl<F> bincode::Decode for Halo2Module<F>
-    where
-        F: PrimeField,
-        F::Repr: bincode::Decode,
+where
+    F: PrimeField,
+    F::Repr: bincode::Decode,
 {
     fn decode<D: bincode::de::Decoder>(
         decoder: &mut D,
@@ -341,8 +341,8 @@ impl<FF: Field> StandardCs<FF> for StandardPlonk<FF> {
         layouter: &mut impl Layouter<FF>,
         mut f: F,
     ) -> Result<(Cell, Cell, Cell), Error>
-        where
-            F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>,
+    where
+        F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>,
     {
         layouter.assign_region(
             || "raw_multiply",
@@ -383,8 +383,8 @@ impl<FF: Field> StandardCs<FF> for StandardPlonk<FF> {
         layouter: &mut impl Layouter<FF>,
         mut f: F,
     ) -> Result<(Cell, Cell, Cell), Error>
-        where
-            F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>,
+    where
+        F: FnMut() -> Value<(Assigned<FF>, Assigned<FF>, Assigned<FF>)>,
     {
         layouter.assign_region(
             || "raw_add",
@@ -425,8 +425,8 @@ impl<FF: Field> StandardCs<FF> for StandardPlonk<FF> {
         layouter: &mut impl Layouter<FF>,
         mut f: F,
     ) -> Result<(Cell, Cell, Cell), Error>
-        where
-            F: FnMut() -> PolyGate<Assigned<FF>>,
+    where
+        F: FnMut() -> PolyGate<Assigned<FF>>,
     {
         layouter.assign_region(
             || "raw_poly",
@@ -449,19 +449,14 @@ impl<FF: Field> StandardCs<FF> for StandardPlonk<FF> {
         layouter.assign_region(|| "copy", |mut region| region.constrain_equal(left, right))
     }
     fn public_input<F>(&self, layouter: &mut impl Layouter<FF>, mut f: F) -> Result<Cell, Error>
-        where
-            F: FnMut() -> Value<FF>,
+    where
+        F: FnMut() -> Value<FF>,
     {
         layouter.assign_region(
             || "public_input",
             |mut region| {
                 let value = region.assign_advice(|| "value", self.config.a, 0, &mut f)?;
-                region.assign_fixed(
-                    || "public",
-                    self.config.sp,
-                    0,
-                    || Value::known(FF::ONE),
-                )?;
+                region.assign_fixed(|| "public", self.config.sp, 0, || Value::known(FF::ONE))?;
 
                 Ok(value.cell())
             },
@@ -653,7 +648,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
             so,
             sm,
             sc,
-            sp
+            sp,
         }
     }
 
@@ -663,10 +658,8 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
         let mut inputs = BTreeMap::new();
 
         for pi in &self.module.pubs {
-            let cell_pi = cs.public_input(&mut layouter, || {
-                self.variable_map[&pi.id]
-            })?;
-            copy_variable(pi.id, cell_pi,&mut inputs, &cs, &mut layouter)?;
+            let cell_pi = cs.public_input(&mut layouter, || self.variable_map[&pi.id])?;
+            copy_variable(pi.id, cell_pi, &mut inputs, &cs, &mut layouter)?;
         }
 
         let val1: Assigned<_> = Assigned::from(F::ONE);
@@ -723,20 +716,20 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                     }
                     // v1 = -c2
                     (Expr::Variable(v1), Expr::Negate(e2))
-                    if matches!(&e2.v, Expr::Constant(c2) if {
+                        if matches!(&e2.v, Expr::Constant(c2) if {
                             let op2: F = make_constant::<F>(c2.clone());
                             self.make_gate(Some(v1.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, op2, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = -v2
                     (Expr::Variable(v1), Expr::Negate(e2))
-                    if matches!(&e2.v, Expr::Variable(v2) if {
+                        if matches!(&e2.v, Expr::Variable(v2) if {
                             self.make_gate(Some(v1.id), Some(v2.id), None, F::ONE, F::ONE, F::ZERO, F::ZERO, F::ZERO, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // v1 = c2 + c3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Add, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Constant(c3),
                         ) if {
@@ -747,7 +740,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = v2 + c3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Add, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Constant(c3),
                         ) if {
@@ -757,7 +750,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = c2 + v3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Add, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Variable(v3),
                         ) if {
@@ -767,7 +760,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = v2 + v3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Add, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
@@ -776,7 +769,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = c2 - c3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Constant(c3),
                         ) if {
@@ -787,7 +780,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = v2 - c3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Constant(c3),
                         ) if {
@@ -797,7 +790,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = c2 - v3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Variable(v3),
                         ) if {
@@ -807,7 +800,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = v2 - v3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
@@ -816,7 +809,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = c2 / c3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Divide, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Constant(c3),
                         ) if {
@@ -827,7 +820,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = v2 / c3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Divide, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Constant(c3),
                         ) if {
@@ -837,7 +830,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = c2 / v3 ***
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Divide, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Variable(v3),
                         ) if {
@@ -847,7 +840,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = v2 / v3 ***
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Divide, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
@@ -856,7 +849,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = c2 * c3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Constant(c3),
                         ) if {
@@ -867,7 +860,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = v2 * c3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Constant(c3),
                         ) if {
@@ -877,7 +870,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = c2 * v3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Variable(v3),
                         ) if {
@@ -887,7 +880,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // v1 = v2 * v3
                     (Expr::Variable(v1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
@@ -934,7 +927,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                     }
                     // c1 = -c2
                     (Expr::Constant(c1), Expr::Negate(e2))
-                    if matches!(&e2.v, Expr::Constant(c2) if {
+                        if matches!(&e2.v, Expr::Constant(c2) if {
                             let op1: F = make_constant::<F>(c1.clone());
                             let op2: F = make_constant::<F>(c2.clone());
                             self.make_gate(None, None, None, F::ZERO, F::ZERO, F::ZERO, F::ZERO, op1+op2, cell0, &mut inputs, &cs, &mut layouter)?;
@@ -942,14 +935,14 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = -v2
                     (Expr::Constant(c1), Expr::Negate(e2))
-                    if matches!(&e2.v, Expr::Variable(v2) if {
+                        if matches!(&e2.v, Expr::Variable(v2) if {
                             let op1: F = make_constant::<F>(c1.clone());
                             self.make_gate(Some(v2.id), None, None, F::ONE, F::ZERO, F::ZERO, F::ZERO, op1, cell0, &mut inputs, &cs, &mut layouter)?;
                             true
                         }) => {}
                     // c1 = c2 + c3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Add, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Constant(c3),
                         ) if {
@@ -961,7 +954,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = v2 + c3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Add, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Constant(c3),
                         ) if {
@@ -972,7 +965,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = c2 + v3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Add, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Variable(v3),
                         ) if {
@@ -983,7 +976,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = v2 + v3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Add, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
@@ -993,7 +986,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = c2 - c3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Constant(c3),
                         ) if {
@@ -1005,7 +998,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = v2 - c3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Constant(c3),
                         ) if {
@@ -1016,7 +1009,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = c2 - v3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Variable(v3),
                         ) if {
@@ -1027,7 +1020,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = v2 - v3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Subtract, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
@@ -1037,7 +1030,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = c2 / c3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Divide, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Constant(c3),
                         ) if {
@@ -1049,7 +1042,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = v2 / c3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Divide, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Constant(c3),
                         ) if {
@@ -1060,7 +1053,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = c2 / v3 ***
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Divide, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Variable(v3),
                         ) if {
@@ -1071,7 +1064,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = v2 / v3 ***
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Divide, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
@@ -1081,7 +1074,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = c2 * c3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Constant(c3),
                         ) if {
@@ -1093,7 +1086,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = v2 * c3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Constant(c3),
                         ) if {
@@ -1104,7 +1097,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = c2 * v3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Constant(c2),
                             Expr::Variable(v3),
                         ) if {
@@ -1115,7 +1108,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Circuit<F> for Halo2Module<F> 
                         }) => {}
                     // c1 = v2 * v3
                     (Expr::Constant(c1), Expr::Infix(InfixOp::Multiply, e2, e3))
-                    if matches!((&e2.v, &e3.v), (
+                        if matches!((&e2.v, &e3.v), (
                             Expr::Variable(v2),
                             Expr::Variable(v3),
                         ) if {
@@ -1146,11 +1139,18 @@ pub fn prover(
     circuit: Halo2Module<Fp>,
     params: &Params<EqAffine>,
     pk: &ProvingKey<EqAffine>,
-    instances: &[Fp]
+    instances: &[Fp],
 ) -> Result<Vec<u8>, Error> {
     let rng = OsRng;
     let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
-    create_proof(params, pk, &[circuit], &[&[instances]], rng, &mut transcript)?;
+    create_proof(
+        params,
+        pk,
+        &[circuit],
+        &[&[instances]],
+        rng,
+        &mut transcript,
+    )?;
     Ok(transcript.finalize())
 }
 
@@ -1158,7 +1158,7 @@ pub fn verifier(
     params: &Params<EqAffine>,
     vk: &VerifyingKey<EqAffine>,
     proof: &[u8],
-    instances: &[Fp]
+    instances: &[Fp],
 ) -> Result<(), Error> {
     let strategy = SingleVerifier::new(params);
     let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(proof);
