@@ -1861,18 +1861,20 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result
                     );
                 }
                 for expr in &module.exprs {
-                    println!(
-                        "Out: {}",
-                        evaluate(
-                            expr,
-                            &mut None,
-                            &mut bindings,
-                            &mut prover_defs,
-                            field_ops,
-                            &mut vg,
-                        )
-                        .unwrap()
+                    let res = evaluate(
+                        expr,
+                        &mut None,
+                        &mut bindings,
+                        &mut prover_defs,
+                        field_ops,
+                        &mut vg,
                     );
+
+                    if let Err(e) = res {
+                        println!("Evaluation Error: {:?}", e)
+                    } else {
+                        println!("Out: {}", res.unwrap())
+                    };
                 }
             }
             Err(e) => eprintln!("Parse Error: {:?}", e),
