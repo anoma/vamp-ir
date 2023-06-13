@@ -473,7 +473,8 @@ fn evaluate(
                     // next position
                     let param1 = intr.params[intr.pos].clone();
                     intr.pos += 1;
-                    // The specific binding that needs to be added to environment
+                    // The specific binding that needs to be added to
+                    // environment
                     let new_bind = LetBinding(param1, Box::new(*expr2.clone()));
                     // Make sure that the argument's environment does not get
                     // overridden by that of the function by producing
@@ -512,7 +513,8 @@ fn evaluate(
                     // Now that we have an assignment, move the function
                     // parameter into the environment
                     let param1 = fun.params.remove(0);
-                    // The specific binding that needs to be added to environment
+                    // The specific binding that needs to be added to
+                    // environment
                     let new_bind = LetBinding(param1, Box::new(*expr2.clone()));
                     // Make sure that the argument's environment does not get
                     // overridden by that of the function by producing
@@ -727,18 +729,10 @@ fn evaluate(
             Ok(Expr::Constant(field_ops.canonical(c.clone())).type_expr(expr.t.clone()))
         }
         Expr::Unit | Expr::Nil => Ok(expr.clone()),
-        Expr::Variable(var) => {
-            if let Some(val) = bindings.get(&var.id) {
-                if !prover_defs.contains(&var.id) {
-                    let val_clone = val.clone();
-                    evaluate(&val_clone, flattened, bindings, prover_defs, field_ops, gen)
-                } else {
-                    Ok(expr.clone())
-                }
-            } else {
-                Ok(expr.clone())
-            }
-        }
+        Expr::Variable(var) => match bindings.get(&var.id) {
+            Some(val) if !prover_defs.contains(&var.id) => Ok(val.clone()),
+            _ => Ok(expr.clone()),
+        },
         Expr::Function(Function {
             params, body, env, ..
         }) if params.is_empty() => {
@@ -1877,13 +1871,13 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result
                     );
 
                     if let Err(e) = res {
-                        println!("Evaluation Error: {e:?}")
+                        println!("Evaluation Error: {:?}", e)
                     } else {
                         println!("Out: {}", res.unwrap())
                     };
                 }
             }
-            Err(e) => eprintln!("Parse Error: {e:?}"),
+            Err(e) => eprintln!("Parse Error: {:?}", e),
         }
     }
 
