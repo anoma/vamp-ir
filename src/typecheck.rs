@@ -725,16 +725,14 @@ pub fn infer_module_types(
 pub fn expand_pattern_variables(
     pat: &mut TPat,
     expr: &TExpr,
-    map: &mut HashMap<VariableId, Option<TPat>>,
+    map: &mut HashMap<VariableId, Option<TExpr>>,
     gen: &mut VarGen,
 ) -> Result<(), Error> {
     match (&mut pat.v, &expr.v) {
-        (Pat::Variable(var), _) if map.contains_key(&var.id) => {
-            if let Some(equiv_pat) = &map[&var.id] {
-                *pat = equiv_pat.clone();
-            }
-            Ok(())
-        },
+        (Pat::Variable(var), _) if map.contains_key(&var.id) =>
+            Err(Error::DuplicatePatternVariable {
+                v: var.clone(),
+            }),
         (Pat::Variable(var), Expr::Product(expr1, expr2)) => {
             let mut new_var1 = Variable::new(gen.generate_id());
             new_var1.name = var.name.as_ref().map(|x| x.to_owned() + ".0");
@@ -748,7 +746,7 @@ pub fn expand_pattern_variables(
 
             let curr_id = var.id;
             pat.v = Pat::Product(Box::new(var1), Box::new(var2));
-            map.insert(curr_id, Some(pat.clone()));
+            map.insert(curr_id, Some(expr.clone()));
 
             Ok(())
         }
@@ -766,19 +764,19 @@ pub fn expand_pattern_variables(
 
             let curr_id = var.id;
             pat.v = Pat::Cons(Box::new(var1), Box::new(var2));
-            map.insert(curr_id, Some(pat.clone()));
+            map.insert(curr_id, Some(expr.clone()));
 
             Ok(())
         },
         (Pat::Variable(var), Expr::Unit) => {
             let equiv_pat = Pat::Unit.type_pat(Some(Type::Unit));
-            map.insert(var.id, Some(equiv_pat.clone()));
+            map.insert(var.id, Some(expr.clone()));
             *pat = equiv_pat;
             Ok(())
         },
         (Pat::Variable(var), Expr::Nil) => {
             let equiv_pat = Pat::Nil.type_pat(None);
-            map.insert(var.id, Some(equiv_pat.clone()));
+            map.insert(var.id, Some(expr.clone()));
             *pat = equiv_pat;
             Ok(())
         },

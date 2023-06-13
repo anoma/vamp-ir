@@ -408,7 +408,7 @@ fn evaluate_binding(
     let mut new_bindings = HashMap::new();
     for (var, pat) in pat_exps {
         if let Some(pat) = pat {
-            new_bindings.insert(var, pat.to_expr());
+            new_bindings.insert(var, pat);
         }
     }
     match_pattern_expr(

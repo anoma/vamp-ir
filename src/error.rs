@@ -57,6 +57,9 @@ pub enum Error {
     // pattern {} cannot match {}
     PatternMatchError { p: TPat, e: TExpr },
 
+    // pattern cannot use the variable {} more than once
+    DuplicatePatternVariable { v: Variable },
+
     // the global function {} is undefined
     UndefinedGlobalFunction { v: Variable },
 
@@ -151,6 +154,13 @@ impl std::fmt::Display for Error {
 
             // pattern {} cannot match {}
             Self::PatternMatchError { p, e } => write!(f, "Pattern {} cannot match {}", p, e),
+
+            // pattern cannot use the variable {} more than once
+            Self::DuplicatePatternVariable { v } => write!(
+                f,
+                "Pattern cannot use the variable {} more than once",
+                v,
+            ),
 
             // the global function {} is undefined
             Self::UndefinedGlobalFunction { v } => {
