@@ -1,0 +1,113 @@
+name: release
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      draft:
+        type: boolean
+        description: "Create a draft release"
+        required: true
+        default: false
+        
+      release-type:
+        type: choice
+        default: "release"
+        options:
+          - "pre-release"
+          - "release"
+      tag:
+        description: "version to release (e.g. major.minor.patch)"
+        required: true
+
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.head_ref || github.run_id }}"
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+  RUSTFLAGS: -D warnings
+  RUSTUP_MAX_RETRIES: 10
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: CHANGELOG.md # for notable changes
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: |
+            LICENSE-MIT
+            LICENSE-APACHE
+            README.md
+          tag_name: ${{ github.event.inputs.tag }}
+          draft: ${{ github.event.inputs.draft }}
+          prerelease: ${{ github.event.inputs.release-type == 'pre-release' }}
+          fail_on_unmatched_files: true
+
+  upload-assets:
+    needs: create-release
+    strategy:
+      matrix:
+        include:
+          # Linux targets
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          # macOS targets
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2.4.0
+
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          target: ${{ matrix.target }}
+          override: true
+          components: rust-std,rustfmt
+          # https://rust-lang.github.io/rustup-components-history/
+
+      - name: Show rust toolchain info
+        run: rustup show
+
+      - name: Run tests
+        run: cargo test
+      
+      # TODO use github.ref tag as the version for the rust bin 
+
+      - uses: taiki-e/upload-rust-binary-action@v1
+        if: success()
+        with:
+          bin: vamp-ir
+          target: ${{ matrix.target }}
+          ref: refs/tags/${{ github.event.inputs.tag }}
+          asset: LICENSE-APACHE,LICENSE-MIT,README.md
+          token: ${{ secrets.GITHUB_TOKEN }}
+          profile: release

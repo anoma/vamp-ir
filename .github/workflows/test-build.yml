@@ -1,0 +1,106 @@
+name: test-build
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+  RUSTFLAGS: -D warnings
+  RUSTUP_MAX_RETRIES: 10
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test-linux:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-musl
+            arch: aarch64-musl
+          - target: x86_64-unknown-linux-musl
+            arch: x86_64-musl
+    runs-on: ubuntu-latest
+    container: messense/rust-musl-cross:${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2.4.0
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          profile: minimal
+          target: ${{ matrix.target }}
+          override: true
+          components: rust-std,rustfmt,clippy
+      - name: Lint
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy || true
+
+      # uncomment this once there tests to run
+      # - name: Run tests
+      #   run: cargo test --verbose
+      
+      - name: release
+        if: success()
+        run: cargo build --release --target=${{ matrix.target }}
+
+  test-macos:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2.4.0
+
+      - name: Install rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          profile: minimal
+          target: ${{ matrix.target }}
+          override: true
+          components: rust-std,rustfmt,clippy
+
+      - name: Lint
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy || true
+
+      # uncomment this once there tests to run
+      # - name: Run tests
+      #   run: cargo test --verbose
+
+      - name: release
+        if: success()
+        run: cargo build --release --target=${{ matrix.target }}

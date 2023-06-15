@@ -1,6 +1,6 @@
 [package]
 name = "vamp-ir"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 
 [lib]
@@ -52,3 +52,6 @@ proptest = "1.0.0"
 [target.'cfg(unix)'.dev-dependencies]
 inferno = ">=0.11, <0.11.5" # MSRV 1.59
 pprof = { version = "0.8", features = ["criterion", "flamegraph"] } # MSRV 1.56
+
+[build]
+rustflags = ["-Clinker=rust-lld"]
