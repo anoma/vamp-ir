@@ -46,7 +46,7 @@ fn main() {
         Backend::Generate(generate_commands) => generate(generate_commands, &config),
         Backend::Plonk(plonk_commands) => plonk(plonk_commands, &config),
         Backend::Halo2(halo2_commands) => halo2(halo2_commands, &config),
-        Backend::REPL(repl_commands) => Ok(repl(repl_commands)),
+        Backend::REPL(repl_commands) => repl(repl_commands),
     };
 
     match res {

@@ -5,7 +5,6 @@ use crate::ast::{
 use crate::error::*;
 use crate::pest::Parser;
 use crate::qprintln;
-use crate::pest::Parser;
 use crate::typecheck::{
     expand_expr_variables, expand_pattern_variables, infer_module_types, print_types,
     strip_module_types, Type,
@@ -995,7 +994,7 @@ fn flatten_binding(pat: &TPat, expr: &TExpr, oflattened: &mut Option<Module>) {
             (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
                 flatten_binding(pat1, expr1, oflattened);
                 flatten_binding(pat2, expr2, oflattened);
-            }
+            },
             _ => unreachable!("encountered unexpected binding: {} = {}", pat, expr),
         }
     }
