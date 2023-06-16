@@ -56,7 +56,7 @@ jobs:
       - name: Lint
         run: |
           cargo fmt --all -- --check
-          cargo clippy || true
+          cargo clippy
 
       # uncomment this once there tests to run
       # - name: Run tests
@@ -95,7 +95,7 @@ jobs:
       - name: Lint
         run: |
           cargo fmt --all -- --check
-          cargo clippy || true
+          cargo clippy
 
       # uncomment this once there tests to run
       # - name: Run tests
