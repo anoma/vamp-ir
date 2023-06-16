@@ -488,7 +488,7 @@ impl<F: ff::FromUniformBytes<64> + std::cmp::Ord> Halo2Module<F> {
         }
     }
 
-    /* Populate input and auxilliary variables from the given program inputs. */
+    /* Populate input and auxiliary variables from the given program inputs. */
     pub fn populate_variables(&mut self, mut field_assigns: HashMap<VariableId, F>) {
         // Get the definitions necessary to populate auxiliary variables
         let mut definitions = HashMap::new();
