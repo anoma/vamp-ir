@@ -29,7 +29,7 @@ where
 
     // Get the expected inputs from the circuit module
     let mut input_variables = HashMap::new();
-    collect_module_variables(&annotated, &mut input_variables);
+    collect_module_variables(annotated, &mut input_variables);
 
     // Defined variables should not be requested from user
     for def in &annotated.defs {
@@ -59,7 +59,7 @@ where
     <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug,
 {
     let mut input_variables = HashMap::new();
-    collect_module_variables(&annotated, &mut input_variables);
+    collect_module_variables(annotated, &mut input_variables);
     // Defined variables should not be requested from user
     for def in &annotated.defs {
         if let Pat::Variable(var) = &def.0 .0.v {
@@ -81,7 +81,7 @@ where
         } else {
             "(private)"
         };
-        print!("** {} {}: ", var, visibility);
+        print!("** {var} {visibility}: ");
         std::io::stdout().flush().expect("flush failed!");
         let mut input_line = String::new();
         std::io::stdin()
@@ -100,9 +100,9 @@ where
     T: Num + Neg<Output = T>,
 {
     // Process the number's sign
-    let (pos, magnitude) = if let Some(rest) = string.strip_prefix("-") {
+    let (pos, magnitude) = if let Some(rest) = string.strip_prefix('-') {
         (false, rest)
-    } else if let Some(rest) = string.strip_prefix("+") {
+    } else if let Some(rest) = string.strip_prefix('+') {
         (true, rest)
     } else {
         (true, string)
