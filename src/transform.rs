@@ -171,7 +171,7 @@ fn match_pattern_expr(
     }
 }
 
-/* Refresh all the variables occuring in the given pattern. */
+/* Refresh all the variables occurring in the given pattern. */
 fn refresh_pattern_variables(
     pat: &mut TPat,
     map: &mut HashMap<VariableId, VariableId>,
@@ -202,7 +202,7 @@ fn refresh_pattern_variables(
     }
 }
 
-/* Gives each variable occuring in the pattern a unique ID. Assumes that no
+/* Gives each variable occurring in the pattern a unique ID. Assumes that no
  * variable is used more than once in the pattern. */
 fn number_pattern_variables(
     pat: &mut TPat,
@@ -252,7 +252,7 @@ fn number_variable(
     }
 }
 
-/* Numbers each variable occuring in the expression according to the binding in
+/* Numbers each variable occurring in the expression according to the binding in
  * local. If there is no such binding, then the global variable map is searched.
  * If not found, then a new global variable binding is made. Binding expressions
  * introduce new local bindings. */
@@ -312,7 +312,7 @@ fn number_expr_variables(
     }
 }
 
-/* Numbers the variables occuring in the definition. Essentially numbers the
+/* Numbers the variables occurring in the definition. Essentially numbers the
  * inner expression, and then numbers the definition pattern variables in global
  * scope. */
 fn number_def_variables(
@@ -325,8 +325,8 @@ fn number_def_variables(
     number_pattern_variables(&mut def.0 .0, locals, gen);
 }
 
-/* Numbers the variables occuring in the module definitions and then those
- * occuring in the module expressions. */
+/* Numbers the variables occurring in the module definitions and then those
+ * occurring in the module expressions. */
 pub fn number_module_variables(
     module: &mut Module,
     globals: &mut HashMap<String, VariableId>,
@@ -474,7 +474,7 @@ fn evaluate(
                     // environment
                     let new_bind = LetBinding(param1, Box::new(*expr2.clone()));
                     // Make sure that the argument's environment does not get
-                    // overriden by that of the function by producing
+                    // overridden by that of the function by producing
                     // alternatives sourced from this context
                     let mut implicit_env = HashMap::new();
                     for var in intr.env.keys() {
@@ -514,7 +514,7 @@ fn evaluate(
                     // environment
                     let new_bind = LetBinding(param1, Box::new(*expr2.clone()));
                     // Make sure that the argument's environment does not get
-                    // overriden by that of the function by producing
+                    // overridden by that of the function by producing
                     // alternatives sourced from this context
                     let mut implicit_env = HashMap::new();
                     for var in fun.env.keys() {
@@ -820,7 +820,7 @@ pub fn evaluate_module(
     }
 }
 
-/* Collect all the variables occuring in the given pattern. */
+/* Collect all the variables occurring in the given pattern. */
 pub fn collect_pattern_variables(pat: &TPat, map: &mut HashMap<VariableId, Variable>) {
     match &pat.v {
         Pat::Variable(var) => {
@@ -838,7 +838,7 @@ pub fn collect_pattern_variables(pat: &TPat, map: &mut HashMap<VariableId, Varia
     }
 }
 
-/* Collect all the variables occuring in the given expression. */
+/* Collect all the variables occurring in the given expression. */
 fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>) {
     match &expr.v {
         Expr::Variable(var) => {
@@ -886,13 +886,13 @@ fn collect_expr_variables(expr: &TExpr, map: &mut HashMap<VariableId, Variable>)
     }
 }
 
-/* Collect all the variables occuring in the given definition. */
+/* Collect all the variables occurring in the given definition. */
 fn collect_def_variables(def: &Definition, map: &mut HashMap<VariableId, Variable>) {
     collect_expr_variables(&def.0 .1, map);
     collect_pattern_variables(&def.0 .0, map);
 }
 
-/* Collect all the variables occuring in the given module. */
+/* Collect all the variables occurring in the given module. */
 pub fn collect_module_variables(module: &Module, map: &mut HashMap<VariableId, Variable>) {
     map.reserve(module.pubs.len());
     map.extend(module.pubs.iter().map(|var| (var.id, var.clone())));
@@ -1013,7 +1013,7 @@ fn flatten_equals(expr1: &TExpr, expr2: &TExpr, flattened: &mut Module) {
     }
 }
 
-/* Make an equality expression to constrain the values that satify the circuit.
+/* Make an equality expression to constrain the values that satisfy the circuit.
  * Simultaneously also make a variable definition to enable provers to generate
  * the necessary auxiliary variables. */
 fn push_constraint_def(module: &mut Module, out: TPat, expr: TExpr) {
@@ -1145,7 +1145,7 @@ enum Usage {
  * prover to generate witnesses), or are unused. */
 pub fn classify_defs(module: &mut Module, prover_defs: &mut HashSet<VariableId>) {
     let mut classifier = HashMap::new();
-    // Start by assuming that all variables occuring in constraint expressions
+    // Start by assuming that all variables occurring in constraint expressions
     // have constraint definitions.
     for expr in &module.exprs {
         let mut constraint_vars = HashMap::new();
@@ -1349,7 +1349,7 @@ pub fn copy_propagate_def(
 
 /* Replace all variables defined to be equal with a single representative.
  * If a variable is proven to be equal to a constant, then replace its
- * occurences with the constant. */
+ * occurrences with the constant. */
 pub fn copy_propagate(module: &mut Module, prover_defs: &HashSet<VariableId>) {
     let mut substitutions: HashMap<VariableId, TExpr> = HashMap::new();
     for def in &mut module.defs {

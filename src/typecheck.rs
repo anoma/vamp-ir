@@ -10,7 +10,7 @@ use bincode::{Decode, Encode};
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display};
 
-/* Collect the free variables occuring in the given type. */
+/* Collect the free variables occurring in the given type. */
 fn collect_free_type_vars(typ: &Type, map: &mut HashMap<VariableId, Variable>) {
     match typ {
         Type::Int | Type::Unit => {}
@@ -260,7 +260,7 @@ fn partial_expand_type(typ: &Type, types: &HashMap<VariableId, Type>) -> Type {
     typ.clone()
 }
 
-/* Consistently replace all quantified type variables occuring in type
+/* Consistently replace all quantified type variables occurring in type
  * expression with fresh ones. Useful for let polymorphism. */
 fn instantiate_type_vars(
     typ: &mut Type,
@@ -289,7 +289,7 @@ fn instantiate_type_vars(
     }
 }
 
-/* Strip all type variables occuring in the given pattern. */
+/* Strip all type variables occurring in the given pattern. */
 pub fn strip_pat_types(pat: &mut TPat) {
     pat.t = None;
     match &mut pat.v {
@@ -304,7 +304,7 @@ pub fn strip_pat_types(pat: &mut TPat) {
     }
 }
 
-/* Strip all type variables occuring in the given expression. */
+/* Strip all type variables occurring in the given expression. */
 pub fn strip_expr_types(expr: &mut TExpr) {
     expr.t = None;
     match &mut expr.v {
@@ -348,13 +348,13 @@ pub fn strip_expr_types(expr: &mut TExpr) {
     }
 }
 
-/* Strip all type variables occuring in the given definition. */
+/* Strip all type variables occurring in the given definition. */
 pub fn strip_def_types(def: &mut Definition) {
     strip_pat_types(&mut def.0 .0);
     strip_expr_types(&mut def.0 .1);
 }
 
-/* Strip all type variables occuring in the given module. */
+/* Strip all type variables occurring in the given module. */
 pub fn strip_module_types(module: &mut Module) {
     for def in &mut module.defs {
         strip_def_types(def);
@@ -385,7 +385,7 @@ fn infer_binding_types(
         &mut None,
     )
     .unwrap();
-    // Compute the set of free variables occuring in RHS' TYPE that
+    // Compute the set of free variables occurring in RHS' TYPE that
     // do not occur in the type environment
     let mut quant_vars = HashMap::new();
     collect_free_type_vars(&expand_type(expr1_var, types), &mut quant_vars);

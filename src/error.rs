@@ -10,7 +10,7 @@ pub enum Error {
     // cannot apply {} to {}
     ApplicationError { e2: TExpr, e1: TExpr },
 
-    // enountered empty sequence
+    // encountered empty sequence
     EmptySequenceError,
 
     // variables are not permitted in expression exponents
@@ -85,8 +85,8 @@ impl std::fmt::Display for Error {
             // cannot apply {} to {}
             Self::ApplicationError { e2, e1 } => write!(f, "Cannot apply {e2} to {e1}"),
 
-            // enountered empty sequence
-            Self::EmptySequenceError => write!(f, "Enountered empty sequence"),
+            // encountered empty sequence
+            Self::EmptySequenceError => write!(f, "Encountered empty sequence"),
 
             // variables are not permitted in expression exponents
             Self::VariableExponentError => {
