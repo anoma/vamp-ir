@@ -1443,7 +1443,7 @@ fn expand_fresh_intrinsic(
                 let val = bindings[&param_var.id].clone();
                 // Make a new prover definition that is equal to the argument
                 let fresh_arg = Variable::new(gen.generate_id());
-                let mut fresh_pat = Pat::Variable(fresh_arg.clone()).type_pat(val.t.clone());
+                let mut fresh_pat = Pat::Variable(fresh_arg).type_pat(val.t.clone());
                 let mut pat_exps = HashMap::new();
                 // Expand the pattern using our knowledge of the expression's form
                 expand_pattern_variables(&mut fresh_pat, &val, &mut pat_exps, gen).expect("Pattern variable expantion shouldn't fail.");

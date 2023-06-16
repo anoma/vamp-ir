@@ -13,8 +13,6 @@ use std::fs;
 use clap::Args;
 use std::path::PathBuf;
 
-use crate::util::Config;
-
 #[derive(Args)]
 pub struct REPL {
     /// Path to source file that is being loaded into repl
