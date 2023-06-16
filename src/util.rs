@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
+    fs,
     ops::Neg,
     path::PathBuf,
 };
@@ -22,10 +22,11 @@ where
     F: Num + Neg<Output = F>,
     <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug,
 {
-    let inputs = File::open(path_to_inputs).expect("Could not open inputs file");
+    let contents = fs::read_to_string(path_to_inputs).expect("Could not read inputs file");
 
     // Read the user-supplied inputs from the file
-    let named_assignments: HashMap<String, String> = serde_json::from_reader(inputs).unwrap();
+    let named_assignments: HashMap<String, String> =
+        json5::from_str(&contents).expect("Could not parse JSON5");
 
     // Get the expected inputs from the circuit module
     let mut input_variables = HashMap::new();
