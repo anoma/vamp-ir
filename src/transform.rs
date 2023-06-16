@@ -336,13 +336,13 @@ pub fn number_module_variables(
     locals: &mut HashMap<String, u32>,
 ) {
     for var in &mut module.pubs {
-        number_variable(var, &locals, globals, gen);
+        number_variable(var, locals, globals, gen);
     }
     for def in &mut module.defs {
         number_def_variables(def, locals, globals, gen);
     }
     for expr in &mut module.exprs {
-        number_expr_variables(expr, &locals, globals, gen);
+        number_expr_variables(expr, locals, globals, gen);
     }
 }
 
@@ -634,7 +634,7 @@ fn evaluate(
             let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen)?;
             let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen)?;
             flatten_equals(&expr1, &expr2, flattened);
-            if let None = flattened {
+            if flattened.is_none() {
                 // To Do: Some way for repl to see constraint results?
                 Ok(Expr::Unit.type_expr(Some(Type::Unit)))
             } else {
@@ -994,7 +994,7 @@ fn flatten_binding(pat: &TPat, expr: &TExpr, oflattened: &mut Option<Module>) {
             (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
                 flatten_binding(pat1, expr1, oflattened);
                 flatten_binding(pat2, expr2, oflattened);
-            },
+            }
             _ => unreachable!("encountered unexpected binding: {} = {}", pat, expr),
         }
     }
@@ -1505,7 +1505,7 @@ fn register_fresh_intrinsic_repl(
     // Register this as a binding to contextualize evaluation
     bindings.insert(
         fresh_func_id,
-        Expr::Function(fresh_ident.clone()).type_expr(Some(imp_typ)),
+        Expr::Function(fresh_ident).type_expr(Some(imp_typ)),
     );
 }
 
@@ -1726,7 +1726,7 @@ fn expand_fold_intrinsic(
 }
 
 /* Version of compile for repl. Does everything compile does to evaluate a module, but split between repl interactions. */
-pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result<(), Error> {
+pub fn compile_repl(module: &mut Module, field_ops: &dyn FieldOps) -> Result<(), Error> {
     let mut vg = VarGen::new();
     let mut globals = HashMap::new();
     let mut bindings = HashMap::new();
@@ -1738,21 +1738,21 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result
 
     let mut locals = HashMap::new();
     let mut prover_defs = HashSet::new();
-    if module.defs.len() != 0 || module.exprs.len() != 0 || module.pubs.len() != 0 {
-        number_module_variables(&mut module, &mut globals, &mut vg, &mut locals);
+    if !module.defs.is_empty() || !module.exprs.is_empty() || !module.pubs.is_empty() {
+        number_module_variables(module, &mut globals, &mut vg, &mut locals);
         infer_module_types(
-            &mut module,
+            module,
             &globals,
             &mut global_types,
             &mut prog_types,
             &mut vg,
         );
         println!("** Inferring types...");
-        print_types(&module, &prog_types, &Config { quiet: false });
+        print_types(module, &prog_types, &Config { quiet: false });
         // Global variables may have further internal structure, determine this
         // using derived type information
         expand_global_variables(
-            &mut module,
+            module,
             &globals,
             &global_types,
             &mut prog_types,
@@ -1761,11 +1761,11 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result
         );
         // Type information is no longer required since we do symbolic
         // execution from now on
-        strip_module_types(&mut module);
+        strip_module_types(module);
         // Start generating arithmetic constraints
 
         evaluate_module(
-            &module,
+            module,
             &mut None,
             &mut bindings,
             &mut prover_defs,
@@ -1795,7 +1795,7 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result
 
         match VampirParser::parse(Rule::moduleItems, &input) {
             Ok(mut pairs) => {
-                while let Some(pair) = pairs.next() {
+                for pair in pairs.by_ref() {
                     match pair.as_rule() {
                         Rule::expr => {
                             let expr: TExpr = TExpr::parse(pair).expect("expected expression");
@@ -1807,8 +1807,8 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result
                             module.defs.push(definition);
                         }
                         Rule::declaration => {
-                            let mut pairs: pest::iterators::Pairs<Rule> = pair.into_inner();
-                            while let Some(pair) = pairs.next() {
+                            let pairs: pest::iterators::Pairs<Rule> = pair.into_inner();
+                            for pair in pairs {
                                 let var: Variable =
                                     Variable::parse(pair).expect("expected variable");
                                 module.pubs.push(var);
@@ -1824,7 +1824,7 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result
                 number_module_variables(&mut module, &mut globals, &mut vg, &mut locals);
 
                 // Only look at types if new definitions are added.
-                if module.defs.len() > 0 {
+                if !module.defs.is_empty() {
                     infer_module_types(
                         &mut module,
                         &globals,
@@ -1870,15 +1870,15 @@ pub fn compile_repl(mut module: &mut Module, field_ops: &dyn FieldOps) -> Result
                     );
 
                     if let Err(e) = res {
-                        println!("Evaluation Error: {:?}", e)
+                        println!("Evaluation Error: {e:?}")
                     } else {
                         println!("Out: {}", res.unwrap())
                     };
                 }
             }
-            Err(e) => eprintln!("Parse Error: {:?}", e),
+            Err(e) => eprintln!("Parse Error: {e:?}"),
         }
     }
 
-    return Ok(());
+    Ok(())
 }

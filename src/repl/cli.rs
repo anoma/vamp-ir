@@ -42,15 +42,15 @@ pub fn repl_cmd(source: &Option<PathBuf>, field_ops: &dyn FieldOps) -> Result<()
 
 pub fn repl(args: &REPL) -> Result<(), Error> {
     match args.field.as_str() {
-        "Halo2" | "halo2" => return repl_cmd(&args.source, &Halo2PrimeFieldOps::<Fp>::default()),
-        "Plonk" | "plonk" => return repl_cmd(&args.source, &PlonkPrimeFieldOps::<Fr>::default()),
+        "Halo2" | "halo2" => repl_cmd(&args.source, &Halo2PrimeFieldOps::<Fp>::default()),
+        "Plonk" | "plonk" => repl_cmd(&args.source, &PlonkPrimeFieldOps::<Fr>::default()),
         field_str => {
-            if let Ok(_) = field_str.parse::<usize>() {
+            if field_str.parse::<usize>().is_ok() {
                 // This is for arbitrary finite fields described by a number
-                return Err(Error::InvalidField);
+                Err(Error::InvalidField)
             } else {
-                return Err(Error::InvalidField);
+                Err(Error::InvalidField)
             }
         }
-    };
+    }
 }
