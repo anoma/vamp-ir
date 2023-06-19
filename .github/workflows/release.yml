@@ -40,11 +40,16 @@ defaults:
     shell: bash
 
 jobs:
+  test-codebase:
+    uses: ./.github/workflows/test-build.yml
+
   create-release:
+    needs: test-codebase
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
