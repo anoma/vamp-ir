@@ -1,8 +1,9 @@
 use crate::ast::{
-    Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, TExpr, TPat, Variable,
-    VariableId,
+    Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, Rule, TExpr, TPat,
+    VampirParser, Variable, VariableId,
 };
 use crate::error::*;
+use crate::pest::Parser;
 use crate::qprintln;
 use crate::typecheck::{
     expand_expr_variables, expand_pattern_variables, infer_module_types, print_types,
@@ -15,6 +16,7 @@ use num_traits::sign::Signed;
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::io::Write;
 
 /* A structure for generating unique variable IDs. */
 pub struct VarGen(VariableId);
@@ -331,16 +333,16 @@ pub fn number_module_variables(
     module: &mut Module,
     globals: &mut HashMap<String, VariableId>,
     gen: &mut VarGen,
+    locals: &mut HashMap<String, u32>,
 ) {
-    let mut locals = HashMap::new();
     for var in &mut module.pubs {
-        number_variable(var, &locals, globals, gen);
+        number_variable(var, locals, globals, gen);
     }
     for def in &mut module.defs {
-        number_def_variables(def, &mut locals, globals, gen);
+        number_def_variables(def, locals, globals, gen);
     }
     for expr in &mut module.exprs {
-        number_expr_variables(expr, &locals, globals, gen);
+        number_expr_variables(expr, locals, globals, gen);
     }
 }
 
@@ -379,7 +381,7 @@ pub trait FieldOps {
 fn evaluate_binding(
     binding: &LetBinding,
     capture: HashMap<VariableId, TExpr>,
-    flattened: &mut Module,
+    flattened: &mut Option<Module>,
     bindings: &mut HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     field_ops: &dyn FieldOps,
@@ -454,7 +456,7 @@ fn capture_env(val: &mut TExpr, new_bindings: HashMap<VariableId, TExpr>) -> Res
  * value that the given expression evaluates to. */
 fn evaluate(
     expr: &TExpr,
-    flattened: &mut Module,
+    flattened: &mut Option<Module>,
     bindings: &mut HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     field_ops: &dyn FieldOps,
@@ -632,7 +634,12 @@ fn evaluate(
             let expr1 = evaluate(expr1, flattened, bindings, prover_defs, field_ops, gen)?;
             let expr2 = evaluate(expr2, flattened, bindings, prover_defs, field_ops, gen)?;
             flatten_equals(&expr1, &expr2, flattened);
-            Ok(Expr::Unit.type_expr(Some(Type::Unit)))
+            if flattened.is_none() {
+                // To Do: Some way for repl to see constraint results?
+                Ok(Expr::Unit.type_expr(Some(Type::Unit)))
+            } else {
+                Ok(Expr::Unit.type_expr(Some(Type::Unit)))
+            }
         }
         Expr::Infix(InfixOp::Exponentiate, e1, e2) => {
             // Compute the base once and for all
@@ -701,7 +708,9 @@ fn evaluate(
                         Pat::Variable(var.clone()).type_pat(expr.t.clone()),
                         Box::new(val),
                     ));
-                    flattened.defs.push(binding);
+                    if let Some(flat) = flattened {
+                        flat.defs.push(binding);
+                    }
                     Ok(Expr::Variable(var).type_expr(expr.t.clone()))
                 }
             }
@@ -784,7 +793,7 @@ fn evaluate(
  * environment is modified as necessary. */
 fn evaluate_def(
     def: &Definition,
-    flattened: &mut Module,
+    flattened: &mut Option<Module>,
     bindings: &mut HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     field_ops: &dyn FieldOps,
@@ -805,18 +814,20 @@ fn evaluate_def(
 /* Evaluate the given module emitting the constraints that it implies. */
 pub fn evaluate_module(
     module: &Module,
-    flattened: &mut Module,
+    oflattened: &mut Option<Module>,
     bindings: &mut HashMap<VariableId, TExpr>,
     prover_defs: &mut HashSet<VariableId>,
     field_ops: &dyn FieldOps,
     gen: &mut VarGen,
 ) {
-    flattened.pubs.extend(module.pubs.clone());
+    if let Some(flattened) = oflattened {
+        flattened.pubs.extend(module.pubs.clone());
+    }
     for def in &module.defs {
-        evaluate_def(def, flattened, bindings, prover_defs, field_ops, gen);
+        evaluate_def(def, oflattened, bindings, prover_defs, field_ops, gen);
     }
     for expr in &module.exprs {
-        evaluate(expr, flattened, bindings, prover_defs, field_ops, gen).unwrap();
+        evaluate(expr, oflattened, bindings, prover_defs, field_ops, gen).unwrap();
     }
 }
 
@@ -947,69 +958,73 @@ fn infix_op(op: InfixOp, e1: TExpr, e2: TExpr) -> TExpr {
 }
 
 /* Flatten the given binding down into the set of constraints it defines. */
-fn flatten_binding(pat: &TPat, expr: &TExpr, flattened: &mut Module) {
-    match (&pat.v, &expr.v) {
-        (Pat::Variable(_), Expr::Function(_) | Expr::Intrinsic(_)) => {}
-        (
-            Pat::Variable(_),
-            Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
-        ) => {
-            flattened
-                .defs
-                .push(Definition(LetBinding(pat.clone(), Box::new(expr.clone()))));
+fn flatten_binding(pat: &TPat, expr: &TExpr, oflattened: &mut Option<Module>) {
+    if let Some(flattened) = oflattened {
+        match (&pat.v, &expr.v) {
+            (Pat::Variable(_), Expr::Function(_) | Expr::Intrinsic(_)) => {}
+            (
+                Pat::Variable(_),
+                Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
+            ) => {
+                flattened
+                    .defs
+                    .push(Definition(LetBinding(pat.clone(), Box::new(expr.clone()))));
+            }
+            (
+                Pat::Constant(pat),
+                Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
+            ) => {
+                flattened.exprs.push(
+                    Expr::Infix(
+                        InfixOp::Equal,
+                        Box::new(Expr::Constant(pat.clone()).type_expr(Some(Type::Int))),
+                        Box::new(expr.clone()),
+                    )
+                    .type_expr(Some(Type::Unit)),
+                );
+            }
+            (Pat::As(pat, _name), _) => {
+                flatten_binding(pat, expr, oflattened);
+            }
+            (Pat::Unit, Expr::Unit) | (Pat::Nil, Expr::Nil) => {}
+            (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
+                flatten_binding(pat1, expr1, oflattened);
+                flatten_binding(pat2, expr2, oflattened);
+            }
+            (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
+                flatten_binding(pat1, expr1, oflattened);
+                flatten_binding(pat2, expr2, oflattened);
+            }
+            _ => unreachable!("encountered unexpected binding: {} = {}", pat, expr),
         }
-        (
-            Pat::Constant(pat),
-            Expr::Variable(_) | Expr::Constant(_) | Expr::Infix(_, _, _) | Expr::Negate(_),
-        ) => {
-            flattened.exprs.push(
-                Expr::Infix(
-                    InfixOp::Equal,
-                    Box::new(Expr::Constant(pat.clone()).type_expr(Some(Type::Int))),
-                    Box::new(expr.clone()),
-                )
-                .type_expr(Some(Type::Unit)),
-            );
-        }
-        (Pat::As(pat, _name), _) => {
-            flatten_binding(pat, expr, flattened);
-        }
-        (Pat::Unit, Expr::Unit) | (Pat::Nil, Expr::Nil) => {}
-        (Pat::Product(pat1, pat2), Expr::Product(expr1, expr2)) => {
-            flatten_binding(pat1, expr1, flattened);
-            flatten_binding(pat2, expr2, flattened);
-        }
-        (Pat::Cons(pat1, pat2), Expr::Cons(expr1, expr2)) => {
-            flatten_binding(pat1, expr1, flattened);
-            flatten_binding(pat2, expr2, flattened);
-        }
-        _ => unreachable!("encountered unexpected binding: {} = {}", pat, expr),
     }
 }
 
 /* Flatten the given equality down into the set of constraints it defines. */
-fn flatten_equals(expr1: &TExpr, expr2: &TExpr, flattened: &mut Module) {
-    match (&expr1.v, &expr2.v) {
-        (Expr::Unit, Expr::Unit) | (Expr::Nil, Expr::Nil) => {}
-        (Expr::Product(expr11, expr12), Expr::Product(expr21, expr22))
-        | (Expr::Cons(expr11, expr12), Expr::Cons(expr21, expr22)) => {
-            flatten_equals(expr11, expr21, flattened);
-            flatten_equals(expr12, expr22, flattened);
+fn flatten_equals(expr1: &TExpr, expr2: &TExpr, oflattened: &mut Option<Module>) {
+    if let Some(flattened) = oflattened {
+        match (&expr1.v, &expr2.v) {
+            (Expr::Unit, Expr::Unit) | (Expr::Nil, Expr::Nil) => {}
+            (Expr::Product(expr11, expr12), Expr::Product(expr21, expr22))
+            | (Expr::Cons(expr11, expr12), Expr::Cons(expr21, expr22)) => {
+                flatten_equals(expr11, expr21, oflattened);
+                flatten_equals(expr12, expr22, oflattened);
+            }
+            (
+                Expr::Variable(_) | Expr::Negate(_) | Expr::Infix(_, _, _) | Expr::Constant(_),
+                Expr::Variable(_) | Expr::Negate(_) | Expr::Infix(_, _, _) | Expr::Constant(_),
+            ) => {
+                flattened.exprs.push(
+                    Expr::Infix(
+                        InfixOp::Equal,
+                        Box::new(expr1.clone()),
+                        Box::new(expr2.clone()),
+                    )
+                    .type_expr(Some(Type::Unit)),
+                );
+            }
+            _ => unreachable!("encountered unexpected equality: {} = {}", expr1, expr2),
         }
-        (
-            Expr::Variable(_) | Expr::Negate(_) | Expr::Infix(_, _, _) | Expr::Constant(_),
-            Expr::Variable(_) | Expr::Negate(_) | Expr::Infix(_, _, _) | Expr::Constant(_),
-        ) => {
-            flattened.exprs.push(
-                Expr::Infix(
-                    InfixOp::Equal,
-                    Box::new(expr1.clone()),
-                    Box::new(expr2.clone()),
-                )
-                .type_expr(Some(Type::Unit)),
-            );
-        }
-        _ => unreachable!("encountered unexpected equality: {} = {}", expr1, expr2),
     }
 }
 
@@ -1075,60 +1090,62 @@ fn flatten_def_to_3ac(def: &Definition, flattened: &mut Module, gen: &mut VarGen
 /* Flatten all definitions and expressions in this module into three-address
  * form. */
 pub fn flatten_module_to_3ac(
-    module: &Module,
+    omodule: &Option<Module>,
     prover_defs: &HashSet<VariableId>,
     flattened: &mut Module,
     gen: &mut VarGen,
 ) {
-    flattened.pubs.extend(module.pubs.clone());
-    for def in &module.defs {
-        match &def.0 .0.v {
-            Pat::Variable(var) if !prover_defs.contains(&var.id) => {
-                flatten_def_to_3ac(def, flattened, gen)
+    if let Some(module) = omodule {
+        flattened.pubs.extend(module.pubs.clone());
+        for def in &module.defs {
+            match &def.0 .0.v {
+                Pat::Variable(var) if !prover_defs.contains(&var.id) => {
+                    flatten_def_to_3ac(def, flattened, gen)
+                }
+                Pat::Variable(_) => {
+                    flattened.defs.push(def.clone());
+                }
+                Pat::Unit => {}
+                _ => unreachable!("encountered unexpected pattern: {}", def.0 .0),
             }
-            Pat::Variable(_) => {
-                flattened.defs.push(def.clone());
-            }
-            Pat::Unit => {}
-            _ => unreachable!("encountered unexpected pattern: {}", def.0 .0),
         }
-    }
-    for expr in &module.exprs {
-        if let Expr::Infix(InfixOp::Equal, lhs, rhs) = &expr.v {
-            // Flatten this equality constraint into a series of definitions.
-            // The last inserted definition is always an encoding of an equality
-            // constraint.
-            match (lhs, &lhs.v, rhs, &rhs.v) {
-                (_, Expr::Variable(var), ohs, _) | (ohs, _, _, Expr::Variable(var)) => {
-                    flatten_expr_to_3ac(
-                        Some(Pat::Variable(var.clone()).type_pat(ohs.t.clone())),
-                        ohs,
-                        flattened,
-                        gen,
-                    )
-                    .unwrap();
+        for expr in &module.exprs {
+            if let Expr::Infix(InfixOp::Equal, lhs, rhs) = &expr.v {
+                // Flatten this equality constraint into a series of definitions.
+                // The last inserted definition is always an encoding of an equality
+                // constraint.
+                match (lhs, &lhs.v, rhs, &rhs.v) {
+                    (_, Expr::Variable(var), ohs, _) | (ohs, _, _, Expr::Variable(var)) => {
+                        flatten_expr_to_3ac(
+                            Some(Pat::Variable(var.clone()).type_pat(ohs.t.clone())),
+                            ohs,
+                            flattened,
+                            gen,
+                        )
+                        .unwrap();
+                    }
+                    (_, Expr::Constant(val), ohs, _) | (ohs, _, _, Expr::Constant(val)) => {
+                        flatten_expr_to_3ac(
+                            Some(Pat::Constant(val.clone()).type_pat(ohs.t.clone())),
+                            ohs,
+                            flattened,
+                            gen,
+                        )
+                        .unwrap();
+                    }
+                    (_, _, _, _) => {
+                        let lhs = flatten_expr_to_3ac(None, lhs, flattened, gen).unwrap();
+                        let rhs = flatten_expr_to_3ac(None, rhs, flattened, gen).unwrap();
+                        flatten_expr_to_3ac(Some(lhs), &rhs.to_expr(), flattened, gen).unwrap();
+                    }
                 }
-                (_, Expr::Constant(val), ohs, _) | (ohs, _, _, Expr::Constant(val)) => {
-                    flatten_expr_to_3ac(
-                        Some(Pat::Constant(val.clone()).type_pat(ohs.t.clone())),
-                        ohs,
-                        flattened,
-                        gen,
-                    )
-                    .unwrap();
-                }
-                (_, _, _, _) => {
-                    let lhs = flatten_expr_to_3ac(None, lhs, flattened, gen).unwrap();
-                    let rhs = flatten_expr_to_3ac(None, rhs, flattened, gen).unwrap();
-                    flatten_expr_to_3ac(Some(lhs), &rhs.to_expr(), flattened, gen).unwrap();
-                }
+                // Remove the last definition because it is solely an equality
+                // constraint.
+                flattened
+                    .defs
+                    .pop()
+                    .expect("a definition should have been made for the current expression");
             }
-            // Remove the last definition because it is solely an equality
-            // constraint.
-            flattened
-                .defs
-                .pop()
-                .expect("a definition should have been made for the current expression");
         }
     }
 }
@@ -1143,63 +1160,65 @@ enum Usage {
 /* Classify definitions according to whether they define a constraint (i.e
  * corresponds to a gate in the circuit), are a witness (i.e. only used by the
  * prover to generate witnesses), or are unused. */
-pub fn classify_defs(module: &mut Module, prover_defs: &mut HashSet<VariableId>) {
-    let mut classifier = HashMap::new();
-    // Start by assuming that all variables occurring in constraint expressions
-    // have constraint definitions.
-    for expr in &module.exprs {
-        let mut constraint_vars = HashMap::new();
-        collect_expr_variables(expr, &mut constraint_vars);
-        for var in constraint_vars.keys() {
-            classifier.insert(*var, Usage::Constraint);
-        }
-    }
-    for def in module.defs.iter().rev() {
-        if let Pat::Variable(var) = &def.0 .0.v {
-            // Override the usage of this variable to witness if it is actually
-            // used and occurs in prover_defs
-            let val = classifier.entry(var.id).or_insert(Usage::Never);
-            if *val != Usage::Never && prover_defs.contains(&var.id) {
-                classifier.insert(var.id, Usage::Witness);
+pub fn classify_defs(omodule: &mut Option<Module>, prover_defs: &mut HashSet<VariableId>) {
+    if let Some(module) = omodule {
+        let mut classifier = HashMap::new();
+        // Start by assuming that all variables occuring in constraint expressions
+        // have constraint definitions.
+        for expr in &module.exprs {
+            let mut constraint_vars = HashMap::new();
+            collect_expr_variables(expr, &mut constraint_vars);
+            for var in constraint_vars.keys() {
+                classifier.insert(*var, Usage::Constraint);
             }
+        }
+        for def in module.defs.iter().rev() {
+            if let Pat::Variable(var) = &def.0 .0.v {
+                // Override the usage of this variable to witness if it is actually
+                // used and occurs in prover_defs
+                let val = classifier.entry(var.id).or_insert(Usage::Never);
+                if *val != Usage::Never && prover_defs.contains(&var.id) {
+                    classifier.insert(var.id, Usage::Witness);
+                }
 
-            if classifier[&var.id] == Usage::Witness {
-                // If this is a witness definition, then every variable on the
-                // right-hand-side at least has a witness definition
-                let mut vars = HashMap::new();
-                collect_expr_variables(&def.0 .1, &mut vars);
-                for prover_var in vars.keys() {
-                    let val = *classifier.entry(*prover_var).or_insert(Usage::Never);
-                    classifier.insert(*prover_var, std::cmp::max(val, Usage::Witness));
-                }
-            } else if classifier[&var.id] == Usage::Constraint {
-                // If this is a constraint definition, then every variable on
-                // the right-hand-side at least has a constraint definition
-                let mut vars = HashMap::new();
-                collect_expr_variables(&def.0 .1, &mut vars);
-                for constraint_var in vars {
-                    let val = *classifier.entry(constraint_var.0).or_insert(Usage::Never);
-                    classifier.insert(constraint_var.0, std::cmp::max(val, Usage::Constraint));
+                if classifier[&var.id] == Usage::Witness {
+                    // If this is a witness definition, then every variable on the
+                    // right-hand-side at least has a witness definition
+                    let mut vars = HashMap::new();
+                    collect_expr_variables(&def.0 .1, &mut vars);
+                    for prover_var in vars.keys() {
+                        let val = *classifier.entry(*prover_var).or_insert(Usage::Never);
+                        classifier.insert(*prover_var, std::cmp::max(val, Usage::Witness));
+                    }
+                } else if classifier[&var.id] == Usage::Constraint {
+                    // If this is a constraint definition, then every variable on
+                    // the right-hand-side at least has a constraint definition
+                    let mut vars = HashMap::new();
+                    collect_expr_variables(&def.0 .1, &mut vars);
+                    for constraint_var in vars {
+                        let val = *classifier.entry(constraint_var.0).or_insert(Usage::Never);
+                        classifier.insert(constraint_var.0, std::cmp::max(val, Usage::Constraint));
+                    }
                 }
             }
         }
-    }
-    // Update prover_defs with our classification
-    for (var, usage) in &classifier {
-        if *usage == Usage::Witness {
-            prover_defs.insert(*var);
+        // Update prover_defs with our classification
+        for (var, usage) in &classifier {
+            if *usage == Usage::Witness {
+                prover_defs.insert(*var);
+            }
         }
+        // Now eliminate those definitions that are never used
+        module.defs.retain(|def| {
+            if let Pat::Variable(v1) = &def.0 .0.v {
+                classifier[&v1.id] != Usage::Never
+            } else if let Pat::Unit = &def.0 .0.v {
+                false
+            } else {
+                panic!("only variable patterns should be present at this stage");
+            }
+        });
     }
-    // Now eliminate those definitions that are never used
-    module.defs.retain(|def| {
-        if let Pat::Variable(v1) = &def.0 .0.v {
-            classifier[&v1.id] != Usage::Never
-        } else if let Pat::Unit = &def.0 .0.v {
-            false
-        } else {
-            panic!("only variable patterns should be present at this stage");
-        }
-    });
 }
 
 /* Fully expand out references to global variables using the available type
@@ -1245,7 +1264,7 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps, config: &Config) ->
     register_fresh_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     register_iter_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
     register_fold_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
-    number_module_variables(&mut module, &mut globals, &mut vg);
+    number_module_variables(&mut module, &mut globals, &mut vg, &mut HashMap::new());
     infer_module_types(
         &mut module,
         &globals,
@@ -1269,7 +1288,7 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps, config: &Config) ->
     // execution from now on
     strip_module_types(&mut module);
     let mut prover_defs = HashSet::new();
-    let mut constraints = Module::default();
+    let mut constraints = Some(Module::default());
     // Start generating arithmetic constraints
     evaluate_module(
         &module,
@@ -1450,6 +1469,44 @@ fn expand_fresh_intrinsic(
             params: params.clone(),
         }),
     }
+}
+
+/* Register the fresh intrinsic in the compilation environment.
+For the REPL, fresh is essentially the identity function */
+fn register_fresh_intrinsic_repl(
+    globals: &mut HashMap<String, VariableId>,
+    global_types: &mut HashMap<VariableId, Type>,
+    bindings: &mut HashMap<VariableId, TExpr>,
+    gen: &mut VarGen,
+) {
+    let fresh_func_id = gen.generate_id();
+    let fresh_arg_id = gen.generate_id();
+    let fresh_arg = Variable::new(fresh_arg_id);
+    let fresh_arg_type = Type::Variable(fresh_arg.clone());
+    let fresh_arg_pat = Pat::Variable(fresh_arg.clone()).type_pat(Some(fresh_arg_type.clone()));
+    // Register the range function in global namespace
+    globals.insert("fresh".to_string(), fresh_func_id);
+    // Describe the intrinsic's parameters and implementation
+    let fresh_ident: Function = Function {
+        params: vec![fresh_arg_pat],
+        body: Box::new(TExpr {
+            v: Expr::Variable(fresh_arg.clone()),
+            t: None,
+        }),
+        env: HashMap::new(),
+    };
+    // Describe the intrinsic's type
+    let imp_typ = Type::Function(Box::new(fresh_arg_type.clone()), Box::new(fresh_arg_type));
+    // Register the intrinsic descriptor with the global binding
+    global_types.insert(
+        fresh_func_id,
+        Type::Forall(fresh_arg, Box::new(imp_typ.clone())),
+    );
+    // Register this as a binding to contextualize evaluation
+    bindings.insert(
+        fresh_func_id,
+        Expr::Function(fresh_ident).type_expr(Some(imp_typ)),
+    );
 }
 
 /* Register the iter intrinsic in the compilation environment. */
@@ -1666,4 +1723,162 @@ fn expand_fold_intrinsic(
             params: params.clone(),
         }),
     }
+}
+
+/* Version of compile for repl. Does everything compile does to evaluate a module, but split between repl interactions. */
+pub fn compile_repl(module: &mut Module, field_ops: &dyn FieldOps) -> Result<(), Error> {
+    let mut vg = VarGen::new();
+    let mut globals = HashMap::new();
+    let mut bindings = HashMap::new();
+    let mut prog_types = HashMap::new();
+    let mut global_types = HashMap::new();
+    register_fresh_intrinsic_repl(&mut globals, &mut global_types, &mut bindings, &mut vg);
+    register_iter_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
+    register_fold_intrinsic(&mut globals, &mut global_types, &mut bindings, &mut vg);
+
+    let mut locals = HashMap::new();
+    let mut prover_defs = HashSet::new();
+    if !module.defs.is_empty() || !module.exprs.is_empty() || !module.pubs.is_empty() {
+        number_module_variables(module, &mut globals, &mut vg, &mut locals);
+        infer_module_types(
+            module,
+            &globals,
+            &mut global_types,
+            &mut prog_types,
+            &mut vg,
+        );
+        println!("** Inferring types...");
+        print_types(module, &prog_types, &Config { quiet: false });
+        // Global variables may have further internal structure, determine this
+        // using derived type information
+        expand_global_variables(
+            module,
+            &globals,
+            &global_types,
+            &mut prog_types,
+            &bindings,
+            &mut vg,
+        );
+        // Type information is no longer required since we do symbolic
+        // execution from now on
+        strip_module_types(module);
+        // Start generating arithmetic constraints
+
+        evaluate_module(
+            module,
+            &mut None,
+            &mut bindings,
+            &mut prover_defs,
+            field_ops,
+            &mut vg,
+        );
+    }
+
+    loop {
+        print!("In : ");
+        std::io::stdout().flush().expect("Error flushing stdout");
+
+        let mut input: String = String::new();
+        std::io::stdin()
+            .read_line(&mut input)
+            .expect("Error reading from stdin");
+
+        if input.trim() == "quit" || input.trim() == "exit" {
+            break;
+        }
+
+        let mut module = Module {
+            defs: vec![],
+            exprs: vec![],
+            pubs: vec![],
+        };
+
+        match VampirParser::parse(Rule::moduleItems, &input) {
+            Ok(mut pairs) => {
+                for pair in pairs.by_ref() {
+                    match pair.as_rule() {
+                        Rule::expr => {
+                            let expr: TExpr = TExpr::parse(pair).expect("expected expression");
+                            module.exprs.push(expr);
+                        }
+                        Rule::definition => {
+                            let definition: Definition =
+                                Definition::parse(pair).expect("expected definition");
+                            module.defs.push(definition);
+                        }
+                        Rule::declaration => {
+                            let pairs: pest::iterators::Pairs<Rule> = pair.into_inner();
+                            for pair in pairs {
+                                let var: Variable =
+                                    Variable::parse(pair).expect("expected variable");
+                                module.pubs.push(var);
+                            }
+                        }
+                        Rule::EOI => continue,
+                        _ => unreachable!(
+                            "module item should either be expression, definition, or EOI"
+                        ),
+                    }
+                }
+
+                number_module_variables(&mut module, &mut globals, &mut vg, &mut locals);
+
+                // Only look at types if new definitions are added.
+                if !module.defs.is_empty() {
+                    infer_module_types(
+                        &mut module,
+                        &globals,
+                        &mut global_types,
+                        &mut prog_types,
+                        &mut vg,
+                    );
+                    println!("** Inferring types...");
+                    print_types(&module, &prog_types, &Config { quiet: false });
+                    // Global variables may have further internal structure, determine this
+                    // using derived type information
+                    expand_global_variables(
+                        &mut module,
+                        &globals,
+                        &global_types,
+                        &mut prog_types,
+                        &bindings,
+                        &mut vg,
+                    );
+                    // Type information is no longer required since we do symbolic
+                    // execution from now on
+                    strip_module_types(&mut module);
+                }
+
+                for def in &module.defs {
+                    evaluate_def(
+                        def,
+                        &mut None,
+                        &mut bindings,
+                        &mut prover_defs,
+                        field_ops,
+                        &mut vg,
+                    );
+                }
+                for expr in &module.exprs {
+                    let res = evaluate(
+                        expr,
+                        &mut None,
+                        &mut bindings,
+                        &mut prover_defs,
+                        field_ops,
+                        &mut vg,
+                    );
+
+                    if let Err(e) = res {
+                        println!("Evaluation Error: {e:?}")
+                    } else {
+                        println!("Out: {}", res.unwrap())
+                    };
+                }
+            }
+            Err(e) => eprintln!("Parse Error: {e:?}"),
+        }
+    }
+
+    Ok(())
 }

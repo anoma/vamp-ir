@@ -77,6 +77,9 @@ pub enum Error {
 
     // proof fails to verify
     ProofVerificationFailure,
+
+    // invalid field at repl
+    InvalidField,
 }
 
 impl std::fmt::Display for Error {
@@ -177,6 +180,9 @@ impl std::fmt::Display for Error {
 
             // proof fails to verify
             Self::ProofVerificationFailure => write!(f, "Proof failed to verify"),
+
+            // invalid field at repl
+            Self::InvalidField => write!(f, "Invalid field value"),
         }
     }
 }
