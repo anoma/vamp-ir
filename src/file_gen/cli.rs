@@ -1,4 +1,4 @@
-use crate::ast::{InfixOp, Module, Pat, Expr, Variable};
+use crate::ast::{Expr, InfixOp, Module, Pat, Variable};
 use crate::error::Error;
 use crate::transform::{collect_module_variables, compile, FieldOps};
 
@@ -6,8 +6,8 @@ use serde_json::Map;
 use std::collections::HashMap;
 
 use std::fs;
-use std::io::{BufWriter, Write};
 use std::fs::OpenOptions;
+use std::io::{BufWriter, Write};
 
 use clap::{Args, Subcommand};
 use std::path::PathBuf;
@@ -41,7 +41,6 @@ pub struct JSONWitnessFile {
     output: PathBuf,
 }
 
-
 #[derive(Args)]
 pub struct ThreeAddressFile {
     /// Path to source file that witnesses come from.
@@ -51,7 +50,6 @@ pub struct ThreeAddressFile {
     #[arg(short, long)]
     output: PathBuf,
 }
-
 
 #[derive(Args)]
 pub struct Z3File {
@@ -66,7 +64,6 @@ pub struct Z3File {
     typ: Option<String>,
 }
 
-
 #[derive(Args)]
 pub struct MathematicaFile {
     /// Path to source file that witnesses come from.
@@ -80,7 +77,6 @@ pub struct MathematicaFile {
     typ: Option<String>,
 }
 
-
 #[derive(Args)]
 pub struct PrologFile {
     /// Path to source file that witnesses come from.
@@ -91,12 +87,14 @@ pub struct PrologFile {
     output: PathBuf,
 }
 
-
-
 // Trivial FieldOps for witness file generation
 impl FieldOps for () {
-    fn canonical(&self, a: BigInt) -> BigInt { a }
-    fn negate(&self, a: BigInt) -> BigInt { -a }
+    fn canonical(&self, a: BigInt) -> BigInt {
+        a
+    }
+    fn negate(&self, a: BigInt) -> BigInt {
+        -a
+    }
     fn infix(&self, op: InfixOp, a: BigInt, b: BigInt) -> BigInt {
         match op {
             InfixOp::Add => a + b,
@@ -158,10 +156,10 @@ pub fn witness_file_cmd(
 }
 
 fn var_to_string(var: &Variable) -> String {
-      match &var.name {
-          None => format!("Var{}", var.id),
-          Some(n) => format!("Var{}", n),
-      }
+    match &var.name {
+        None => format!("Var{}", var.id),
+        Some(n) => format!("Var{n}"),
+    }
 }
 
 fn atom_to_string(expr: &Expr) -> String {
@@ -173,42 +171,44 @@ fn atom_to_string(expr: &Expr) -> String {
 }
 
 pub fn dump_equations_three_addr(module_3ac: &Module, path: &PathBuf) -> std::io::Result<()> {
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .open(path)?;
+    let file = OpenOptions::new().write(true).create(true).open(path)?;
     let mut writer = BufWriter::new(file);
-    
+
     for expr in &module_3ac.exprs {
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
             match (&left.v, &right.v) {
                 // a = c, for constant c and variables a
                 (Expr::Variable(_), Expr::Constant(_)) => {
-                    write!(
+                    writeln!(
                         writer,
-                        "= {} {},\n",
-                        atom_to_string(&left.v), atom_to_string(&right.v)
+                        "= {} {},",
+                        atom_to_string(&left.v),
+                        atom_to_string(&right.v)
                     )?;
                 }
-            
+
                 // a = c, for variables a and c
                 (Expr::Variable(_), Expr::Variable(_)) => {
-                    write!(
+                    writeln!(
                         writer,
-                        "= {} {},\n",
-                        atom_to_string(&left.v), atom_to_string(&right.v)
+                        "= {} {},",
+                        atom_to_string(&left.v),
+                        atom_to_string(&right.v)
                     )?;
                 }
-            
+
                 // a = b op c, for variable a
                 (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
-                    write!(
-                      writer,
-                      "{} {} {} {},\n",
-                      op, atom_to_string(&t1.v), atom_to_string(&t2.v), atom_to_string(&left.v)
+                    writeln!(
+                        writer,
+                        "{} {} {} {},",
+                        op,
+                        atom_to_string(&t1.v),
+                        atom_to_string(&t2.v),
+                        atom_to_string(&left.v)
                     )?;
                 }
-                  
+
                 _ => {}
             }
         }
@@ -219,134 +219,141 @@ pub fn dump_equations_three_addr(module_3ac: &Module, path: &PathBuf) -> std::io
 }
 
 /* Implements the subcommand that writes circuit into comma separated, three-address file. */
-pub fn three_addr_file_cmd(ThreeAddressFile { source, output }: &ThreeAddressFile, config: &Config) -> Result<(), Error> {
+pub fn three_addr_file_cmd(
+    ThreeAddressFile { source, output }: &ThreeAddressFile,
+    config: &Config,
+) -> Result<(), Error> {
     qprintln!(config, "** Reading file...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module.clone(), &(), config);
-    
+    let module_3ac = compile(module, &(), config);
+
     qprintln!(config, "** Writing equations to file...");
-    dump_equations_three_addr(&module_3ac, output).map_err(|err| qprintln!(config, "{:?}", err)).ok();
+    dump_equations_three_addr(&module_3ac, output)
+        .map_err(|err| qprintln!(config, "{:?}", err))
+        .ok();
     qprintln!(config, "** Three address file generation success!");
 
     Ok(())
 }
 
-
-pub fn dump_equations_z3(module_3ac: &Module, path: &PathBuf, typ: &Option<String>, config: &Config) -> std::io::Result<()> {
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .open(path)?;
+pub fn dump_equations_z3(
+    module_3ac: &Module,
+    path: &PathBuf,
+    typ: &Option<String>,
+    config: &Config,
+) -> std::io::Result<()> {
+    let file = OpenOptions::new().write(true).create(true).open(path)?;
     let mut writer = BufWriter::new(file);
-    
-    let tystr =
-        match typ {
-            Some(s) => {s}
-            None => {"?"}
-        };
-    
-    
+
+    let tystr = match typ {
+        Some(s) => s,
+        None => "?",
+    };
+
     qprintln!(config, "** Collecting variables...");
     // Collect unbound variables from module
     let mut input_variables = HashMap::new();
-    collect_module_variables(&module_3ac, &mut input_variables);
-    
+    collect_module_variables(module_3ac, &mut input_variables);
+
     for var in input_variables.values() {
-        write!(
-            writer,
-            "(declare-const {} {})\n",
-            var_to_string(var), tystr
-        )?;
+        writeln!(writer, "(declare-const {} {})", var_to_string(var), tystr)?;
     }
-    
+
     for expr in &module_3ac.exprs {
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
             match (&left.v, &right.v) {
                 // a = c, for constant c and variables a
                 (Expr::Variable(_), Expr::Constant(_)) => {
-                    write!(
+                    writeln!(
                         writer,
-                        "(assert (= {} {}))\n",
-                        atom_to_string(&left.v), atom_to_string(&right.v)
+                        "(assert (= {} {}))",
+                        atom_to_string(&left.v),
+                        atom_to_string(&right.v)
                     )?;
                 }
-            
+
                 // a = c, for variables a and c
                 (Expr::Variable(_), Expr::Variable(_)) => {
-                    write!(
+                    writeln!(
                         writer,
-                        "(assert (= {} {}))\n",
-                        atom_to_string(&left.v), atom_to_string(&right.v)
+                        "(assert (= {} {}))",
+                        atom_to_string(&left.v),
+                        atom_to_string(&right.v)
                     )?;
                 }
-            
+
                 // a = b op c, for variable a
                 (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
-                    write!(
-                      writer,
-                      "(assert (= ({} {} {}) {}))\n",
-                      op, atom_to_string(&t1.v), atom_to_string(&t2.v), atom_to_string(&left.v)
+                    writeln!(
+                        writer,
+                        "(assert (= ({} {} {}) {}))",
+                        op,
+                        atom_to_string(&t1.v),
+                        atom_to_string(&t2.v),
+                        atom_to_string(&left.v)
                     )?;
                 }
-                  
+
                 _ => {}
             }
         }
     }
 
-    write!(
-      writer,
-      "(check-sat)\n(get-model)\n"
-    )?;
-    
+    write!(writer, "(check-sat)\n(get-model)\n")?;
+
     writer.flush()?;
     Ok(())
 }
 
 /* Implements the subcommand that writes circuit into comma separated, three-address file. */
-pub fn z3_file_cmd(Z3File { source, output, typ }: &Z3File, config: &Config) -> Result<(), Error> {
+pub fn z3_file_cmd(
+    Z3File {
+        source,
+        output,
+        typ,
+    }: &Z3File,
+    config: &Config,
+) -> Result<(), Error> {
     qprintln!(config, "** Reading file...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module.clone(), &(), config);
-    
+    let module_3ac = compile(module, &(), config);
+
     qprintln!(config, "** Writing equations to file...");
-    dump_equations_z3(&module_3ac, output, typ, config).map_err(|err| qprintln!(config, "{:?}", err)).ok();
+    dump_equations_z3(&module_3ac, output, typ, config)
+        .map_err(|err| qprintln!(config, "{:?}", err))
+        .ok();
 
     qprintln!(config, "** Z3 file generation success!");
 
     Ok(())
 }
 
-pub fn dump_equations_mathematica(module_3ac: &Module, path: &PathBuf, typ: &Option<String>, config: &Config) -> std::io::Result<()> {
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .open(path)?;
+pub fn dump_equations_mathematica(
+    module_3ac: &Module,
+    path: &PathBuf,
+    typ: &Option<String>,
+    config: &Config,
+) -> std::io::Result<()> {
+    let file = OpenOptions::new().write(true).create(true).open(path)?;
     let mut writer = BufWriter::new(file);
-    
-    let tystr =
-        match typ {
-            Some(s) => {s}
-            None => {"?"}
-        };
-    
-    
+
+    let tystr = match typ {
+        Some(s) => s,
+        None => "?",
+    };
+
     qprintln!(config, "** Collecting variables...");
     // Collect unbound variables from module
     let mut input_variables = HashMap::new();
-    collect_module_variables(&module_3ac, &mut input_variables);
-    
-    write!(
-            writer,
-            "FindInstance[\n"
-        )?;
-    
-    
+    collect_module_variables(module_3ac, &mut input_variables);
+
+    writeln!(writer, "FindInstance[")?;
+
     for (index, expr) in module_3ac.exprs.iter().enumerate() {
         write!(writer, "  ")?;
-    
+
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
             match (&left.v, &right.v) {
                 // a = c, for constant c and variables a
@@ -354,115 +361,110 @@ pub fn dump_equations_mathematica(module_3ac: &Module, path: &PathBuf, typ: &Opt
                     write!(
                         writer,
                         "{} == {}",
-                        atom_to_string(&left.v), atom_to_string(&right.v)
+                        atom_to_string(&left.v),
+                        atom_to_string(&right.v)
                     )?;
                 }
-            
+
                 // a = c, for variables a and c
                 (Expr::Variable(_), Expr::Variable(_)) => {
                     write!(
                         writer,
                         "{} == {}",
-                        atom_to_string(&left.v), atom_to_string(&right.v)
+                        atom_to_string(&left.v),
+                        atom_to_string(&right.v)
                     )?;
                 }
-            
+
                 // a = b op c, for variable a
                 (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
                     write!(
-                      writer,
-                      "{} {} {} == {}",
-                      atom_to_string(&t1.v), op, atom_to_string(&t2.v), atom_to_string(&left.v)
+                        writer,
+                        "{} {} {} == {}",
+                        atom_to_string(&t1.v),
+                        op,
+                        atom_to_string(&t2.v),
+                        atom_to_string(&left.v)
                     )?;
                 }
-                  
+
                 _ => {}
             }
         }
-        
+
         if index != module_3ac.exprs.len() - 1 {
-            write!(writer, " &&\n")?;
+            writeln!(writer, " &&")?;
         }
     }
-    
+
     write!(writer, ", \n  {{")?;
-    
+
     for (index, var) in input_variables.values().enumerate() {
-        write!(
-            writer,
-            "{}",
-            var_to_string(var)
-        )?;
-        
+        write!(writer, "{}", var_to_string(var))?;
+
         if index != input_variables.values().len() - 1 {
             write!(writer, ", ")?;
         }
     }
-    
-    write!(
-      writer,
-      "}}, {}]\n",
-      tystr
-    )?;
-    
+
+    writeln!(writer, "}}, {tystr}]")?;
+
     writer.flush()?;
     Ok(())
 }
 
 /* Implements the subcommand that writes circuit into a z3 file. */
-pub fn mathematica_file_cmd(MathematicaFile { source, output, typ }: &MathematicaFile, config: &Config) -> Result<(), Error> {
+pub fn mathematica_file_cmd(
+    MathematicaFile {
+        source,
+        output,
+        typ,
+    }: &MathematicaFile,
+    config: &Config,
+) -> Result<(), Error> {
     qprintln!(config, "** Reading file...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module.clone(), &(), config);
-    
+    let module_3ac = compile(module, &(), config);
+
     qprintln!(config, "** Writing equations to file...");
-    dump_equations_mathematica(&module_3ac, output, typ, config).map_err(|err| qprintln!(config, "{:?}", err)).ok();
+    dump_equations_mathematica(&module_3ac, output, typ, config)
+        .map_err(|err| qprintln!(config, "{:?}", err))
+        .ok();
 
     qprintln!(config, "** Mathematica file generation success!");
 
     Ok(())
 }
 
-
-pub fn dump_equations_prolog(module_3ac: &Module, path: &PathBuf, config: &Config) -> std::io::Result<()> {
-    let file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .open(path)?;
+pub fn dump_equations_prolog(
+    module_3ac: &Module,
+    path: &PathBuf,
+    config: &Config,
+) -> std::io::Result<()> {
+    let file = OpenOptions::new().write(true).create(true).open(path)?;
     let mut writer = BufWriter::new(file);
-    
+
     qprintln!(config, "** Collecting variables...");
     // Collect unbound variables from module
     let mut input_variables = HashMap::new();
-    collect_module_variables(&module_3ac, &mut input_variables);
-    
-    write!(
-            writer,
-            ":- use_module(library(clpfd)).\n\ncircuit("
-        )?;
-    
-    
+    collect_module_variables(module_3ac, &mut input_variables);
+
+    write!(writer, ":- use_module(library(clpfd)).\n\ncircuit(")?;
+
     for (index, var) in input_variables.values().enumerate() {
-        write!(
-            writer,
-            "{}",
-            var_to_string(var)
-        )?;
-        
+        write!(writer, "{}", var_to_string(var))?;
+
         if index != input_variables.values().len() - 1 {
             write!(writer, ", ")?;
         }
     }
-    
-    write!(
-            writer,
-            ") :- \n"
-        )?;
-    
+
+    writeln!(writer, ") :- ")?;
+
     for (index, expr) in module_3ac.exprs.iter().enumerate() {
         write!(writer, "  ")?;
-    
+
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
             match (&left.v, &right.v) {
                 // a = c, for constant c and variables a
@@ -470,52 +472,62 @@ pub fn dump_equations_prolog(module_3ac: &Module, path: &PathBuf, config: &Confi
                     write!(
                         writer,
                         "{} #= {}",
-                        atom_to_string(&left.v), atom_to_string(&right.v)
+                        atom_to_string(&left.v),
+                        atom_to_string(&right.v)
                     )?;
                 }
-            
+
                 // a = c, for variables a and c
                 (Expr::Variable(_), Expr::Variable(_)) => {
                     write!(
                         writer,
                         "{} #= {}",
-                        atom_to_string(&left.v), atom_to_string(&right.v)
+                        atom_to_string(&left.v),
+                        atom_to_string(&right.v)
                     )?;
                 }
-            
+
                 // a = b op c, for variable a
                 (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
                     write!(
-                      writer,
-                      "{} {} {} #= {}",
-                      atom_to_string(&t1.v), op, atom_to_string(&t2.v), atom_to_string(&left.v)
+                        writer,
+                        "{} {} {} #= {}",
+                        atom_to_string(&t1.v),
+                        op,
+                        atom_to_string(&t2.v),
+                        atom_to_string(&left.v)
                     )?;
                 }
-                  
+
                 _ => {}
             }
         }
-        
+
         if index != module_3ac.exprs.len() - 1 {
-            write!(writer, ",\n")?;
+            writeln!(writer, ",")?;
         }
     }
-    
-    write!(writer, ".\n")?;
-    
+
+    writeln!(writer, ".")?;
+
     writer.flush()?;
     Ok(())
 }
 
 /* Implements the subcommand that writes circuit into a prolog file. */
-pub fn prolog_file_cmd(PrologFile { source, output }: &PrologFile, config: &Config) -> Result<(), Error> {
+pub fn prolog_file_cmd(
+    PrologFile { source, output }: &PrologFile,
+    config: &Config,
+) -> Result<(), Error> {
     qprintln!(config, "** Reading file...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module.clone(), &(), config);
-    
+    let module_3ac = compile(module, &(), config);
+
     qprintln!(config, "** Writing equations to file...");
-    dump_equations_prolog(&module_3ac, output, config).map_err(|err| qprintln!(config, "{:?}", err)).ok();
+    dump_equations_prolog(&module_3ac, output, config)
+        .map_err(|err| qprintln!(config, "{:?}", err))
+        .ok();
 
     qprintln!(config, "** Prolog file generation success!");
 
