@@ -4,7 +4,6 @@ use crate::transform::{collect_module_variables, FieldOps};
 use crate::backend::BackendCompiler;
 use ark_ff::PrimeField;
 use ark_ec::TEModelParameters;
-use ark_ff::PrimeField;
 use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
 use num_traits::Signed;
 use plonk_core::circuit::Circuit;

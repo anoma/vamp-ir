@@ -5,6 +5,7 @@ pub mod halo2;
 pub mod plonk;
 pub mod repl;
 pub mod transform;
+pub mod backend;
 mod typecheck;
 pub mod util;
 
