@@ -1,9 +1,9 @@
 use crate::ast::Variable;
 use crate::ast::{Expr, InfixOp, Module, Pat, TExpr, VariableId};
-use crate::transform::{collect_module_variables, FieldOps};
 use crate::backend::BackendCompiler;
-use ark_ff::PrimeField;
+use crate::transform::{collect_module_variables, FieldOps};
 use ark_ec::TEModelParameters;
+use ark_ff::PrimeField;
 use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
 use num_traits::Signed;
 use plonk_core::circuit::Circuit;
@@ -22,10 +22,12 @@ struct Plonk3<F> {
     q_l: F,
     q_r: F,
     q_o: F,
-    q_c: F, 
+    q_c: F,
 }
 
-struct PrimeFieldBincode<T>(T) where T: PrimeField;
+struct PrimeFieldBincode<T>(T)
+where
+    T: PrimeField;
 
 impl<T> bincode::Encode for PrimeFieldBincode<T>
 where
@@ -290,7 +292,7 @@ where
     }
 }
 
-impl<F, P> BackendCompiler<F, P, Plonk3<F>> for PlonkModule<F, P> 
+impl<F, P> BackendCompiler<F, P, Plonk3<F>> for PlonkModule<F, P>
 where
     F: PrimeField,
     P: TEModelParameters<BaseField = F>,
@@ -330,70 +332,70 @@ where
     // v1 = v2 + c3
     fn add_vvc(v1: &Variable, v2: &Variable, c3: &BigInt) -> Plonk3<F> {
         Plonk3 {
-            v1: Some(v1.id),        // w_o
-            v2: Some(v2.id),        // w_l
-            v3: None,               // w_r
-            q_m: Self::zero(),      // q_m
-            q_l: Self::one(),       // q_l
-            q_r: Self::zero(),      // q_r
-            q_o: -Self::one(),      // q_o
-            q_c: Self::to_field(c3),// q_c
+            v1: Some(v1.id),         // w_o
+            v2: Some(v2.id),         // w_l
+            v3: None,                // w_r
+            q_m: Self::zero(),       // q_m
+            q_l: Self::one(),        // q_l
+            q_r: Self::zero(),       // q_r
+            q_o: -Self::one(),       // q_o
+            q_c: Self::to_field(c3), // q_c
         }
     }
 
     // c1 = v2 + v3
     fn add_cvv(c1: &BigInt, v2: &Variable, v3: &Variable) -> Plonk3<F> {
         Plonk3 {
-            v1: None,               // w_o
-            v2: Some(v2.id),        // w_l
-            v3: Some(v3.id),        // w_r
-            q_m: Self::zero(),      // q_m
-            q_l: Self::one(),       // q_l
-            q_r: Self::one(),       // q_r
-            q_o: Self::zero(),      // q_o
-            q_c: -Self::to_field(c1),// q_c
+            v1: None,                 // w_o
+            v2: Some(v2.id),          // w_l
+            v3: Some(v3.id),          // w_r
+            q_m: Self::zero(),        // q_m
+            q_l: Self::one(),         // q_l
+            q_r: Self::one(),         // q_r
+            q_o: Self::zero(),        // q_o
+            q_c: -Self::to_field(c1), // q_c
         }
     }
 
     // v1 = c2
     fn eq_vc(v1: &Variable, c2: &BigInt) -> Plonk3<F> {
         Plonk3 {
-            v1: Some(v1.id),        // w_o
-            v2: None,               // w_l
-            v3: None,               // w_r
-            q_m: Self::zero(),      // q_m
-            q_l: Self::zero(),      // q_l
-            q_r: Self::zero(),      // q_r
-            q_o: -Self::one(),      // q_o
-            q_c: Self::to_field(c2),// q_c
+            v1: Some(v1.id),         // w_o
+            v2: None,                // w_l
+            v3: None,                // w_r
+            q_m: Self::zero(),       // q_m
+            q_l: Self::zero(),       // q_l
+            q_r: Self::zero(),       // q_r
+            q_o: -Self::one(),       // q_o
+            q_c: Self::to_field(c2), // q_c
         }
     }
 
     // v1 = v2
     fn eq_vv(v1: &Variable, v2: &Variable) -> Plonk3<F> {
         Plonk3 {
-            v1: Some(v1.id),        // w_o
-            v2: Some(v2.id),        // w_l
-            v3: None,               // w_r
-            q_m: Self::zero(),      // q_m
-            q_l: Self::one(),       // q_l
-            q_r: Self::zero(),      // q_r
-            q_o: -Self::one(),      // q_o
-            q_c: Self::zero(),      // q_c
+            v1: Some(v1.id),   // w_o
+            v2: Some(v2.id),   // w_l
+            v3: None,          // w_r
+            q_m: Self::zero(), // q_m
+            q_l: Self::one(),  // q_l
+            q_r: Self::zero(), // q_r
+            q_o: -Self::one(), // q_o
+            q_c: Self::zero(), // q_c
         }
     }
 
     // c1 = c2
     fn eq_cc(c1: &BigInt, c2: &BigInt) -> Plonk3<F> {
         Plonk3 {
-            v1: None,                      // w_o
-            v2: None,                      // w_l
-            v3: None,                      // w_r
-            q_m: Self::zero(),             // q_m
-            q_l: Self::zero(),             // q_l
-            q_r: Self::zero(),             // q_r
-            q_o: Self::zero(),             // q_o
-            q_c: Self::to_field(&(c2-c1)), // q_c
+            v1: None,                        // w_o
+            v2: None,                        // w_l
+            v3: None,                        // w_r
+            q_m: Self::zero(),               // q_m
+            q_l: Self::zero(),               // q_l
+            q_r: Self::zero(),               // q_r
+            q_o: Self::zero(),               // q_o
+            q_c: Self::to_field(&(c2 - c1)), // q_c
         }
     }
 
@@ -414,51 +416,49 @@ where
     // v1 = v2 * c3
     fn mul_vvc(v1: &Variable, v2: &Variable, c3: &BigInt) -> Plonk3<F> {
         Plonk3 {
-            v1: Some(v1.id),       // w_o
-            v2: Some(v2.id),       // w_l
-            v3: None,              // w_r
-            q_m: Self::zero(),     // q_m
-            q_l: Self::to_field(c3),// q_l
-            q_r: Self::zero(),     // q_r
-            q_o: -Self::one(),     // q_o
-            q_c: Self::zero(),     // q_c
+            v1: Some(v1.id),         // w_o
+            v2: Some(v2.id),         // w_l
+            v3: None,                // w_r
+            q_m: Self::zero(),       // q_m
+            q_l: Self::to_field(c3), // q_l
+            q_r: Self::zero(),       // q_r
+            q_o: -Self::one(),       // q_o
+            q_c: Self::zero(),       // q_c
         }
     }
 
     // c1 = v2 * c3
     fn mul_cvc(c1: &BigInt, v2: &Variable, c3: &BigInt) -> Plonk3<F> {
         Plonk3 {
-            v1: None,                  // w_o
-            v2: Some(v2.id),           // w_l
-            v3: None,                  // w_r
-            q_m: Self::zero(),         // q_m
-            q_l: Self::to_field(c3),   // q_l
-            q_r: Self::zero(),         // q_r
-            q_o: Self::zero(),         // q_o
-            q_c: -Self::to_field(c1),  // q_c
+            v1: None,                 // w_o
+            v2: Some(v2.id),          // w_l
+            v3: None,                 // w_r
+            q_m: Self::zero(),        // q_m
+            q_l: Self::to_field(c3),  // q_l
+            q_r: Self::zero(),        // q_r
+            q_o: Self::zero(),        // q_o
+            q_c: -Self::to_field(c1), // q_c
         }
     }
 
     // c1 = v2 * v3
-    fn mul_cvv(c1: &BigInt, v2: &Variable, v3: &Variable) -> Plonk3<F>{
+    fn mul_cvv(c1: &BigInt, v2: &Variable, v3: &Variable) -> Plonk3<F> {
         Plonk3 {
-            v1: None,                  // w_o
-            v2: Some(v2.id),           // w_l
-            v3: Some(v3.id),           // w_r
-            q_m: Self::one(),          // q_m
-            q_l: Self::zero(),         // q_l
-            q_r: Self::zero(),         // q_r
-            q_o: Self::zero(),         // q_o
-            q_c: -Self::to_field(c1),  // q_c
+            v1: None,                 // w_o
+            v2: Some(v2.id),          // w_l
+            v3: Some(v3.id),          // w_r
+            q_m: Self::one(),         // q_m
+            q_l: Self::zero(),        // q_l
+            q_r: Self::zero(),        // q_r
+            q_o: Self::zero(),        // q_o
+            q_c: -Self::to_field(c1), // q_c
         }
     }
 
     fn zero() -> F {
         Self::to_field(&BigInt::from(0))
     }
-
 }
-    
 
 impl<F, P> Circuit<F, P> for PlonkModule<F, P>
 where
@@ -477,23 +477,33 @@ where
         // order as this module's public variables
         for var in &self.module.pubs {
             composer.arithmetic_gate(|gate| {
-                gate.witness(inputs[&var.id], zero, Some(zero)).add(-F::one(), F::zero()).pi(self.variable_map[&var.id])
+                gate.witness(inputs[&var.id], zero, Some(zero))
+                    .add(-F::one(), F::zero())
+                    .pi(self.variable_map[&var.id])
             });
         }
         for expr in &self.module.exprs {
-            let Plonk3{v1, v2, v3, q_m, q_l, q_r, q_o, q_c} = Self::arithmetic_synth(&expr);
+            let Plonk3 {
+                v1,
+                v2,
+                v3,
+                q_m,
+                q_l,
+                q_r,
+                q_o,
+                q_c,
+            } = Self::arithmetic_synth(&expr);
             let w_o = v1.map_or(composer.zero_var(), |id| inputs[&id]);
             let w_l = v2.map_or(composer.zero_var(), |id| inputs[&id]);
             let w_r = v3.map_or(composer.zero_var(), |id| inputs[&id]);
-            
-            composer.arithmetic_gate(|gate|
-                gate
-                    .witness(w_l, w_r, Some(w_o))
+
+            composer.arithmetic_gate(|gate| {
+                gate.witness(w_l, w_r, Some(w_o))
                     .add(q_l, q_r)
                     .mul(q_m)
                     .out(q_o)
                     .constant(q_c)
-            );
+            });
         }
         Ok(())
     }
