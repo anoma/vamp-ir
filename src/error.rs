@@ -159,11 +159,9 @@ impl std::fmt::Display for Error {
             Self::PatternMatchError { p, e } => write!(f, "Pattern {p} cannot match {e}"),
 
             // pattern cannot use the variable {} more than once
-            Self::DuplicatePatternVariable { v } => write!(
-                f,
-                "Pattern cannot use the variable {} more than once",
-                v,
-            ),
+            Self::DuplicatePatternVariable { v } => {
+                write!(f, "Pattern cannot use the variable {} more than once", v,)
+            }
 
             // the global function {} is undefined
             Self::UndefinedGlobalFunction { v } => {
