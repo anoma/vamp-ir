@@ -1,6 +1,6 @@
 [package]
 name = "vamp-ir"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 
 [lib]
@@ -34,6 +34,7 @@ rand_core = "0.6.3"
 plonk = { git = "https://github.com/ZK-Garage/plonk", rev = "ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4" }
 plonk-core = { git = "https://github.com/ZK-Garage/plonk", rev = "ec76fd36cc6b9e9d0f7a9495094e76b86e53dab4", features = [ "std", "trace", "trace-print" ] }
 serde_json = "1.0.93"
+json5 = "0.4.1"
 
 [[bench]]
 name = "plonk_benches"
@@ -51,3 +52,6 @@ proptest = "1.0.0"
 [target.'cfg(unix)'.dev-dependencies]
 inferno = ">=0.11, <0.11.5" # MSRV 1.59
 pprof = { version = "0.8", features = ["criterion", "flamegraph"] } # MSRV 1.56
+
+[build]
+rustflags = ["-Clinker=rust-lld"]

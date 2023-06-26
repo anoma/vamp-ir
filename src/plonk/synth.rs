@@ -80,33 +80,33 @@ where
         }
         Expr::Negate(e) => -evaluate_expr(e, defs, assigns),
         Expr::Infix(InfixOp::Add, a, b) => {
-            evaluate_expr(&a, defs, assigns) + evaluate_expr(&b, defs, assigns)
+            evaluate_expr(a, defs, assigns) + evaluate_expr(b, defs, assigns)
         }
         Expr::Infix(InfixOp::Subtract, a, b) => {
-            evaluate_expr(&a, defs, assigns) - evaluate_expr(&b, defs, assigns)
+            evaluate_expr(a, defs, assigns) - evaluate_expr(b, defs, assigns)
         }
         Expr::Infix(InfixOp::Multiply, a, b) => {
-            evaluate_expr(&a, defs, assigns) * evaluate_expr(&b, defs, assigns)
+            evaluate_expr(a, defs, assigns) * evaluate_expr(b, defs, assigns)
         }
         Expr::Infix(InfixOp::Divide, a, b) => {
-            evaluate_expr(&a, defs, assigns) / evaluate_expr(&b, defs, assigns)
+            evaluate_expr(a, defs, assigns) / evaluate_expr(b, defs, assigns)
         }
         Expr::Infix(InfixOp::DivideZ, a, b) => {
-            let denom = evaluate_expr(&b, defs, assigns);
+            let denom = evaluate_expr(b, defs, assigns);
             if denom == F::zero() {
                 F::zero()
             } else {
-                evaluate_expr(&a, defs, assigns) / denom
+                evaluate_expr(a, defs, assigns) / denom
             }
         }
         Expr::Infix(InfixOp::IntDivide, a, b) => {
-            (Into::<BigUint>::into(evaluate_expr(&a, defs, assigns))
-                / Into::<BigUint>::into(evaluate_expr(&b, defs, assigns)))
+            (Into::<BigUint>::into(evaluate_expr(a, defs, assigns))
+                / Into::<BigUint>::into(evaluate_expr(b, defs, assigns)))
             .into()
         }
         Expr::Infix(InfixOp::Modulo, a, b) => {
-            (Into::<BigUint>::into(evaluate_expr(&a, defs, assigns))
-                % Into::<BigUint>::into(evaluate_expr(&b, defs, assigns)))
+            (Into::<BigUint>::into(evaluate_expr(a, defs, assigns))
+                % Into::<BigUint>::into(evaluate_expr(b, defs, assigns)))
             .into()
         }
         _ => unreachable!("encountered unexpected expression: {}", expr),
@@ -237,7 +237,7 @@ where
         }
     }
 
-    /* Populate input and auxilliary variables from the given program inputs. */
+    /* Populate input and auxiliary variables from the given program inputs. */
     pub fn populate_variables(&mut self, mut field_assigns: HashMap<VariableId, F>) {
         // Get the definitions necessary to populate auxiliary variables
         let mut definitions = HashMap::new();
@@ -269,7 +269,7 @@ where
         // Next, annotate the public inputs with this module's variables
         let mut annotated = HashMap::new();
         for (var, pos) in self.module.pubs.iter().zip(intended_pi_pos) {
-            let val = pi_map.get(&pos).copied().unwrap_or(F::zero());
+            let val = pi_map.get(pos).copied().unwrap_or(F::zero());
             annotated.insert(var.id, (var.clone(), val));
         }
         annotated
@@ -927,7 +927,7 @@ where
                             });
                             true
                         }) => {}
-                    _ => panic!("unsupported constraint encountered: {}", expr),
+                    _ => panic!("unsupported constraint encountered: {expr}"),
                 }
             }
         }

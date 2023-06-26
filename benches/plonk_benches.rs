@@ -161,7 +161,7 @@ fn bench(pir_file: &str, max_degree: u32) {
     if let Ok(()) = verifier_result {
         println!("* Zero-knowledge proof is valid");
     } else {
-        println!("* Result from verifier: {:?}", verifier_result);
+        println!("* Result from verifier: {verifier_result:?}");
     }
 }
 

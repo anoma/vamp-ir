@@ -13,7 +13,7 @@ use std::fmt::Write;
 #[grammar = "vampir.pest"]
 pub struct VampirParser;
 
-#[derive(Debug, Clone, Encode, Decode)]
+#[derive(Debug, Clone, Encode, Decode, Default)]
 pub struct Module {
     pub pubs: Vec<Variable>,
     pub defs: Vec<Definition>,
@@ -21,12 +21,12 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn parse(unparsed_file: &str) -> Result<Self, pest::error::Error<Rule>> {
-        let mut pairs = VampirParser::parse(Rule::moduleItems, &unparsed_file)?;
+    pub fn parse(unparsed_file: &str) -> Result<Self, Box<pest::error::Error<Rule>>> {
+        let pairs = VampirParser::parse(Rule::moduleItems, unparsed_file)?;
         let mut defs = vec![];
         let mut exprs = vec![];
         let mut pubs = vec![];
-        while let Some(pair) = pairs.next() {
+        for pair in pairs {
             match pair.as_rule() {
                 Rule::expr => {
                     let expr = TExpr::parse(pair).expect("expected expression");
@@ -37,8 +37,8 @@ impl Module {
                     defs.push(definition);
                 }
                 Rule::declaration => {
-                    let mut pairs = pair.into_inner();
-                    while let Some(pair) = pairs.next() {
+                    let pairs = pair.into_inner();
+                    for pair in pairs {
                         let var = Variable::parse(pair).expect("expected variable");
                         pubs.push(var);
                     }
@@ -51,29 +51,19 @@ impl Module {
     }
 }
 
-impl Default for Module {
-    fn default() -> Self {
-        Self {
-            defs: vec![],
-            exprs: vec![],
-            pubs: vec![],
-        }
-    }
-}
-
 impl fmt::Display for Module {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut prefix = "pub";
         for var in &self.pubs {
-            write!(f, "{} {}", prefix, var)?;
+            write!(f, "{prefix} {var}")?;
             prefix = ",";
         }
         writeln!(f, ";")?;
         for def in &self.defs {
-            writeln!(f, "{};", def)?;
+            writeln!(f, "{def};")?;
         }
         for expr in &self.exprs {
-            writeln!(f, "{};", expr)?;
+            writeln!(f, "{expr};")?;
         }
         Ok(())
     }
@@ -120,7 +110,7 @@ impl LetBinding {
             Rule::valueName => {
                 let name = Variable::parse(pair).expect("expression should be value name");
                 let mut pats = vec![];
-                while let Some(pair) = pairs.next() {
+                for pair in pairs {
                     let rhs = TPat::parse(pair).expect("expected RHS to be a product");
                     pats.push(rhs);
                 }
@@ -149,22 +139,22 @@ impl fmt::Display for LetBinding {
             Expr::Function(Function { params, body, .. }) => {
                 write!(f, "{}", self.0)?;
                 for pat in params {
-                    write!(f, " {}", pat)?;
+                    write!(f, " {pat}")?;
                 }
                 write!(f, " =")?;
                 let mut body_str = String::new();
-                write!(body_str, "{}", body)?;
-                if body_str.contains("\n") {
-                    write!(f, "\n    {}", body_str.replace("\n", "\n    "))?;
+                write!(body_str, "{body}")?;
+                if body_str.contains('\n') {
+                    write!(f, "\n    {}", body_str.replace('\n', "\n    "))?;
                 } else {
-                    write!(f, " {}", body)?;
+                    write!(f, " {body}")?;
                 }
             }
             _ => {
                 let mut val_str = String::new();
                 write!(val_str, "{}", self.1)?;
-                if val_str.contains("\n") {
-                    let val_str = val_str.replace("\n", "\n    ");
+                if val_str.contains('\n') {
+                    let val_str = val_str.replace('\n', "\n    ");
                     write!(f, "{} =\n    {}", self.0, val_str)?;
                 } else {
                     write!(f, "{} = {}", self.0, val_str)?;
@@ -266,25 +256,23 @@ impl ::bincode::Decode for Pat {
         let variant_index = <u32 as ::bincode::Decode>::decode(decoder)?;
         match variant_index {
             0u32 => Ok(Self::Unit {}),
-            1u32 => Ok(Self::As {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-            }),
-            2u32 => Ok(Self::Product {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-            }),
-            3u32 => Ok(Self::Variable {
-                0: ::bincode::Decode::decode(decoder)?,
-            }),
-            4u32 => Ok(Self::Constant {
-                0: <BigIntBincode as ::bincode::Decode>::decode(decoder)?.0,
-            }),
+            1u32 => Ok(Self::As(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
+            2u32 => Ok(Self::Product(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
+            3u32 => Ok(Self::Variable(::bincode::Decode::decode(decoder)?)),
+            4u32 => Ok(Self::Constant(
+                <BigIntBincode as ::bincode::Decode>::decode(decoder)?.0,
+            )),
             5u32 => Ok(Self::Nil {}),
-            6u32 => Ok(Self::Cons {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-            }),
+            6u32 => Ok(Self::Cons(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
             variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
                 found: variant,
                 type_name: "Pattern",
@@ -331,7 +319,7 @@ impl TPat {
         let mut pairs = pair.into_inner();
         let pair = pairs.next().expect("pattern should not be empty");
         let mut pat = Self::parse_pat1(pair).expect("pattern should start with pattern");
-        while let Some(pair) = pairs.next() {
+        for pair in pairs {
             let name = Variable::parse(pair).expect("expected pattern name");
             pat = Pat::As(Box::new(pat), name).type_pat(None);
         }
@@ -373,13 +361,12 @@ impl TPat {
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
         match pair.as_rule() {
-            Rule::constant if pair.as_str().starts_with("(") => Some(Pat::Unit.type_pat(None)),
-            Rule::constant if pair.as_str().starts_with("[") => Some(Pat::Nil.type_pat(None)),
+            Rule::constant if pair.as_str().starts_with('(') => Some(Pat::Unit.type_pat(None)),
+            Rule::constant if pair.as_str().starts_with('[') => Some(Pat::Nil.type_pat(None)),
             Rule::constant => {
                 let value = pair
                     .as_str()
                     .parse()
-                    .ok()
                     .expect("constant should be an integer");
                 Some(Pat::Constant(value).type_pat(None))
             }
@@ -416,11 +403,11 @@ impl fmt::Display for TPat {
         match &self.v {
             Pat::Unit => write!(f, "()")?,
             Pat::Nil => write!(f, "[]")?,
-            Pat::As(pat, name) => write!(f, "{} as {}", pat, name)?,
-            Pat::Product(pat1, pat2) => write!(f, "({}, {})", pat1, pat2)?,
-            Pat::Cons(pat1, pat2) => write!(f, "({}: {})", pat1, pat2)?,
-            Pat::Variable(var) => write!(f, "{}", var)?,
-            Pat::Constant(val) => write!(f, "{}", val)?,
+            Pat::As(pat, name) => write!(f, "{pat} as {name}")?,
+            Pat::Product(pat1, pat2) => write!(f, "({pat1}, {pat2})")?,
+            Pat::Cons(pat1, pat2) => write!(f, "({pat1}: {pat2})")?,
+            Pat::Variable(var) => write!(f, "{var}")?,
+            Pat::Constant(val) => write!(f, "{val}")?,
         }
         Ok(())
     }
@@ -574,49 +561,37 @@ impl ::bincode::Decode for Expr {
         let variant_index = <u32 as ::bincode::Decode>::decode(decoder)?;
         match variant_index {
             0u32 => Ok(Self::Unit {}),
-            1u32 => Ok(Self::Sequence {
-                0: ::bincode::Decode::decode(decoder)?,
-            }),
-            2u32 => Ok(Self::Product {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-            }),
-            3u32 => Ok(Self::Infix {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-                2: ::bincode::Decode::decode(decoder)?,
-            }),
-            4u32 => Ok(Self::Negate {
-                0: ::bincode::Decode::decode(decoder)?,
-            }),
-            5u32 => Ok(Self::Application {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-            }),
-            6u32 => Ok(Self::Constant {
-                0: <BigIntBincode as ::bincode::Decode>::decode(decoder)?.0,
-            }),
-            7u32 => Ok(Self::Variable {
-                0: ::bincode::Decode::decode(decoder)?,
-            }),
-            8u32 => Ok(Self::Function {
-                0: ::bincode::Decode::decode(decoder)?,
-            }),
-            9u32 => Ok(Self::Intrinsic {
-                0: ::bincode::Decode::decode(decoder)?,
-            }),
-            10u32 => Ok(Self::LetBinding {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-            }),
-            11u32 => Ok(Self::Match {
-                0: ::bincode::Decode::decode(decoder)?,
-            }),
+            1u32 => Ok(Self::Sequence(::bincode::Decode::decode(decoder)?)),
+            2u32 => Ok(Self::Product(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
+            3u32 => Ok(Self::Infix(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
+            4u32 => Ok(Self::Negate(::bincode::Decode::decode(decoder)?)),
+            5u32 => Ok(Self::Application(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
+            6u32 => Ok(Self::Constant(
+                <BigIntBincode as ::bincode::Decode>::decode(decoder)?.0,
+            )),
+            7u32 => Ok(Self::Variable(::bincode::Decode::decode(decoder)?)),
+            8u32 => Ok(Self::Function(::bincode::Decode::decode(decoder)?)),
+            9u32 => Ok(Self::Intrinsic(::bincode::Decode::decode(decoder)?)),
+            10u32 => Ok(Self::LetBinding(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
+            11u32 => Ok(Self::Match(::bincode::Decode::decode(decoder)?)),
             12u32 => Ok(Self::Nil {}),
-            13u32 => Ok(Self::Cons {
-                0: ::bincode::Decode::decode(decoder)?,
-                1: ::bincode::Decode::decode(decoder)?,
-            }),
+            13u32 => Ok(Self::Cons(
+                ::bincode::Decode::decode(decoder)?,
+                ::bincode::Decode::decode(decoder)?,
+            )),
             variant => Err(::bincode::error::DecodeError::UnexpectedVariant {
                 found: variant,
                 type_name: "Expr",
@@ -644,7 +619,7 @@ impl TExpr {
                 .expect("body expression should be prefixed by binding");
             let binding = LetBinding::parse(pair).expect("expression should start with binding");
             let mut body = vec![];
-            while let Some(pair) = pairs.next() {
+            for pair in pairs.by_ref() {
                 body.push(Self::parse(pair).expect("expression should end with expression"));
             }
             if body.is_empty() {
@@ -668,7 +643,7 @@ impl TExpr {
         let pair = pairs.next().expect("expression should not be empty");
         let mut exprs =
             vec![Self::parse_expr2(pair).expect("expression should start with product")];
-        while let Some(pair) = pairs.next() {
+        for pair in pairs {
             let rhs = Self::parse_expr2(pair).expect("expected RHS to be a product");
             exprs.push(rhs);
         }
@@ -795,7 +770,7 @@ impl TExpr {
         let mut pairs = pair.into_inner();
         let pair = pairs.next().expect("expression should not be empty");
         let mut expr = Self::parse_expr10(pair).expect("expression should start with product");
-        while let Some(pair) = pairs.next() {
+        for pair in pairs {
             let rhs = Self::parse_expr10(pair).expect("expected RHS to be a product");
             expr = Expr::Application(Box::new(expr), Box::new(rhs)).type_expr(None);
         }
@@ -809,9 +784,9 @@ impl TExpr {
         let string = pair.as_str();
         let mut pairs = pair.into_inner();
         let pair = pairs.next_back().expect("expression should not be empty");
-        if pair.as_rule() == Rule::constant && string.starts_with("(") {
+        if pair.as_rule() == Rule::constant && string.starts_with('(') {
             Some(Expr::Unit.type_expr(None))
-        } else if pair.as_rule() == Rule::constant && string.starts_with("[") {
+        } else if pair.as_rule() == Rule::constant && string.starts_with('[') {
             Some(Expr::Nil.type_expr(None))
         } else if pair.as_rule() == Rule::constant {
             let value = parse_prefixed_num(pair.as_str()).expect("constant should be an integer");
@@ -819,7 +794,7 @@ impl TExpr {
         } else if pair.as_rule() == Rule::valueName {
             let name = Variable::parse(pair).expect("expression should be value name");
             Some(Expr::Variable(name).type_expr(None))
-        } else if string.starts_with("(")
+        } else if string.starts_with('(')
             || string.starts_with("fun")
             || string.starts_with("def")
             || string.starts_with("match")
@@ -844,34 +819,34 @@ impl fmt::Display for TExpr {
                 let expr = iter
                     .next()
                     .expect("sequence should contain at least one expression");
-                write!(f, "{}", expr)?;
-                while let Some(expr) = iter.next() {
-                    write!(f, ";\n{}", expr)?;
+                write!(f, "{expr}")?;
+                for expr in iter {
+                    write!(f, ";\n{expr}")?;
                 }
                 if exprs.len() > 1 {
                     write!(f, "}}")?;
                 }
             }
-            Expr::Product(expr1, expr2) => write!(f, "({}, {})", expr1, expr2)?,
-            Expr::Cons(expr1, expr2) => write!(f, "({}: {})", expr1, expr2)?,
-            Expr::Infix(op, expr1, expr2) => write!(f, "({}{}{})", expr1, op, expr2)?,
-            Expr::Negate(expr) => write!(f, "-{}", expr)?,
-            Expr::Application(expr1, expr2) => write!(f, "{} {}", expr1, expr2)?,
-            Expr::Constant(val) => write!(f, "{}", val)?,
-            Expr::Variable(var) => write!(f, "{}", var)?,
-            Expr::Function(fun) => write!(f, "{}", fun)?,
-            Expr::Intrinsic(intr) => write!(f, "{}", intr)?,
+            Expr::Product(expr1, expr2) => write!(f, "({expr1}, {expr2})")?,
+            Expr::Cons(expr1, expr2) => write!(f, "({expr1}: {expr2})")?,
+            Expr::Infix(op, expr1, expr2) => write!(f, "({expr1}{op}{expr2})")?,
+            Expr::Negate(expr) => write!(f, "-{expr}")?,
+            Expr::Application(expr1, expr2) => write!(f, "{expr1} {expr2}")?,
+            Expr::Constant(val) => write!(f, "{val}")?,
+            Expr::Variable(var) => write!(f, "{var}")?,
+            Expr::Function(fun) => write!(f, "{fun}")?,
+            Expr::Intrinsic(intr) => write!(f, "{intr}")?,
             Expr::LetBinding(binding, expr) => {
                 if let Expr::Sequence(seq) = &expr.v {
-                    write!(f, "def {}", binding)?;
+                    write!(f, "def {binding}")?;
                     for expr in seq {
-                        write!(f, ";\n{}", expr)?;
+                        write!(f, ";\n{expr}")?;
                     }
                 } else {
-                    write!(f, "def {};\n{}", binding, expr)?;
+                    write!(f, "def {binding};\n{expr}")?;
                 }
             }
-            Expr::Match(matche) => write!(f, "{}", matche)?,
+            Expr::Match(matche) => write!(f, "{matche}")?,
         }
         Ok(())
     }
@@ -885,12 +860,12 @@ impl fmt::Display for Match {
         writeln!(f, "match {} {{", self.0)?;
         for (pat, expr2) in self.1.iter().zip(self.2.iter()) {
             let mut body = String::new();
-            writeln!(body, "{}", expr2)?;
+            writeln!(body, "{expr2}")?;
             if body.contains('\n') {
-                body = body.replace("\n", "\n    ");
-                writeln!(f, "  {} => {{\n    {}}},", pat, body)?;
+                body = body.replace('\n', "\n    ");
+                writeln!(f, "  {pat} => {{\n    {body}}},")?;
             } else {
-                writeln!(f, "  {} => {},", pat, expr2)?;
+                writeln!(f, "  {pat} => {expr2},")?;
             }
         }
         write!(f, "}}")?;
@@ -974,7 +949,7 @@ impl Variable {
 impl fmt::Display for Variable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(name) = &self.name {
-            write!(f, "{}", name)?;
+            write!(f, "{name}")?;
         }
         write!(f, "[{}]", self.id)?;
         Ok(())
@@ -997,7 +972,7 @@ impl Function {
         let pair = pairs.next_back().expect("function should not be empty");
         let body = TExpr::parse(pair).expect("function should end with expression");
         let mut params = vec![];
-        while let Some(pair) = pairs.next() {
+        for pair in pairs {
             let param = TPat::parse(pair).expect("all prefixes to function should be patterns");
             params.push(param);
         }
@@ -1013,16 +988,16 @@ impl fmt::Display for Function {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "fun {}", self.params[0])?;
         for pat in &self.params[1..] {
-            write!(f, " {}", pat)?;
+            write!(f, " {pat}")?;
         }
 
         let mut body = String::new();
         write!(body, "{}", self.body)?;
-        if body.contains("\n") {
-            body = body.replace("\n", "\n    ");
-            write!(f, " ->\n    {}", body)?
+        if body.contains('\n') {
+            body = body.replace('\n', "\n    ");
+            write!(f, " ->\n    {body}")?
         } else {
-            write!(f, " -> {}", body)?
+            write!(f, " -> {body}")?
         }
         Ok(())
     }
@@ -1076,7 +1051,7 @@ impl fmt::Display for Intrinsic {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:p}", self.imp as fn(_, _, _, _) -> _)?;
         for arg in &self.params {
-            write!(f, " {}", arg)?;
+            write!(f, " {arg}")?;
         }
         Ok(())
     }

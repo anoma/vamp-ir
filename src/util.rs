@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
+    fs,
     ops::Neg,
     path::PathBuf,
 };
@@ -22,14 +22,15 @@ where
     F: Num + Neg<Output = F>,
     <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug,
 {
-    let inputs = File::open(path_to_inputs).expect("Could not open inputs file");
+    let contents = fs::read_to_string(path_to_inputs).expect("Could not read inputs file");
 
     // Read the user-supplied inputs from the file
-    let named_assignments: HashMap<String, String> = serde_json::from_reader(inputs).unwrap();
+    let named_assignments: HashMap<String, String> =
+        json5::from_str(&contents).expect("Could not parse JSON5");
 
     // Get the expected inputs from the circuit module
     let mut input_variables = HashMap::new();
-    collect_module_variables(&annotated, &mut input_variables);
+    collect_module_variables(annotated, &mut input_variables);
 
     // Defined variables should not be requested from user
     for def in &annotated.defs {
@@ -59,7 +60,7 @@ where
     <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug,
 {
     let mut input_variables = HashMap::new();
-    collect_module_variables(&annotated, &mut input_variables);
+    collect_module_variables(annotated, &mut input_variables);
     // Defined variables should not be requested from user
     for def in &annotated.defs {
         if let Pat::Variable(var) = &def.0 .0.v {
@@ -81,7 +82,7 @@ where
         } else {
             "(private)"
         };
-        print!("** {} {}: ", var, visibility);
+        print!("** {var} {visibility}: ");
         std::io::stdout().flush().expect("flush failed!");
         let mut input_line = String::new();
         std::io::stdin()
@@ -100,9 +101,9 @@ where
     T: Num + Neg<Output = T>,
 {
     // Process the number's sign
-    let (pos, magnitude) = if let Some(rest) = string.strip_prefix("-") {
+    let (pos, magnitude) = if let Some(rest) = string.strip_prefix('-') {
         (false, rest)
-    } else if let Some(rest) = string.strip_prefix("+") {
+    } else if let Some(rest) = string.strip_prefix('+') {
         (true, rest)
     } else {
         (true, string)
