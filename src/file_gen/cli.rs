@@ -1,6 +1,7 @@
-use crate::ast::{Expr, InfixOp, Module, Pat, Variable};
+use crate::ast::{Expr, TExpr, InfixOp, Module, Pat, Variable};
 use crate::error::Error;
 use crate::transform::{collect_module_variables, compile, FieldOps};
+use crate::string::*;
 
 use serde_json::Map;
 use std::collections::HashMap;
@@ -351,10 +352,14 @@ pub fn dump_equations_mathematica(
 
     writeln!(writer, "FindInstance[")?;
 
+//    let str_diag = build_string_diagram(module_3ac.exprs.iter().map(|e| e.clone().v).collect());
+//    println!("Diag Well Formed: {}", str_diag.is_well_formed());
+
     for (index, expr) in module_3ac.exprs.iter().enumerate() {
         write!(writer, "  ")?;
 
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
+            //println!("{:?}", &expr.v);
             match (&left.v, &right.v) {
                 // a = c, for constant c and variables a
                 (Expr::Variable(_), Expr::Constant(_)) => {
@@ -376,15 +381,26 @@ pub fn dump_equations_mathematica(
                     )?;
                 }
 
+                // a = c, for variables a and c
+                (Expr::Variable(_), Expr::Negate(var)) => {
+                    if let Expr::Variable(_) = var.v {
+                    write!(
+                        writer,
+                        "{} == - {}",
+                        atom_to_string(&left.v),
+                        atom_to_string(&var.v)
+                    )?;}
+                }
+
                 // a = b op c, for variable a
                 (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
                     write!(
                         writer,
-                        "{} {} {} == {}",
+                        "{} == {} {} {}",
+                        atom_to_string(&left.v),
                         atom_to_string(&t1.v),
                         op,
                         atom_to_string(&t2.v),
-                        atom_to_string(&left.v)
                     )?;
                 }
 

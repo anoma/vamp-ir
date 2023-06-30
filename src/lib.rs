@@ -7,6 +7,7 @@ pub mod repl;
 pub mod transform;
 mod typecheck;
 pub mod util;
+pub mod string;
 
 extern crate pest;
 #[macro_use]
