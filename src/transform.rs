@@ -1,7 +1,4 @@
-use crate::ast::{
-    Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, Rule, TExpr, TPat,
-    VampirParser, Variable, VariableId,
-};
+use crate::ast::{Definition, Expr, Function, InfixOp, Intrinsic, LetBinding, Module, Pat, Rule, TExpr, TPat, VampirParser, Variable, VariableId};
 use crate::error::*;
 use crate::pest::Parser;
 use crate::qprintln;
@@ -9,12 +6,14 @@ use crate::typecheck::{
     expand_expr_variables, expand_pattern_variables, infer_module_types, print_types,
     strip_module_types, Type,
 };
+use crate::llvm_transform::DisplayLLVM;
 use crate::util::Config;
 use ark_ff::{One, Zero};
 use num_bigint::BigInt;
 use num_traits::sign::Signed;
 use num_traits::ToPrimitive;
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
 use std::hash::Hash;
 use std::io::Write;
 
@@ -1305,6 +1304,10 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps, config: &Config) ->
     // Start doing basic optimizations
     copy_propagate(&mut module_3ac, &prover_defs);
     eliminate_dead_equalities(&mut module_3ac);
+
+    let mut file = File::create("/home/carlo/Documents/Work/test.ll").unwrap();
+    let mut conc_c = 0;
+    module_3ac.display_llvm(&mut file, &mut conc_c);
     module_3ac
 }
 
