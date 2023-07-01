@@ -117,6 +117,34 @@ impl StringDiagram {
             Node::Constant(_, p) => p.clone(),
         }
     }
+
+    pub fn replace_port(&mut self, target_port: &Port, new_port: &Port) {
+        let Port(target_address, target_index) = target_port;
+    
+        if let Some(node) = self.nodes.get_mut(target_address) {
+            match node {
+                Node::Equality(_, ports) | Node::Addition(ports) | Node::Multiplication(ports) => {
+                    if let Some(port) = ports.get_mut(*target_index) {
+                        *port = new_port.clone();
+                    }
+                },
+                Node::AddConstant(_, port1, port2)
+                | Node::MultiplyConstant(_, port1, port2)
+                | Node::ExponentiateConstant(_, port1, port2) => {
+                    if *target_index == 0 {
+                        *port1 = new_port.clone();
+                    } else if *target_index == 1 {
+                        *port2 = new_port.clone();
+                    }
+                },
+                Node::Unrestricted(port) | Node::Constant(_, port) => {
+                    if *target_index == 0 {
+                        *port = new_port.clone();
+                    }
+                },
+            }
+        }
+    }
 }
 
 fn get_or_create_equality_node(variable: &Variable, pointing_port: Port, diagram: &mut StringDiagram, variable_addresses: &mut HashMap<VariableId, Address>, input_ids: &HashSet<u32>) -> (Address, usize) {
@@ -577,7 +605,7 @@ pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
                 // Exponents should already be split into multiplications.
             }
             Node::Unrestricted(_) => {
-                // Unrepresented as it doesn't map directly to an equation.
+                // Unrepresented as it doesn't map to an equation.
             }
             Node::Constant(value, p) => {
                 expressions.push(TExpr {
@@ -599,6 +627,206 @@ pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
     }
 
     expressions
+}
+
+
+pub fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
+    // Extract information about the node at the given address
+    let (first_two_ports, mut remaining_ports) = if let Some(node) = diagram.nodes.get(&address) {
+        if let Node::Addition(ports) = node {
+            if ports.len() > 3 {
+                (vec![ports[0].clone(), ports[1].clone()], ports[2..].to_vec())
+            } else {
+                return;
+            }
+        } else {
+            return;
+        }
+    } else {
+        return;
+    };
+
+    // Create a new addition node with the first two ports of the original node
+    let new_node_ports = vec![first_two_ports[0].clone(), first_two_ports[1].clone(), Port(address, 0)];
+    let new_address = diagram.add_node(Node::Addition(new_node_ports));
+
+    // Replace the first two ports from the original node with a port pointing to the second arg of the new node.
+    remaining_ports.insert(0, Port(new_address, 2));
+
+    // Replace the node in the diagram with the updated node
+    if let Some(node) = diagram.nodes.get_mut(&address) {
+        if let Node::Addition(ports) = node {
+            ports.clear();
+            ports.extend_from_slice(&remaining_ports);
+        }
+    }
+
+    // Update the output and first inpuit link to point at the new node
+    diagram.replace_port(&first_two_ports[0], &Port(new_address, 0));
+    diagram.replace_port(&first_two_ports[1], &Port(new_address, 1));
+
+    // Update the port links for the remaining ports in the original node
+    for (idx, port) in remaining_ports.iter().enumerate() {
+        diagram.replace_port(port, &Port(address, idx));
+    }
+}
+
+// Completely decompose addition node at address so it only has three arguments
+pub fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) {
+    while let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
+        if ports.len() > 3 {
+            split_addition_node(diagram, address);
+        } else {
+            break; // Decomposition is complete
+        }
+    }
+}
+
+pub fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) {
+    // Extract information about the node at the given address
+    let (first_two_ports, mut remaining_ports) = if let Some(node) = diagram.nodes.get(&address) {
+        if let Node::Multiplication(ports) = node {
+            if ports.len() > 3 {
+                (vec![ports[0].clone(), ports[1].clone()], ports[2..].to_vec())
+            } else {
+                return;
+            }
+        } else {
+            return;
+        }
+    } else {
+        return;
+    };
+
+    // Create a new multiplication node with the first two ports of the original node
+    let new_node_ports = vec![first_two_ports[0].clone(), first_two_ports[1].clone(), Port(address, 0)];
+    let new_address = diagram.add_node(Node::Multiplication(new_node_ports));
+
+    // Replace the first two ports from the original node with a port pointing to the second arg of the new node.
+    remaining_ports.insert(0, Port(new_address, 2));
+
+    // Replace the node in the diagram with the updated node
+    if let Some(node) = diagram.nodes.get_mut(&address) {
+        if let Node::Multiplication(ports) = node {
+            ports.clear();
+            ports.extend_from_slice(&remaining_ports);
+        }
+    }
+
+    // Update the output and first inpuit link to point at the new node
+    diagram.replace_port(&first_two_ports[0], &Port(new_address, 0));
+    diagram.replace_port(&first_two_ports[1], &Port(new_address, 1));
+
+    // Update the port links for the remaining ports in the original node
+    for (idx, port) in remaining_ports.iter().enumerate() {
+        diagram.replace_port(port, &Port(address, idx));
+    }
+}
+
+// Completely decompose multiplication node at address so it only has three arguments
+pub fn decompose_multiplication_node(diagram: &mut StringDiagram, address: Address) {
+    while let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address) {
+        if ports.len() > 3 {
+            split_multiplication_node(diagram, address);
+        } else {
+            break; // Decomposition is complete
+        }
+    }
+}
+
+pub fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) {
+    // Get the data needed from the node at the address
+    let (exp, p1, p2) = if let Some(Node::ExponentiateConstant(exp, p1, p2)) = diagram.nodes.get(&address) {
+        (exp.clone(), p1.clone(), p2.clone())
+    } else {
+        return;
+    };
+
+    // Convert bigint into usize
+    let exp_str = exp.to_str_radix(10);
+    let exp_value = if let Ok(exp_value) = exp_str.parse::<usize>() {
+        exp_value
+    } else {
+        // The exponentiation is too large to handle
+        return;
+    };
+
+    // Create a new equality node with as many ports as the size of the exponent plus one.
+    let mut equality_ports = Vec::new();
+    equality_ports.push(p2.clone()); // The first port of the equality node should be the second port of the original exponentiation node
+    for i in 0..exp_value {
+        // Point the equality ports to the multiplication ports
+        equality_ports.push(Port(address, i+1));
+    }
+    let equality_address = diagram.add_node(Node::Equality(vec![], equality_ports));
+
+    // Create a new multiplication node
+    let mut multiplication_ports = Vec::new();
+    multiplication_ports.push(p1.clone()); // Keep the first argument the same
+    for i in 0..exp_value {
+        // Point the multiplication ports to the equality ports
+        multiplication_ports.push(Port(equality_address, i+1));
+    }
+
+    // Replace the exponentiation node with the multiplication node
+    diagram.nodes.insert(address, Node::Multiplication(multiplication_ports));
+
+    // The second link of the original exponent node should now point to the first port of the new equality node.
+    diagram.replace_port(&p2, &Port(equality_address, 0));
+}
+
+pub fn fuse_equality_nodes(diagram: &mut StringDiagram, prime_node_address: Address, port_index: PortIndex) {
+    // Extract information about the first node
+    let (second_node_address, second_node_port_index, mut first_node_vars, first_node_ports) = {
+        if let Some(Node::Equality(vars, ports)) = diagram.nodes.get_mut(&prime_node_address) {
+            if let Some(target_port) = ports.get(port_index) {
+                (target_port.0, target_port.1, vars.clone(), ports.clone())
+            } else {
+                return; // Invalid port index
+            }
+        } else {
+            return; // Not an equality node or doesn't exist
+        }
+    };
+
+    // Extract information about the second node
+    let (mut second_node_vars, second_node_ports) = {
+        if let Some(Node::Equality(vars, ports)) = diagram.nodes.get_mut(&second_node_address) {
+            (vars.clone(), ports.clone())
+        } else {
+            return; // Not an equality node or doesn't exist
+        }
+    };
+
+    // Concatenate the variables from the second node into the first node
+    first_node_vars.extend(second_node_vars);
+
+    // Get the ports excluding the target port in the second equality node
+    let mut new_ports: Vec<Port> = second_node_ports.iter()
+        .enumerate()
+        .filter(|(i, _)| *i != second_node_port_index)
+        .map(|(_, port)| port.clone())
+        .collect();
+
+    // Remove the port at port_index in the first equality node
+    new_ports.extend_from_slice(&first_node_ports[0..port_index]);
+    new_ports.extend_from_slice(&first_node_ports[port_index + 1..]);
+
+    // Update the first node in the diagram
+    {
+        if let Some(Node::Equality(vars, ports)) = diagram.nodes.get_mut(&prime_node_address) {
+            *vars = first_node_vars;
+            *ports = new_ports.clone();
+        }
+    }
+
+    // Remove the second equality node from the diagram
+    diagram.nodes.remove(&second_node_address);
+
+    // Update the target ports in the diagram
+    for (index, port) in new_ports.iter().enumerate() {
+        diagram.replace_port(port, &Port(prime_node_address, index));
+    }
 }
 
 
