@@ -827,30 +827,111 @@ pub fn fuse_equality_nodes(diagram: &mut StringDiagram, prime_node_address: Addr
     }
 }
 
+pub fn fuse_addition_nodes(diagram: &mut StringDiagram, prime_node_address: Address, port_index: PortIndex) {
+    // Extract information about the first node
+    let (second_node_address, first_node_ports) = {
+        if let Some(Node::Addition(ports)) = diagram.nodes.get_mut(&prime_node_address) {
+            if let Some(target_port) = ports.get(port_index) {
+                if target_port.1 == 0 {
+                    (target_port.0, ports.clone())
+                } else {
+                    return; // The target port is not the 0th port
+                }
+            } else {
+                return; // Invalid port index
+            }
+        } else {
+            return; // Not an addition node or doesn't exist
+        }
+    };
 
-// pub fn printEx() {
-//     let mut diagram = StringDiagram::new();
-    
-//     // Example: Adding an Addition Node
-//     diagram.add_node(1, Node::Addition(vec![
-//         Port(2, 0), // Address 2, Index 0
-//         Port(3, 1), // Address 3, Index 1
-//         Port(4, 0), // Address 4, Index 0
-//     ]));
+    // Extract information about the second node
+    let second_node_ports = {
+        if let Some(Node::Addition(ports)) = diagram.nodes.get_mut(&second_node_address) {
+            ports.clone()
+        } else {
+            return; // Not an addition node or doesn't exist
+        }
+    };
 
-//     // Example: Adding a MultiplyConstant Node
-//     diagram.add_node(2, Node::MultiplyConstant(
-//         BigInt::from(5),
-//         Port(5, 0), // Address 5, Index 0
-//         Port(6, 1), // Address 6, Index 1
-//     ));
-    
-//     // ... add more nodes as needed
+    // Get the ports excluding the 0th port in the second addition node
+    let mut new_ports: Vec<Port> = second_node_ports.iter()
+        .skip(1) // Skip the 0th port
+        .cloned()
+        .collect();
 
-//     //println!("{diagram:#?}");
-// }
+    // Add the ports from the first addition node (excluding the one at port_index)
+    new_ports.extend_from_slice(&first_node_ports[0..port_index]);
+    new_ports.extend_from_slice(&first_node_ports[port_index + 1..]);
 
+    // Update the first node in the diagram
+    {
+        if let Some(Node::Addition(ports)) = diagram.nodes.get_mut(&prime_node_address) {
+            *ports = new_ports.clone();
+        }
+    }
 
+    // Remove the second addition node from the diagram
+    diagram.nodes.remove(&second_node_address);
+
+    // Update the target ports in the diagram
+    for (index, port) in new_ports.iter().enumerate() {
+        diagram.replace_port(port, &Port(prime_node_address, index));
+    }
+}
+
+pub fn fuse_multiplication_nodes(diagram: &mut StringDiagram, prime_node_address: Address, port_index: PortIndex) {
+    // Extract information about the first node
+    let (second_node_address, first_node_ports) = {
+        if let Some(Node::Multiplication(ports)) = diagram.nodes.get_mut(&prime_node_address) {
+            if let Some(target_port) = ports.get(port_index) {
+                if target_port.1 == 0 {
+                    (target_port.0, ports.clone())
+                } else {
+                    return; // The target port is not the 0th port
+                }
+            } else {
+                return; // Invalid port index
+            }
+        } else {
+            return; // Not an multiplication node or doesn't exist
+        }
+    };
+
+    // Extract information about the second node
+    let second_node_ports = {
+        if let Some(Node::Multiplication(ports)) = diagram.nodes.get_mut(&second_node_address) {
+            ports.clone()
+        } else {
+            return; // Not an multiplication node or doesn't exist
+        }
+    };
+
+    // Get the ports excluding the 0th port in the second multiplication node
+    let mut new_ports: Vec<Port> = second_node_ports.iter()
+        .skip(1) // Skip the 0th port
+        .cloned()
+        .collect();
+
+    // Add the ports from the first multiplication node (excluding the one at port_index)
+    new_ports.extend_from_slice(&first_node_ports[0..port_index]);
+    new_ports.extend_from_slice(&first_node_ports[port_index + 1..]);
+
+    // Update the first node in the diagram
+    {
+        if let Some(Node::Multiplication(ports)) = diagram.nodes.get_mut(&prime_node_address) {
+            *ports = new_ports.clone();
+        }
+    }
+
+    // Remove the second multiplication node from the diagram
+    diagram.nodes.remove(&second_node_address);
+
+    // Update the target ports in the diagram
+    for (index, port) in new_ports.iter().enumerate() {
+        diagram.replace_port(port, &Port(prime_node_address, index));
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -918,6 +999,66 @@ mod tests {
     }
 
     #[test]
+    fn test_fuse_addition_nodes_basic() {
+        // Create a simple diagram with two equality nodes and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 2)));
+        let i4 =  diagram.add_node(Node::Unrestricted(Port(5, 1)));
+        let i5 =  diagram.add_node(Node::Unrestricted(Port(5, 2)));
+        let addr1 = diagram.add_node(Node::Addition(vec![Port(i1, 0), Port(5, 0), Port(i2, 0)]));
+        let addr2 = diagram.add_node(Node::Addition(vec![Port(addr1, 1), Port(i4, 0), Port(i5, 0)]));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        // Fuse the nodes together
+        fuse_addition_nodes(&mut diagram, addr1, 1);
+
+        assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
+
+        assert!(diagram.nodes.get(&addr2).is_none(), "Check that the second node is gone");
+        assert_eq!(node_count, diagram.nodes.len()+1, "There should be one less node after fusion");
+
+        if let Some(Node::Addition(ports)) = diagram.nodes.get(&addr1) {
+            assert_eq!(ports.len(), 4, "The total ports in the remaining node should be two less than the sum of the original");
+        } else {
+            panic!("Expected Equality node!");
+        }
+    }
+
+    #[test]
+    fn test_fuse_multiplication_nodes_basic() {
+        // Create a simple diagram with two equality nodes and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 2)));
+        let i4 =  diagram.add_node(Node::Unrestricted(Port(5, 1)));
+        let i5 =  diagram.add_node(Node::Unrestricted(Port(5, 2)));
+        let addr1 = diagram.add_node(Node::Multiplication(vec![Port(i1, 0), Port(5, 0), Port(i2, 0)]));
+        let addr2 = diagram.add_node(Node::Multiplication(vec![Port(addr1, 1), Port(i4, 0), Port(i5, 0)]));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        // Fuse the nodes together
+        fuse_multiplication_nodes(&mut diagram, addr1, 1);
+
+        assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
+
+        assert!(diagram.nodes.get(&addr2).is_none(), "Check that the second node is gone");
+        assert_eq!(node_count, diagram.nodes.len()+1, "There should be one less node after fusion");
+
+        if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&addr1) {
+            assert_eq!(ports.len(), 4, "The total ports in the remaining node should be two less than the sum of the original");
+        } else {
+            panic!("Expected Equality node!");
+        }
+    }
+
+    #[test]
     fn test_split_addition_nodes_basic() {
         // Create a simple diagram with a single addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
@@ -940,7 +1081,7 @@ mod tests {
         let new_address = addr1 + 1;
         if let Some(Node::Addition(ports)) = diagram.nodes.get(&addr1) {
             assert_eq!(ports.len(), 3, "Modified node should only have three ports");
-            assert_eq!(ports[0], Port(new_address, 2), "New node should have same head as original node");
+            assert_eq!(ports[0], Port(new_address, 2), "Modified node head should point to the new node");
         } else {
             panic!("Node not properly modified");
         }
@@ -979,7 +1120,7 @@ mod tests {
         let new_address = addr1 + 1;
         if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&addr1) {
             assert_eq!(ports.len(), 3, "Modified node should only have three ports");
-            assert_eq!(ports[0], Port(new_address, 2), "New node should have same head as original node");
+            assert_eq!(ports[0], Port(new_address, 2), "Modified node head should point to the new node");
         } else {
             panic!("Node not properly modified");
         }
