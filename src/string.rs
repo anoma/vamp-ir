@@ -790,7 +790,7 @@ pub fn fuse_equality_nodes(diagram: &mut StringDiagram, prime_node_address: Addr
     };
 
     // Extract information about the second node
-    let (mut second_node_vars, second_node_ports) = {
+    let (second_node_vars, second_node_ports) = {
         if let Some(Node::Equality(vars, ports)) = diagram.nodes.get_mut(&second_node_address) {
             (vars.clone(), ports.clone())
         } else {
@@ -851,3 +851,78 @@ pub fn fuse_equality_nodes(diagram: &mut StringDiagram, prime_node_address: Addr
 
 //     //println!("{diagram:#?}");
 // }
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_translate_3ac_to_diagram() {
+        let test_expr = vec![
+            TExpr { v: Expr::Infix(InfixOp::Equal, 
+                Box::new(TExpr { v: Expr::Variable(Variable { name: None, id: 56 }), t: None }), 
+                Box::new(TExpr { v: Expr::Infix(InfixOp::Add, 
+                    Box::new(TExpr { v: Expr::Variable(Variable { name: Some("x".to_string()), id: 11 }), t: None }), 
+                    Box::new(TExpr { v: Expr::Constant(BigInt::from(1)), t: None })), t: None })), t: None }, 
+            TExpr { v: Expr::Infix(InfixOp::Equal, 
+                Box::new(TExpr { v: Expr::Variable(Variable { name: None, id: 56 }), t: None }), 
+                Box::new(TExpr { v: Expr::Constant(BigInt::from(3345387)), t: None })), t: None }, 
+            TExpr { v: Expr::Infix(InfixOp::Equal, Box::new(TExpr { v: Expr::Variable(Variable { name: Some("c".to_string()), id: 12 }), t: None }), 
+            Box::new(TExpr { v: Expr::Constant(BigInt::from(-32)), t: None })), t: None }, 
+            TExpr { v: Expr::Infix(InfixOp::Equal, Box::new(TExpr { v: Expr::Variable(Variable { name: Some("f".to_string()), id: 13 }), t: None }), 
+            Box::new(TExpr { v: Expr::Constant(BigInt::from(-68)), t: None })), t: None }, 
+            TExpr { v: Expr::Infix(InfixOp::Equal, Box::new(TExpr { v: Expr::Variable(Variable { name: Some("r".to_string()), id: 14 }), t: None }), 
+            Box::new(TExpr { v: Expr::Variable(Variable { name: None, id: 58 }), t: None })), t: None }];
+
+        let mut input_ids = HashSet::new();
+        input_ids.insert(11);
+        input_ids.insert(12);
+        input_ids.insert(13);
+        input_ids.insert(14);
+
+        let str_diag = build_string_diagram(test_expr, &input_ids);
+
+        // Test that the translated diagram is well formed
+        assert!(str_diag.is_well_formed());
+    }
+
+    #[test]
+    fn test_fuse_equality_nodes_basic() {
+        // Create a simple diagram with two equality nodes and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 2)));
+        let i3 =  diagram.add_node(Node::Unrestricted(Port(5, 0)));
+        let i4 =  diagram.add_node(Node::Unrestricted(Port(5, 2)));
+        let addr1 = diagram.add_node(Node::Equality(vec![Variable::new(1)], vec![Port(i1, 0), Port(5, 1), Port(i2, 0)]));
+        let addr2 = diagram.add_node(Node::Equality(vec![Variable::new(2)], vec![Port(i3, 0), Port(4, 1), Port(i4, 0)]));
+        
+        // Check that the starting diagram makes sense
+        assert!(diagram.is_well_formed());
+
+        let node_count = diagram.nodes.len();
+
+        // Fuse the nodes together
+        fuse_equality_nodes(&mut diagram, addr1, 1);
+
+        // Check that the modified diagram still makes sense
+        assert!(diagram.is_well_formed());
+
+        // Check that the second node is gone
+        assert!(diagram.nodes.get(&addr2).is_none());
+        // There should be one less node after fusion
+        assert!(node_count == diagram.nodes.len()+1);
+
+        if let Some(Node::Equality(vars, ports)) = diagram.nodes.get(&addr1) {
+            // Check that the first node has updated variables and ports
+            assert_eq!(vars.len(), 2);
+
+            // The total ports in the remaining node should be two less than the sum of the original
+            assert!(ports.len() == 4);
+        } else {
+            panic!("Expected Equality node!");
+        }
+    }
+}
