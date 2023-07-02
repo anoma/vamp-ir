@@ -1,6 +1,4 @@
 use crate::ast::*;
-use crate::error::Error;
-use crate::transform::{collect_module_variables, compile, FieldOps};
 use std::collections::{HashMap, HashSet};
 use num_bigint::BigInt;
 
@@ -103,20 +101,20 @@ impl StringDiagram {
         false
     }
 
-    fn get_target_port(&self, port: &Port) -> Port {
-        match &self.nodes[&port.0] {
-            Node::Equality(_, ports) | Node::Addition(ports) | Node::Multiplication(ports) => ports[port.1].clone(),
-            Node::AddConstant(_, p1, p2) | Node::MultiplyConstant(_, p1, p2) | Node::ExponentiateConstant(_, p1, p2) => {
-                if port.1 == 0 {
-                    p1.clone()
-                } else {
-                    p2.clone()
-                }
-            }
-            Node::Unrestricted(p) => p.clone(),
-            Node::Constant(_, p) => p.clone(),
-        }
-    }
+    // fn get_target_port(&self, port: &Port) -> Port {
+    //     match &self.nodes[&port.0] {
+    //         Node::Equality(_, ports) | Node::Addition(ports) | Node::Multiplication(ports) => ports[port.1].clone(),
+    //         Node::AddConstant(_, p1, p2) | Node::MultiplyConstant(_, p1, p2) | Node::ExponentiateConstant(_, p1, p2) => {
+    //             if port.1 == 0 {
+    //                 p1.clone()
+    //             } else {
+    //                 p2.clone()
+    //             }
+    //         }
+    //         Node::Unrestricted(p) => p.clone(),
+    //         Node::Constant(_, p) => p.clone(),
+    //     }
+    // }
 
     pub fn replace_port(&mut self, target_port: &Port, new_port: &Port) {
         let Port(target_address, target_index) = target_port;
@@ -884,8 +882,7 @@ mod tests {
 
         let str_diag = build_string_diagram(test_expr, &input_ids);
 
-        // Test that the translated diagram is well formed
-        assert!(str_diag.is_well_formed());
+        assert!(str_diag.is_well_formed(), "Test that the translated diagram is well formed");
     }
 
     #[test]
@@ -898,31 +895,104 @@ mod tests {
         let i4 =  diagram.add_node(Node::Unrestricted(Port(5, 2)));
         let addr1 = diagram.add_node(Node::Equality(vec![Variable::new(1)], vec![Port(i1, 0), Port(5, 1), Port(i2, 0)]));
         let addr2 = diagram.add_node(Node::Equality(vec![Variable::new(2)], vec![Port(i3, 0), Port(4, 1), Port(i4, 0)]));
-        
-        // Check that the starting diagram makes sense
-        assert!(diagram.is_well_formed());
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
 
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
         fuse_equality_nodes(&mut diagram, addr1, 1);
 
-        // Check that the modified diagram still makes sense
-        assert!(diagram.is_well_formed());
+        assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
 
-        // Check that the second node is gone
-        assert!(diagram.nodes.get(&addr2).is_none());
-        // There should be one less node after fusion
-        assert!(node_count == diagram.nodes.len()+1);
+        assert!(diagram.nodes.get(&addr2).is_none(), "Check that the second node is gone");
+        assert_eq!(node_count, diagram.nodes.len()+1, "There should be one less node after fusion");
 
         if let Some(Node::Equality(vars, ports)) = diagram.nodes.get(&addr1) {
-            // Check that the first node has updated variables and ports
-            assert_eq!(vars.len(), 2);
+            assert_eq!(vars.len(), 2, "Check that the first node has updated variables and ports");
 
-            // The total ports in the remaining node should be two less than the sum of the original
-            assert!(ports.len() == 4);
+            assert_eq!(ports.len(), 4, "The total ports in the remaining node should be two less than the sum of the original");
         } else {
             panic!("Expected Equality node!");
         }
     }
+
+    #[test]
+    fn test_split_addition_nodes_basic() {
+        // Create a simple diagram with a single addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 1)));
+        let i3 =  diagram.add_node(Node::Unrestricted(Port(4, 2)));
+        let i4 =  diagram.add_node(Node::Unrestricted(Port(4, 3)));
+        let addr1 = diagram.add_node(Node::Addition(vec![Port(i1, 0), Port(i2, 0), Port(i3, 0), Port(i4, 0)]));
+        
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        // Fuse the nodes together
+        split_addition_node(&mut diagram, addr1);
+
+        assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
+
+        // Assert that the original node is modified
+        let new_address = addr1 + 1;
+        if let Some(Node::Addition(ports)) = diagram.nodes.get(&addr1) {
+            assert_eq!(ports.len(), 3, "Modified node should only have three ports");
+            assert_eq!(ports[0], Port(new_address, 2), "New node should have same head as original node");
+        } else {
+            panic!("Node not properly modified");
+        }
+
+        // Assert that a new node has been added
+        if let Some(Node::Addition(ports)) = diagram.nodes.get(&new_address) {
+            assert_eq!(ports.len(), 3, "New node should only have three ports");
+            assert_eq!(ports[0], Port(i1, 0), "New node should have same head as original node");
+        } else {
+            panic!("New node not properly formed");
+        }
+
+        assert_eq!(node_count + 1, diagram.nodes.len(), "There should be one more node after splitting");
+    }
+
+    #[test]
+    fn test_split_multiplication_nodes_basic() {
+        // Create a simple diagram with a single multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 1)));
+        let i3 =  diagram.add_node(Node::Unrestricted(Port(4, 2)));
+        let i4 =  diagram.add_node(Node::Unrestricted(Port(4, 3)));
+        let addr1 = diagram.add_node(Node::Multiplication(vec![Port(i1, 0), Port(i2, 0), Port(i3, 0), Port(i4, 0)]));
+        
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        // Fuse the nodes together
+        split_multiplication_node(&mut diagram, addr1);
+
+        assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
+
+        // Assert that the original node is modified
+        let new_address = addr1 + 1;
+        if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&addr1) {
+            assert_eq!(ports.len(), 3, "Modified node should only have three ports");
+            assert_eq!(ports[0], Port(new_address, 2), "New node should have same head as original node");
+        } else {
+            panic!("Node not properly modified");
+        }
+
+        // Assert that a new node has been added
+        if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&new_address) {
+            assert_eq!(ports.len(), 3, "New node should only have three ports");
+            assert_eq!(ports[0], Port(i1, 0), "New node should have same head as original node");
+        } else {
+            panic!("New node not properly formed");
+        }
+
+        assert_eq!(node_count + 1, diagram.nodes.len(), "There should be one more node after splitting");
+    }
+
 }

@@ -1,10 +1,10 @@
-use crate::ast::{Expr, TExpr, InfixOp, Module, Pat, Variable};
+use crate::ast::{Expr, InfixOp, Module, Pat, Variable};
 use crate::error::Error;
 use crate::transform::{collect_module_variables, compile, FieldOps};
-use crate::string::*;
+//use crate::string::*;
 
 use serde_json::Map;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use std::fs;
 use std::fs::OpenOptions;
@@ -352,7 +352,25 @@ pub fn dump_equations_mathematica(
 
     writeln!(writer, "FindInstance[")?;
 
-//    let str_diag = build_string_diagram(module_3ac.exprs.iter().map(|e| e.clone().v).collect());
+    let mut input_variables2 = HashMap::new();
+    collect_module_variables(module_3ac, &mut input_variables2);
+    // Defined variables should not be requested from user
+    for def in &module_3ac.defs {
+        if let Pat::Variable(var) = &def.0 .0.v {
+            input_variables2.remove(&var.id);
+        }
+    }
+    let mut input_ids = HashSet::new();
+    for (id, _) in input_variables2 {
+        input_ids.insert(id);
+    }
+
+    println!("Defs {:?}", module_3ac.exprs);
+
+    //println!("Defs {:?}", input_ids);
+
+    //let str_diag = build_string_diagram(module_3ac.exprs.clone(), &input_ids);
+    //let new_exprs = convert_to_3ac(&str_diag);
 //    println!("Diag Well Formed: {}", str_diag.is_well_formed());
 
     for (index, expr) in module_3ac.exprs.iter().enumerate() {
