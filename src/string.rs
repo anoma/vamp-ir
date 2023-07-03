@@ -1,6 +1,7 @@
 use crate::ast::*;
 use std::collections::{HashMap, HashSet};
 use num_bigint::BigInt;
+use crate::transform::FieldOps;
 
 // Define the address type
 pub type Address = usize;
@@ -986,7 +987,7 @@ pub fn unrestricted_unary_simplification(diagram: &mut StringDiagram, address: A
 // Y = n + X
 // These can be combined into
 // X = m - n
-pub fn add_constant_constant_head(diagram: &mut StringDiagram, address: Address) {
+pub fn add_constant_constant_head(diagram: &mut StringDiagram, address: Address, field_ops: &dyn FieldOps) {
     // Extract the necessary data
     let (n, first_port, second_port) = 
         if let Some(Node::AddConstant(n, first_port, second_port)) = diagram.nodes.get(&address) {
@@ -1002,7 +1003,7 @@ pub fn add_constant_constant_head(diagram: &mut StringDiagram, address: Address)
     };
     
     // Now that the necessary data is extracted, perform the mutable operations
-    let new_constant_value = m - n;
+    let new_constant_value = field_ops.infix(InfixOp::Subtract, m, n);
 
     // Replace the AddConstant node with the new constant node
     diagram.nodes.insert(address, Node::Constant(new_constant_value, second_port.clone()));
@@ -1021,7 +1022,7 @@ pub fn add_constant_constant_head(diagram: &mut StringDiagram, address: Address)
 // X = m
 // These can be combined into
 // Y = n + m
-pub fn add_constant_constant_tail(diagram: &mut StringDiagram, address: Address) {
+pub fn add_constant_constant_tail(diagram: &mut StringDiagram, address: Address, field_ops: &dyn FieldOps) {
     // Extract the necessary data
     let (n, first_port, second_port) = 
         if let Some(Node::AddConstant(n, first_port, second_port)) = diagram.nodes.get(&address) {
@@ -1037,7 +1038,7 @@ pub fn add_constant_constant_tail(diagram: &mut StringDiagram, address: Address)
     };
     
     // Now that the necessary data is extracted, perform the mutable operations
-    let new_constant_value = n + m;
+    let new_constant_value = field_ops.infix(InfixOp::Add, n, m);
 
     // Replace the AddConstant node with the new constant node
     diagram.nodes.insert(address, Node::Constant(new_constant_value, first_port.clone()));
@@ -1055,39 +1056,33 @@ pub fn add_constant_constant_tail(diagram: &mut StringDiagram, address: Address)
 // Y = n * X
 // These can be combined into
 // X = m / n
+pub fn mul_constant_constant_head(diagram: &mut StringDiagram, address: Address, field_ops: &dyn FieldOps) {
+    // Extract the necessary data
+    let (n, first_port, second_port) = 
+        if let Some(Node::MultiplyConstant(n, first_port, second_port)) = diagram.nodes.get(&address) {
+            (n.clone(), first_port.clone(), second_port.clone())
+        } else {
+            return; // Exit if it is not an MultiplyConstant node
+        };
 
-// =======================================================================
-// NOTE!!!! This can't be made to work without an input finite field !!!!
-// =======================================================================
-
-// pub fn mul_constant_constant_head(diagram: &mut StringDiagram, address: Address) {
-//     // Extract the necessary data
-//     let (n, first_port, second_port) = 
-//         if let Some(Node::MultiplyConstant(n, first_port, second_port)) = diagram.nodes.get(&address) {
-//             (n.clone(), first_port.clone(), second_port.clone())
-//         } else {
-//             return; // Exit if it is not an MultiplyConstant node
-//         };
-
-//     let m = if let Some(Node::Constant(m, _)) = diagram.nodes.get(&first_port.0) {
-//         m.clone()
-//     } else {
-//         return; // Exit if the target node is not a Constant node
-//     };
+    let m = if let Some(Node::Constant(m, _)) = diagram.nodes.get(&first_port.0) {
+        m.clone()
+    } else {
+        return; // Exit if the target node is not a Constant node
+    };
     
-//     // Now that the necessary data is extracted, perform the mutable operations
-//     TODO: Change this to a finite field op
-//     let new_constant_value = m / n;
+    // Now that the necessary data is extracted, perform the mutable operations
+    let new_constant_value = field_ops.infix(InfixOp::Divide, m, n);
 
-//     // Replace the MultiplyConstant node with the new constant node
-//     diagram.nodes.insert(address, Node::Constant(new_constant_value, second_port.clone()));
+    // Replace the MultiplyConstant node with the new constant node
+    diagram.nodes.insert(address, Node::Constant(new_constant_value, second_port.clone()));
 
-//     // Update the target link of the second port of the MultiplyConstant node
-//     diagram.replace_port(&second_port, &Port(address, 0));
+    // Update the target link of the second port of the MultiplyConstant node
+    diagram.replace_port(&second_port, &Port(address, 0));
 
-//     // Remove the original constant node connected to the first port
-//     diagram.nodes.remove(&first_port.0);
-// }
+    // Remove the original constant node connected to the first port
+    diagram.nodes.remove(&first_port.0);
+}
 
 // If a constant, m, is connected to the second port of a multiplication by constant, n, node, this
 // produces the equations
@@ -1095,7 +1090,7 @@ pub fn add_constant_constant_tail(diagram: &mut StringDiagram, address: Address)
 // X = m
 // These can be combined into
 // Y = n * m
-pub fn mul_constant_constant_tail(diagram: &mut StringDiagram, address: Address) {
+pub fn mul_constant_constant_tail(diagram: &mut StringDiagram, address: Address, field_ops: &dyn FieldOps) {
     // Extract the necessary data
     let (n, first_port, second_port) = 
         if let Some(Node::MultiplyConstant(n, first_port, second_port)) = diagram.nodes.get(&address) {
@@ -1111,7 +1106,7 @@ pub fn mul_constant_constant_tail(diagram: &mut StringDiagram, address: Address)
     };
     
     // Now that the necessary data is extracted, perform the mutable operations
-    let new_constant_value = n * m;
+    let new_constant_value = field_ops.infix(InfixOp::Multiply, m, n);
 
     // Replace the MultiplyConstant node with the new constant node
     diagram.nodes.insert(address, Node::Constant(new_constant_value, first_port.clone()));
@@ -1123,14 +1118,13 @@ pub fn mul_constant_constant_tail(diagram: &mut StringDiagram, address: Address)
     diagram.nodes.remove(&second_port.0);
 }
 
-
 // If a constant, m, is connected to the second port of a multiplication by constant, n, node, this
 // produces the equations
 // Y = X ^ n
 // X = m
 // These can be combined into
 // Y = m ^ n
-pub fn exp_constant_constant_tail(diagram: &mut StringDiagram, address: Address) {
+pub fn exp_constant_constant_tail(diagram: &mut StringDiagram, address: Address, field_ops: &dyn FieldOps) {
     // Extract the necessary data
     let (n, first_port, second_port) = 
         if let Some(Node::ExponentiateConstant(n, first_port, second_port)) = diagram.nodes.get(&address) {
@@ -1146,7 +1140,7 @@ pub fn exp_constant_constant_tail(diagram: &mut StringDiagram, address: Address)
     };
     
     // Now that the necessary data is extracted, perform the mutable operations
-    let new_constant_value = m.pow(n.try_into().expect("exponent too large for pow()"));
+    let new_constant_value = field_ops.infix(InfixOp::Exponentiate, m, n);
 
     // Replace the ExponentiateConstant node with the new constant node
     diagram.nodes.insert(address, Node::Constant(new_constant_value, first_port.clone()));
@@ -1158,7 +1152,7 @@ pub fn exp_constant_constant_tail(diagram: &mut StringDiagram, address: Address)
     diagram.nodes.remove(&second_port.0);
 }
 
-pub fn simplify_string_diagram(diagram: &mut StringDiagram) {
+pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps) {
     let mut changed = true;
     
     while changed {
@@ -1208,31 +1202,31 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram) {
                 }
                 Node::AddConstant(_, port1, port2) => {
                     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
-                        add_constant_constant_head(diagram, *prime_node_address);
+                        add_constant_constant_head(diagram, *prime_node_address, field_ops);
                         changed = true;
                         break;
                     }
                     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                        add_constant_constant_tail(diagram, *prime_node_address);
+                        add_constant_constant_tail(diagram, *prime_node_address, field_ops);
                         changed = true;
                         break;
                     }
                 }
-                Node::MultiplyConstant(_, _, port2) => {
-                    // if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
-                    //     mul_constant_constant_head(diagram, *prime_node_address);
-                    //     changed = true;
-                    //     break;
-                    // }
+                Node::MultiplyConstant(_, port1, port2) => {
+                    if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
+                        mul_constant_constant_head(diagram, *prime_node_address, field_ops);
+                        changed = true;
+                        break;
+                    }
                     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                        mul_constant_constant_tail(diagram, *prime_node_address);
+                        mul_constant_constant_tail(diagram, *prime_node_address, field_ops);
                         changed = true;
                         break;
                     }
                 }
                 Node::ExponentiateConstant(_, _, port2) => {
                     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                        exp_constant_constant_tail(diagram, *prime_node_address);
+                        exp_constant_constant_tail(diagram, *prime_node_address, field_ops);
                         changed = true;
                         break;
                     }
@@ -1295,9 +1289,9 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) {
     }
 }
 
-pub fn simplify_3ac(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> Vec<TExpr> {
+pub fn simplify_3ac(equations: Vec<TExpr>, input_ids: &HashSet<u32>, field_ops: &dyn FieldOps) -> Vec<TExpr> {
     let mut diag = build_string_diagram(equations, input_ids);
-    simplify_string_diagram(&mut diag);
+    simplify_string_diagram(&mut diag, field_ops);
     prep_for_3ac(&mut diag);
     convert_to_3ac(&diag)
 }
@@ -1617,7 +1611,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        add_constant_constant_head(&mut diagram, i3);
+        add_constant_constant_head(&mut diagram, i3, &());
 
         assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
 
@@ -1653,7 +1647,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        add_constant_constant_tail(&mut diagram, i3);
+        add_constant_constant_tail(&mut diagram, i3, &());
 
         assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
 
@@ -1725,7 +1719,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        mul_constant_constant_tail(&mut diagram, i3);
+        mul_constant_constant_tail(&mut diagram, i3, &());
 
         assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
 
@@ -1761,7 +1755,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        exp_constant_constant_tail(&mut diagram, i3);
+        exp_constant_constant_tail(&mut diagram, i3, &());
 
         assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
 

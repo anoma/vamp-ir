@@ -105,7 +105,7 @@ impl FieldOps for () {
             InfixOp::DivideZ => panic!("cannot evaluate DivideZ expression"),
             InfixOp::IntDivide => a / b,
             InfixOp::Modulo => a % b,
-            InfixOp::Exponentiate => panic!("cannot evaluate Exponentiate expression"),
+            InfixOp::Exponentiate => a.pow(b.try_into().expect("exponent too large for pow()")),
             InfixOp::Equal => panic!("cannot evaluate equals expression"),
         }
     }
@@ -365,7 +365,7 @@ pub fn dump_equations_mathematica(
         input_ids.insert(id);
     }
 
-    let simp_expr = simplify_3ac(module_3ac.exprs.clone(), &input_ids);
+    let simp_expr = simplify_3ac(module_3ac.exprs.clone(), &input_ids, &());
 
     for (index, expr) in simp_expr.iter().enumerate() {
         write!(writer, "  ")?;
