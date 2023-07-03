@@ -939,6 +939,8 @@ pub fn fuse_multiplication_nodes(diagram: &mut StringDiagram, prime_node_address
     }
 }
 
+// If two constants are connected, they are either trivially true (of their values are equal)
+// or imply a contradiction (if their values are false).
 pub fn constant_constant_simplification(diagram: &mut StringDiagram, address: Address) {
     if let Some(Node::Constant(value, target_port)) = diagram.nodes.get(&address) {
         let target_value;
@@ -963,7 +965,20 @@ pub fn constant_constant_simplification(diagram: &mut StringDiagram, address: Ad
     }
 }
 
+// If an unrestructed node connects to a constant or another unrestricted node,
+// this will produce no constraints.
+pub fn unrestricted_unary_simplification(diagram: &mut StringDiagram, address: Address) {
+    if let Some(Node::Unrestricted(target_port)) = diagram.nodes.get(&address) {
+        let target_address = target_port.0;
 
+        // Check if the target port is an unrestricted or constant node
+        if let Some(Node::Unrestricted(_) | Node::Constant(_, _)) = diagram.nodes.get(&target_address) {
+            // Remove both nodes
+            diagram.nodes.remove(&address);
+            diagram.nodes.remove(&target_address);
+        }
+    }
+}
 
 
 
@@ -988,7 +1003,7 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram) {
                             break;
                         }
                     }
-                },
+                }
                 Node::Addition(ports) => {
                     for (port_index, target_port) in ports.iter().enumerate() {
                         if port_index > 0 {
@@ -1002,7 +1017,7 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram) {
                             }
                         }
                     }
-                },
+                }
                 Node::Multiplication(ports) => {
                     for (port_index, target_port) in ports.iter().enumerate() {
                         if port_index > 0 {
@@ -1016,10 +1031,17 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram) {
                             }
                         }
                     }
-                },
+                }
                 Node::Constant(_, port) => {
                     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
                         constant_constant_simplification(diagram, *prime_node_address);
+                        changed = true;
+                        break;
+                    }
+                }
+                Node::Unrestricted(port) => {
+                    if let Some(Node::Constant(_, _) | Node::Unrestricted(_)) = diagram.nodes.get(&port.0) {
+                        unrestricted_unary_simplification(diagram, *prime_node_address);
                         changed = true;
                         break;
                     }
@@ -1292,7 +1314,6 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        // Fuse the nodes together
         constant_constant_simplification(&mut diagram, i3);
 
         assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
@@ -1316,7 +1337,6 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        // Fuse the nodes together
         constant_constant_simplification(&mut diagram, i3);
 
         assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
@@ -1330,6 +1350,54 @@ mod tests {
             panic!("Old node should be contradiction");
         }
 
-        assert_eq!(diagram.nodes.len() + 1, node_count, "Nodecount should have decreased by 1");
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
     }
+
+
+    #[test]
+    fn test_unrestricted_constant() {
+        // Create a simple diagram with a single multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(i1, 0)));
+        let i3 =  diagram.add_node(Node::Unrestricted(Port(3, 0)));
+        let i4 =  diagram.add_node(Node::Constant(BigInt::from(55), Port(i3, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        unrestricted_unary_simplification(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
+
+        assert!(diagram.nodes.get(&i3).is_none(), "Check that the first node is gone");
+        assert!(diagram.nodes.get(&i4).is_none(), "Check that the second node is gone");
+
+        assert_eq!(diagram.nodes.len() + 2, node_count, "Node count should have decreased by 2");
+    }
+
+    #[test]
+    fn test_unrestricted_unrestricted() {
+        // Create a simple diagram with a single multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(i1, 0)));
+        let i3 =  diagram.add_node(Node::Unrestricted(Port(3, 0)));
+        let i4 =  diagram.add_node(Node::Unrestricted(Port(i3, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        unrestricted_unary_simplification(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
+
+        assert!(diagram.nodes.get(&i3).is_none(), "Check that the first node is gone");
+        assert!(diagram.nodes.get(&i4).is_none(), "Check that the second node is gone");
+
+        assert_eq!(diagram.nodes.len() + 2, node_count, "Node count should have decreased by 2");
+    }
+    
 }
