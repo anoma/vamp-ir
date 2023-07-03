@@ -939,6 +939,36 @@ pub fn fuse_multiplication_nodes(diagram: &mut StringDiagram, prime_node_address
     }
 }
 
+pub fn constant_constant_simplification(diagram: &mut StringDiagram, address: Address) {
+    if let Some(Node::Constant(value, target_port)) = diagram.nodes.get(&address) {
+        let target_value;
+        let target_address = target_port.0;
+        // Check if the target port is also a constant node
+        if let Some(Node::Constant(target_const, _)) = diagram.nodes.get(&target_address) {
+            target_value = target_const.clone();
+        } else {
+            return; // Target node is not a constant
+        }
+
+        if value == &target_value {
+            // If both constants are equal, remove both nodes
+            diagram.nodes.remove(&address);
+            diagram.nodes.remove(&target_address);
+        } else {
+            // If constants are not equal, remove the second constant node
+            // and replace the first with Contradiction
+            diagram.nodes.remove(&target_address);
+            diagram.nodes.insert(address, Node::Contradiction);
+        }
+    }
+}
+
+
+
+
+
+
+
 pub fn simplify_string_diagram(diagram: &mut StringDiagram) {
     let mut changed = true;
     
@@ -987,6 +1017,13 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram) {
                         }
                     }
                 },
+                Node::Constant(_, port) => {
+                    if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
+                        constant_constant_simplification(diagram, *prime_node_address);
+                        changed = true;
+                        break;
+                    }
+                }
                 _ => {}
             }
             
@@ -1242,4 +1279,57 @@ mod tests {
         assert_eq!(node_count + 1, diagram.nodes.len(), "There should be one more node after splitting");
     }
 
+    #[test]
+    fn test_constant_constant_eq() {
+        // Create a simple diagram with a single multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(i1, 0)));
+        let i3 =  diagram.add_node(Node::Constant(BigInt::from(55), Port(3, 0)));
+        let i4 =  diagram.add_node(Node::Constant(BigInt::from(55), Port(i3, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        // Fuse the nodes together
+        constant_constant_simplification(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
+
+        assert!(diagram.nodes.get(&i3).is_none(), "Check that the first node is gone");
+        assert!(diagram.nodes.get(&i4).is_none(), "Check that the second node is gone");
+
+        assert_eq!(diagram.nodes.len() + 2, node_count, "Nodecount should have decreased by 2");
+    }
+
+    #[test]
+    fn test_constant_constant_neq() {
+        // Create a simple diagram with a single multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(i1, 0)));
+        let i3 =  diagram.add_node(Node::Constant(BigInt::from(56), Port(3, 0)));
+        let i4 =  diagram.add_node(Node::Constant(BigInt::from(55), Port(i3, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        // Fuse the nodes together
+        constant_constant_simplification(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
+
+        assert!(diagram.nodes.get(&i4).is_none(), "Check that the second node is gone");
+
+
+        if let Some(Node::Contradiction) = diagram.nodes.get(&i3) {
+            
+        } else {
+            panic!("Old node should be contradiction");
+        }
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Nodecount should have decreased by 1");
+    }
 }
