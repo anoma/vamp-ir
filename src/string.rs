@@ -21,6 +21,7 @@ pub enum Node {
     ExponentiateConstant(BigInt, Port, Port), // First port equals the second port to the power of the constant
     Unrestricted(Port), // The port is an unrestricted natural number
     Constant(BigInt, Port), // The port is equal to the constant
+    Contradiction, // Shouldn't exist in a coherent diagram
 }
 
 // Define the String Diagram
@@ -70,6 +71,7 @@ impl StringDiagram {
                         return false;
                     }
                 }
+                Node::Contradiction => { }
             }
         }
         true
@@ -96,25 +98,11 @@ impl StringDiagram {
                 Node::Unrestricted(port) | Node::Constant(_, port) => {
                     return port.0 == original.0 && port.1 == original.1;
                 }
+                Node::Contradiction => { }
             }
         }
         false
     }
-
-    // fn get_target_port(&self, port: &Port) -> Port {
-    //     match &self.nodes[&port.0] {
-    //         Node::Equality(_, ports) | Node::Addition(ports) | Node::Multiplication(ports) => ports[port.1].clone(),
-    //         Node::AddConstant(_, p1, p2) | Node::MultiplyConstant(_, p1, p2) | Node::ExponentiateConstant(_, p1, p2) => {
-    //             if port.1 == 0 {
-    //                 p1.clone()
-    //             } else {
-    //                 p2.clone()
-    //             }
-    //         }
-    //         Node::Unrestricted(p) => p.clone(),
-    //         Node::Constant(_, p) => p.clone(),
-    //     }
-    // }
 
     pub fn replace_port(&mut self, target_port: &Port, new_port: &Port) {
         let Port(target_address, target_index) = target_port;
@@ -125,7 +113,7 @@ impl StringDiagram {
                     if let Some(port) = ports.get_mut(*target_index) {
                         *port = new_port.clone();
                     }
-                },
+                }
                 Node::AddConstant(_, port1, port2)
                 | Node::MultiplyConstant(_, port1, port2)
                 | Node::ExponentiateConstant(_, port1, port2) => {
@@ -134,12 +122,13 @@ impl StringDiagram {
                     } else if *target_index == 1 {
                         *port2 = new_port.clone();
                     }
-                },
+                }
                 Node::Unrestricted(port) | Node::Constant(_, port) => {
                     if *target_index == 0 {
                         *port = new_port.clone();
                     }
-                },
+                }
+                Node::Contradiction => { }
             }
         }
     }
@@ -429,6 +418,7 @@ fn construct_port_vars(diagram: &StringDiagram) -> HashMap<Port, Variable> {
             Node::ExponentiateConstant(_, p1, p2) => vec![p1.clone(), p2.clone()],
             Node::Unrestricted(p) => vec![p.clone()],
             Node::Constant(_, p) => vec![p.clone()],
+            Node::Contradiction => vec![],
         };
     
         for (index, target_port) in ports.iter().enumerate() {
@@ -615,6 +605,22 @@ pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
                         }),
                         Box::new(TExpr {
                             v: Expr::Constant(value.clone()),
+                            t: None,
+                        }),
+                    ),
+                    t: None,
+                });
+            }
+            Node::Contradiction => {
+                expressions.push(TExpr {
+                    v: Expr::Infix(
+                        InfixOp::Equal,
+                        Box::new(TExpr {
+                            v: Expr::Constant(BigInt::from(0)),
+                            t: None,
+                        }),
+                        Box::new(TExpr {
+                            v: Expr::Constant(BigInt::from(1)),
                             t: None,
                         }),
                     ),
