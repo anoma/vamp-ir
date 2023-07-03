@@ -1051,13 +1051,34 @@ pub fn add_constant_constant_tail(diagram: &mut StringDiagram, address: Address,
     diagram.nodes.remove(&second_port.0);
 }
 
+// X = 0 + Y can be simplified into
+// X = Y by simply deleting the addition node
+pub fn simplify_add_constant_with_zero(diagram: &mut StringDiagram, address: Address) {
+    // Extract information about the node at the given address
+    let (first_port_target, second_port_target, is_zero) = match diagram.nodes.get(&address) {
+        Some(Node::AddConstant(value, first_target_port, second_target_port)) if *value == BigInt::from(0) => 
+            (first_target_port.clone(), second_target_port.clone(), true),
+        _ => return // Exit if the target node is not an AddConstant node
+    };
+
+    // If it is an AddConstant node with value 0
+    if is_zero {
+        // Remove the AddConstant node from the diagram
+        diagram.nodes.remove(&address);
+
+        // Update the target links of both ports to point at each other
+        diagram.replace_port(&first_port_target, &second_port_target);
+        diagram.replace_port(&second_port_target, &first_port_target);
+    }
+}
+
 // If a constant, m, is connected to the first port of an multiplication by constant, n, node, this
 // produces the equations
 // Y = m
 // Y = n * X
 // These can be combined into
 // X = m / n
-// This is wrong if n = 0, but that case is handled by mul_constant_zero_simplify.
+// This is wrong if n = 0, but that case is handled by simplify_mul_constant_with_zero.
 pub fn mul_constant_constant_head(diagram: &mut StringDiagram, address: Address, field_ops: &dyn FieldOps) {
     // Extract the necessary data
     let (n, first_port, second_port) = 
@@ -1084,32 +1105,6 @@ pub fn mul_constant_constant_head(diagram: &mut StringDiagram, address: Address,
 
     // Remove the original constant node connected to the first port
     diagram.nodes.remove(&first_port.0);
-}
-
-// If X = 0 * Y, then we can split this into
-// X = 0
-// No restriction on Y.
-pub fn mul_constant_zero_simplify(diagram: &mut StringDiagram, address: Address) {
-    // Extract information about the node at the given address
-    let (port1, port2, is_zero) = match diagram.nodes.get(&address) {
-        Some(Node::MultiplyConstant(value, port1, port2)) if *value == BigInt::from(0) => (port1.clone(), port2.clone(), true),
-        _ => return // Exit if it is not an MultiplyConstant node
-    };
-
-    // If it is a MultiplyConstant node with value 0
-    if is_zero {
-        // Create a new Unrestricted node with the target link of the second port
-        let unrestricted_address = diagram.add_node(Node::Unrestricted(port2.clone()));
-
-        // Replace the original MultiplyConstant node with a Constant node containing 0
-        diagram.nodes.insert(
-            address,
-            Node::Constant(BigInt::from(0), port1),
-        );
-
-        // Update the target link of the second port to point to the new Unrestricted node
-        diagram.replace_port(&port2, &Port(unrestricted_address, 0));
-    }
 }
 
 // If a constant, m, is connected to the second port of a multiplication by constant, n, node, this
@@ -1146,6 +1141,53 @@ pub fn mul_constant_constant_tail(diagram: &mut StringDiagram, address: Address,
     diagram.nodes.remove(&second_port.0);
 }
 
+// If X = 0 * Y, then we can split this into
+// X = 0
+// No restriction on Y.
+pub fn simplify_mul_constant_with_zero(diagram: &mut StringDiagram, address: Address) {
+    // Extract information about the node at the given address
+    let (port1, port2, is_zero) = match diagram.nodes.get(&address) {
+        Some(Node::MultiplyConstant(value, port1, port2)) if *value == BigInt::from(0) => (port1.clone(), port2.clone(), true),
+        _ => return // Exit if it is not an MultiplyConstant node
+    };
+
+    // If it is a MultiplyConstant node with value 0
+    if is_zero {
+        // Create a new Unrestricted node with the target link of the second port
+        let unrestricted_address = diagram.add_node(Node::Unrestricted(port2.clone()));
+
+        // Replace the original MultiplyConstant node with a Constant node containing 0
+        diagram.nodes.insert(
+            address,
+            Node::Constant(BigInt::from(0), port1),
+        );
+
+        // Update the target link of the second port to point to the new Unrestricted node
+        diagram.replace_port(&port2, &Port(unrestricted_address, 0));
+    }
+}
+
+// X = 1 * Y can be simplified into
+// X = Y by simply deleting the multiplication node
+pub fn simplify_mul_constant_with_one(diagram: &mut StringDiagram, address: Address) {
+    // Extract information about the node at the given address
+    let (first_port_target, second_port_target, is_one) = match diagram.nodes.get(&address) {
+        Some(Node::MultiplyConstant(value, first_target_port, second_target_port)) if *value == BigInt::from(1) => 
+            (first_target_port.clone(), second_target_port.clone(), true),
+        _ => return // Exit if the target node is not an MultiplyConstant node
+    };
+
+    // If it is an MultiplyConstant node with value 0
+    if is_one {
+        // Remove the MultiplyConstant node from the diagram
+        diagram.nodes.remove(&address);
+
+        // Update the target links of both ports to point at each other
+        diagram.replace_port(&first_port_target, &second_port_target);
+        diagram.replace_port(&second_port_target, &first_port_target);
+    }
+}
+
 // If a constant, m, is connected to the second port of a multiplication by constant, n, node, this
 // produces the equations
 // Y = X ^ n
@@ -1178,6 +1220,27 @@ pub fn exp_constant_constant_tail(diagram: &mut StringDiagram, address: Address,
 
     // Remove the original constant node connected to the first port
     diagram.nodes.remove(&second_port.0);
+}
+
+// X = Y ^ 1 can be simplified into
+// X = Y by simply deleting the exponeniation node
+pub fn simplify_exp_constant_with_one(diagram: &mut StringDiagram, address: Address) {
+    // Extract information about the node at the given address
+    let (first_port_target, second_port_target, is_one) = match diagram.nodes.get(&address) {
+        Some(Node::ExponentiateConstant(value, first_target_port, second_target_port)) if *value == BigInt::from(1) => 
+            (first_target_port.clone(), second_target_port.clone(), true),
+        _ => return // Exit if the target node is not an ExponentiateConstant node
+    };
+
+    // If it is an ExponentiateConstant node with value 0
+    if is_one {
+        // Remove the ExponentiateConstant node from the diagram
+        diagram.nodes.remove(&address);
+
+        // Update the target links of both ports to point at each other
+        diagram.replace_port(&first_port_target, &second_port_target);
+        diagram.replace_port(&second_port_target, &first_port_target);
+    }
 }
 
 pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps) {
@@ -1228,7 +1291,12 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                         }
                     }
                 }
-                Node::AddConstant(_, port1, port2) => {
+                Node::AddConstant(value, port1, port2) => {
+                    if *value == BigInt::from(0) {
+                        simplify_add_constant_with_zero(diagram, *prime_node_address);
+                        changed = true;
+                        break;
+                    }
                     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
                         add_constant_constant_head(diagram, *prime_node_address, field_ops);
                         changed = true;
@@ -1242,7 +1310,12 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                 }
                 Node::MultiplyConstant(value, port1, port2) => {
                     if *value == BigInt::from(0) {
-                        mul_constant_zero_simplify(diagram, *prime_node_address);
+                        simplify_mul_constant_with_zero(diagram, *prime_node_address);
+                        changed = true;
+                        break;
+                    }
+                    if *value == BigInt::from(1) {
+                        simplify_mul_constant_with_one(diagram, *prime_node_address);
                         changed = true;
                         break;
                     }
@@ -1257,7 +1330,12 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                         break;
                     }
                 }
-                Node::ExponentiateConstant(_, _, port2) => {
+                Node::ExponentiateConstant(value, _, port2) => {
+                    if *value == BigInt::from(1) {
+                        simplify_exp_constant_with_one(diagram, *prime_node_address);
+                        changed = true;
+                        break;
+                    }
                     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
                         exp_constant_constant_tail(diagram, *prime_node_address, field_ops);
                         changed = true;
@@ -1812,14 +1890,13 @@ mod tests {
             panic!("Node at address i3 does not exist.");
         }
 
-        // Next, check that the original Constant node connected to the first port has been removed.
-        assert!(diagram.nodes.get(&i1).is_none());
+        assert!(diagram.nodes.get(&i1).is_none(), "check that the original Constant node connected to the first port has been removed");
 
         assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
     }
 
     #[test]
-    fn test_mul_constant_zero_simplify() {
+    fn test_simplify_mul_constant_with_zero() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 =  diagram.add_node(Node::Unrestricted(Port(2, 1)));
@@ -1830,7 +1907,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        mul_constant_zero_simplify(&mut diagram, i3);
+        simplify_mul_constant_with_zero(&mut diagram, i3);
 
         assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
 
@@ -1860,6 +1937,75 @@ mod tests {
         }
 
         assert_eq!(diagram.nodes.len(), node_count + 1, "Node count should have increased by 1");
+    }
+
+    #[test]
+    fn test_simplify_add_constant_with_zero() {
+        // Create a simple diagram with a single constant addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 1)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i3 =  diagram.add_node(Node::AddConstant(BigInt::from(0), Port(i2, 0), Port(i1, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        simplify_add_constant_with_zero(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        assert!(diagram.nodes.get(&i3).is_none(), "check that the original AddConstant node connected to the first port has been removed");
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
+
+    #[test]
+    fn test_simplify_mul_constant_with_one() {
+        // Create a simple diagram with a single constant addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 1)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i3 =  diagram.add_node(Node::MultiplyConstant(BigInt::from(1), Port(i2, 0), Port(i1, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        simplify_mul_constant_with_one(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        assert!(diagram.nodes.get(&i3).is_none(), "check that the original MultiplyConstant node connected to the first port has been removed");
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
+
+    #[test]
+    fn test_simplify_exp_constant_with_one() {
+        // Create a simple diagram with a single constant addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 1)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i3 =  diagram.add_node(Node::ExponentiateConstant(BigInt::from(1), Port(i2, 0), Port(i1, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        simplify_exp_constant_with_one(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        assert!(diagram.nodes.get(&i3).is_none(), "check that the original ExponentiateConstant node connected to the first port has been removed");
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
     }
 
 }
