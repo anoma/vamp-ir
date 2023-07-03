@@ -1361,6 +1361,125 @@ pub fn simplify_mul_constant_with_one(diagram: &mut StringDiagram, address: Addr
     }
 }
 
+// If we have two MultiplyConstant in series, this creates the equations
+// Z = m * Y
+// Y = n * X
+// These can be fused into
+// Z = (m * n) * X
+pub fn fuse_multiplication_by_constant_nodes_hd_tl(diagram: &mut StringDiagram, address: Address, field_ops: &dyn FieldOps) {
+    // Extract information about the node at the given address
+    let (second_node_address, second_node_value, first_node_value, second_node_second_port) = {
+        match diagram.nodes.get(&address) {
+            Some(Node::MultiplyConstant(value, _, second_port)) => {
+                match diagram.nodes.get(&second_port.0) {
+                    Some(Node::MultiplyConstant(second_node_value, _, second_node_second_port)) if second_port.1 == 0 => {
+                        (second_port.0, second_node_value.clone(), value.clone(), second_node_second_port.clone())
+                    },
+                    _ => return, // The second port of the first node is not connected to the first port of another MultiplyConstant node
+                }
+            },
+            _ => return, // Not an MultiplyConstant node or doesn't exist
+        }
+    };
+
+    // Sum the values from the first and second node
+    let new_value = field_ops.infix(InfixOp::Multiply, first_node_value, second_node_value);
+
+    // Update the first node value in the diagram and set its second port to the second port of the second node
+    if let Some(node) = diagram.nodes.get_mut(&address) {
+        if let Node::MultiplyConstant(value, _, second_port) = node {
+            *value = new_value;
+            *second_port = second_node_second_port.clone();
+        }
+    }
+
+    // Update the target link of the second port to point to the first node
+    diagram.replace_port(&second_node_second_port, &Port(address, 1));
+
+    // Remove the second MultiplyConstant node from the diagram
+    diagram.nodes.remove(&second_node_address);
+}
+
+
+// If we have two MultiplyConstant connected by their heads, this means
+// Y = n * Z
+// Y = m * X
+// These can be fused into
+// Z = (m / n) * X
+// This order is important so n = 0 isn't possible
+// If we used X = (n / m) * Z, m might be 0, but we know n = 0 will have been delt with already.
+pub fn fuse_multiplication_by_constant_nodes_hd_hd(diagram: &mut StringDiagram, address: Address, field_ops: &dyn FieldOps) {
+    // Extract information about the node at the given address
+    let (second_node_address, second_node_value, first_node_value, second_node_second_port, second_port) = {
+        match diagram.nodes.get(&address) {
+            Some(Node::MultiplyConstant(value, first_port, second_port)) => {
+                match diagram.nodes.get(&first_port.0) {
+                    Some(Node::MultiplyConstant(second_node_value, _, second_node_second_port)) if first_port.1 == 0 => {
+                        (first_port.0, second_node_value.clone(), value.clone(), second_node_second_port.clone(), second_port.clone())
+                    },
+                    _ => return, // The second port of the first node is not connected to the first port of another MultiplyConstant node
+                }
+            },
+            _ => return, // Not an MultiplyConstant node or doesn't exist
+        }
+    };
+
+    // Ratio the values from the first and second node
+    let new_value = field_ops.infix(InfixOp::Divide, second_node_value, first_node_value);
+
+    // Update the first node value in the diagram
+    diagram.nodes.insert(address, Node::MultiplyConstant(new_value, second_port.clone(), second_node_second_port.clone()));
+
+    // Update the target link of the first port to point to the first node
+    diagram.replace_port(&second_port, &Port(address, 0));
+
+    // Update the target link of the second port to point to the first node
+    diagram.replace_port(&second_node_second_port, &Port(address, 1));
+
+    // Remove the second MultiplyConstant node from the diagram
+    diagram.nodes.remove(&second_node_address);
+}
+
+
+// If we have two MultiplyConstant connected by their tails, this means
+// Z = n * Y
+// X = m * Y
+// These can be fused into
+// X = (m / n) * Z
+// This order is important so n = 0 isn't possible
+// If we used Z = (n / m) * X, m might be 0, but we know n = 0 will have been delt with already.
+pub fn fuse_multiplication_by_constant_nodes_tl_tl(diagram: &mut StringDiagram, address: Address, field_ops: &dyn FieldOps) {
+    // Extract information about the node at the given address
+    let (second_node_address, second_node_value, first_node_value, second_node_first_port, first_port) = {
+        match diagram.nodes.get(&address) {
+            Some(Node::MultiplyConstant(value, first_port, second_port)) => {
+                match diagram.nodes.get(&second_port.0) {
+                    Some(Node::MultiplyConstant(second_node_value, second_node_first_port, _)) if second_port.1 == 1 => {
+                        (second_port.0, second_node_value.clone(), value.clone(), second_node_first_port.clone(), first_port.clone())
+                    },
+                    _ => return, // The second port of the first node is not connected to the first port of another MultiplyConstant node
+                }
+            },
+            _ => return, // Not an MultiplyConstant node or doesn't exist
+        }
+    };
+
+    // Ratio the values from the first and second node
+    let new_value = field_ops.infix(InfixOp::Divide, second_node_value, first_node_value);
+
+    // Update the first node value in the diagram
+    diagram.nodes.insert(address, Node::MultiplyConstant(new_value, second_node_first_port.clone(), first_port.clone()));
+
+    // Update the target link of the first port to point to the first node
+    diagram.replace_port(&second_node_first_port, &Port(address, 0));
+
+    // Update the target link of the second port to point to the first node
+    diagram.replace_port(&first_port, &Port(address, 1));
+
+    // Remove the second MultiplyConstant node from the diagram
+    diagram.nodes.remove(&second_node_address);
+}
+
 // If a constant, m, is connected to the second port of a multiplication by constant, n, node, this
 // produces the equations
 // Y = X ^ n
@@ -1509,7 +1628,6 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                             break;
                         }
                     }
-
                 }
                 Node::MultiplyConstant(value, port1, port2) => {
                     if *value == BigInt::from(0) {
@@ -1531,6 +1649,25 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                         mul_constant_constant_tail(diagram, *prime_node_address, field_ops);
                         changed = true;
                         break;
+                    }
+                    if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
+                        if port2.1 == 0 {
+                            fuse_multiplication_by_constant_nodes_hd_hd(diagram, *prime_node_address, field_ops);
+                            changed = true;
+                            break;
+                        }
+                    }
+                    if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+                        if port2.1 == 0 {
+                            fuse_multiplication_by_constant_nodes_hd_tl(diagram, *prime_node_address, field_ops);
+                            changed = true;
+                            break;
+                        }
+                        if port2.1 == 1 {
+                            fuse_multiplication_by_constant_nodes_tl_tl(diagram, *prime_node_address, field_ops);
+                            changed = true;
+                            break;
+                        }
                     }
                 }
                 Node::ExponentiateConstant(value, _, port2) => {
@@ -1991,41 +2128,41 @@ mod tests {
         assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
     }
     
-    // #[test]
-    // fn test_mul_constant_constant_head() {
-    //     // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-    //     let mut diagram = StringDiagram::new();
-    //     let i1 =  diagram.add_node(Node::Constant(BigInt::from(16), Port(2, 0)));
-    //     let i2 =  diagram.add_node(Node::Unrestricted(Port(2, 1)));
-    //     let i3 =  diagram.add_node(Node::MultiplyConstant(BigInt::from(32), Port(i1, 0), Port(i2, 0)));
+    #[test]
+    fn test_mul_constant_constant_head() {
+        // Create a simple diagram with a single constant addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Constant(BigInt::from(15), Port(2, 0)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(2, 1)));
+        let i3 =  diagram.add_node(Node::MultiplyConstant(BigInt::from(3), Port(i1, 0), Port(i2, 0)));
 
-    //     assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
 
-    //     let node_count = diagram.nodes.len();
+        let node_count = diagram.nodes.len();
 
-    //     mul_constant_constant_head(&mut diagram, i3);
+        mul_constant_constant_head(&mut diagram, i3, &());
 
-    //     assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
 
-    //     // Check the updated diagram
-    //     // First, check that the MultiplyConstant node at address i3 has been replaced with a Constant node of value -16.
-    //     if let Some(node) = diagram.nodes.get(&i3) {
-    //         match node {
-    //             Node::Constant(value, port) => {
-    //                 assert_eq!(value, &BigInt::from(16/32));
-    //                 assert_eq!(port, &Port(i2, 0));
-    //             }
-    //             _ => panic!("Node is not a Constant node."),
-    //         }
-    //     } else {
-    //         panic!("Node at address i3 does not exist.");
-    //     }
+        // Check the updated diagram
+        // First, check that the MultiplyConstant node at address i3 has been replaced with a Constant node of value -16.
+        if let Some(node) = diagram.nodes.get(&i3) {
+            match node {
+                Node::Constant(value, port) => {
+                    assert_eq!(value, &BigInt::from(5));
+                    assert_eq!(port, &Port(i2, 0));
+                }
+                _ => panic!("Node is not a Constant node."),
+            }
+        } else {
+            panic!("Node at address i3 does not exist.");
+        }
 
-    //     // Next, check that the original Constant node connected to the first port has been removed.
-    //     assert!(diagram.nodes.get(&i1).is_none());
+        // Next, check that the original Constant node connected to the first port has been removed.
+        assert!(diagram.nodes.get(&i1).is_none());
 
-    //     assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
-    // }
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
 
     #[test]
     fn test_mul_constant_constant_tail() {
@@ -2359,5 +2496,106 @@ mod tests {
         assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
     }
 
+    #[test]
+    fn test_fuse_multiplication_by_constant_nodes_hd_tl() {
+        // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0)));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1)));
+        let i3 = diagram.add_node(Node::MultiplyConstant(BigInt::from(10), Port(i1, 0), Port(3, 0)));
+        let i4 = diagram.add_node(Node::MultiplyConstant(BigInt::from(12), Port(2, 1), Port(i2, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        fuse_multiplication_by_constant_nodes_hd_tl(&mut diagram, i3, &());
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        if let Some(node) = diagram.nodes.get(&i3) {
+            match node {
+                Node::MultiplyConstant(value, _, port) => {
+                    assert_eq!(value, &BigInt::from(120));
+                    assert_eq!(port, &Port(i2, 0));
+                }
+                _ => panic!("Node is not an MultiplyConstant node."),
+            }
+        } else {
+            panic!("Node at address i3 does not exist.");
+        }
+
+        assert!(diagram.nodes.get(&i4).is_none(), "check that the second MultiplyConstant node connected to the first port has been removed");
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
+
+    #[test]
+    fn test_fuse_multiplication_by_constant_nodes_hd_hd() {
+        // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1)));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1)));
+        let i3 = diagram.add_node(Node::MultiplyConstant(BigInt::from(3), Port(3, 0), Port(i1, 0)));
+        let i4 = diagram.add_node(Node::MultiplyConstant(BigInt::from(15), Port(2, 0), Port(i2, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        fuse_multiplication_by_constant_nodes_hd_hd(&mut diagram, i3, &());
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        if let Some(node) = diagram.nodes.get(&i3) {
+            match node {
+                Node::MultiplyConstant(value, _, port) => {
+                    assert_eq!(value, &BigInt::from(5));
+                    assert_eq!(port, &Port(i2, 0));
+                }
+                _ => panic!("Node is not an MultiplyConstant node."),
+            }
+        } else {
+            panic!("Node at address i3 does not exist.");
+        }
+
+        assert!(diagram.nodes.get(&i4).is_none(), "check that the second MultiplyConstant node connected to the first port has been removed");
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
+
+    #[test]
+    fn test_fuse_multiplication_by_constant_nodes_tl_tl() {
+        // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0)));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 0)));
+        let i3 = diagram.add_node(Node::MultiplyConstant(BigInt::from(3), Port(i1, 0), Port(3, 1)));
+        let i4 = diagram.add_node(Node::MultiplyConstant(BigInt::from(15), Port(i2, 0), Port(2, 1)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        fuse_multiplication_by_constant_nodes_tl_tl(&mut diagram, i3, &());
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        if let Some(node) = diagram.nodes.get(&i3) {
+            match node {
+                Node::MultiplyConstant(value, port, _) => {
+                    assert_eq!(value, &BigInt::from(5));
+                    assert_eq!(port, &Port(i2, 0));
+                }
+                _ => panic!("Node is not an MultiplyConstant node."),
+            }
+        } else {
+            panic!("Node at address i3 does not exist.");
+        }
+
+        assert!(diagram.nodes.get(&i4).is_none(), "check that the second MultiplyConstant node connected to the first port has been removed");
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
     
 }

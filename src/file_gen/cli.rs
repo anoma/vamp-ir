@@ -101,7 +101,7 @@ impl FieldOps for () {
             InfixOp::Add => a + b,
             InfixOp::Subtract => a - b,
             InfixOp::Multiply => a * b,
-            InfixOp::Divide => panic!("cannot evaluate Divide expression"),
+            InfixOp::Divide => a / b,
             InfixOp::DivideZ => panic!("cannot evaluate DivideZ expression"),
             InfixOp::IntDivide => a / b,
             InfixOp::Modulo => a % b,
