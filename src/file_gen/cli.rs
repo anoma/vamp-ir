@@ -1,7 +1,7 @@
 use crate::ast::{Expr, InfixOp, Module, Pat, Variable};
 use crate::error::Error;
 use crate::transform::{collect_module_variables, compile, FieldOps};
-//use crate::string::*;
+use crate::string::simplify_3ac;
 
 use serde_json::Map;
 use std::collections::{HashMap, HashSet};
@@ -365,15 +365,9 @@ pub fn dump_equations_mathematica(
         input_ids.insert(id);
     }
 
-    println!("Defs {:?}", module_3ac.exprs);
+    let simp_expr = simplify_3ac(module_3ac.exprs.clone(), &input_ids);
 
-    //println!("Defs {:?}", input_ids);
-
-    //let str_diag = build_string_diagram(module_3ac.exprs.clone(), &input_ids);
-    //let new_exprs = convert_to_3ac(&str_diag);
-//    println!("Diag Well Formed: {}", str_diag.is_well_formed());
-
-    for (index, expr) in module_3ac.exprs.iter().enumerate() {
+    for (index, expr) in simp_expr.iter().enumerate() {
         write!(writer, "  ")?;
 
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {

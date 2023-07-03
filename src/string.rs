@@ -933,6 +933,106 @@ pub fn fuse_multiplication_nodes(diagram: &mut StringDiagram, prime_node_address
     }
 }
 
+pub fn simplify_string_diagram(diagram: &mut StringDiagram) {
+    let mut changed = true;
+    
+    while changed {
+        changed = false;
+        
+        // iterate through a snapshot of the nodes in the diagram
+        let current_nodes = diagram.nodes.clone();
+        for (prime_node_address, node) in current_nodes.iter() {
+            match node {
+                Node::Equality(_, ports) => {
+                    for (port_index, target_port) in ports.iter().enumerate() {
+                        if let Some(Node::Equality(_, _)) = diagram.nodes.get(&target_port.0) {
+                            // Fuse equality nodes
+                            fuse_equality_nodes(diagram, *prime_node_address, port_index);
+                            changed = true;
+                            break;
+                        }
+                    }
+                },
+                Node::Addition(ports) => {
+                    for (port_index, target_port) in ports.iter().enumerate() {
+                        if port_index > 0 {
+                            if let Some(Node::Addition(_)) = diagram.nodes.get(&target_port.0) {
+                                if target_port.1 == 0 {
+                                    // Fuse addition nodes
+                                    fuse_addition_nodes(diagram, *prime_node_address, port_index);
+                                    changed = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                },
+                Node::Multiplication(ports) => {
+                    for (port_index, target_port) in ports.iter().enumerate() {
+                        if port_index > 0 {
+                            if let Some(Node::Multiplication(_)) = diagram.nodes.get(&target_port.0) {
+                                if target_port.1 == 0 {
+                                    // Fuse multiplication nodes
+                                    fuse_multiplication_nodes(diagram, *prime_node_address, port_index);
+                                    changed = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                },
+                _ => {}
+            }
+            
+            // If there was a change, break from the inner loop to restart the outer loop
+            if changed {
+                break;
+            }
+        }
+    }
+}
+
+// Ensure there aren't any additions/multiplications with more than 2 inputs
+pub fn prep_for_3ac(diagram: &mut StringDiagram) {
+    let mut changed = true;
+
+    while changed {
+        changed = false;
+
+        // iterate through a snapshot of the nodes in the diagram
+        let current_nodes = diagram.nodes.clone();
+        for (address, node) in current_nodes.iter() {
+            match node {
+                Node::Addition(ports) => {
+                    // If there are more than three ports in the addition node, decompose it
+                    if ports.len() > 3 {
+                        decompose_addition_node(diagram, *address);
+                        changed = true;
+                        break;
+                    }
+                },
+                Node::Multiplication(ports) => {
+                    // If there are more than three ports in the multiplication node, decompose it
+                    if ports.len() > 3 {
+                        decompose_multiplication_node(diagram, *address);
+                        changed = true;
+                        break;
+                    }
+                },
+                _ => {}
+            }
+        }
+    }
+}
+
+pub fn simplify_3ac(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> Vec<TExpr> {
+    let mut diag = build_string_diagram(equations, input_ids);
+    simplify_string_diagram(&mut diag);
+    prep_for_3ac(&mut diag);
+    convert_to_3ac(&diag)
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
