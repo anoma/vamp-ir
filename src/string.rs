@@ -835,7 +835,12 @@ pub fn fuse_equality_nodes(diagram: &mut StringDiagram, prime_node_address: Addr
     }
 }
 
-pub fn fuse_addition_nodes(diagram: &mut StringDiagram, prime_node_address: Address, port_index: PortIndex) {
+// If we have
+// X = Y + Z + ... + W + ...
+// W = A + B + ...
+// We can fuse them into
+// X = Y + Z + ... + A + B + ...
+pub fn fuse_addition_nodes_basic(diagram: &mut StringDiagram, prime_node_address: Address, port_index: PortIndex) {
     // Extract information about the first node
     let (second_node_address, first_node_ports) = {
         if let Some(Node::Addition(ports)) = diagram.nodes.get_mut(&prime_node_address) {
@@ -888,7 +893,34 @@ pub fn fuse_addition_nodes(diagram: &mut StringDiagram, prime_node_address: Addr
     }
 }
 
-pub fn fuse_multiplication_nodes(diagram: &mut StringDiagram, prime_node_address: Address, port_index: PortIndex) {
+// If we have X = Y expressed through an addition node
+// In other words, the sum of all the inputs when there's only one input
+// The addition node can be removed.
+pub fn simplify_binary_addition_node(diagram: &mut StringDiagram, address: Address) {
+    // Extract information about the node at the given address
+    let (first_port_target, second_port_target, is_binary_addition) = match diagram.nodes.get(&address) {
+        Some(Node::Addition(ports)) if ports.len() == 2 => 
+            (ports[0].clone(), ports[1].clone(), true),
+        _ => return // return if not applicable
+    };
+
+    // If it is an Addition node with exactly two ports
+    if is_binary_addition {
+        // Remove the Addition node from the diagram
+        diagram.nodes.remove(&address);
+
+        // Update the target links of both ports to point at each other
+        diagram.replace_port(&first_port_target, &second_port_target);
+        diagram.replace_port(&second_port_target, &first_port_target);
+    }
+}
+
+// If we have
+// X = Y * Z * ... * W * ...
+// W = A * B * ...
+// We can fuse them into
+// X = Y * Z * ... * A * B * ...
+pub fn fuse_multiplication_nodes_basic(diagram: &mut StringDiagram, prime_node_address: Address, port_index: PortIndex) {
     // Extract information about the first node
     let (second_node_address, first_node_ports) = {
         if let Some(Node::Multiplication(ports)) = diagram.nodes.get_mut(&prime_node_address) {
@@ -938,6 +970,28 @@ pub fn fuse_multiplication_nodes(diagram: &mut StringDiagram, prime_node_address
     // Update the target ports in the diagram
     for (index, port) in new_ports.iter().enumerate() {
         diagram.replace_port(port, &Port(prime_node_address, index));
+    }
+}
+
+// If we have X = Y expressed through a multiplication node
+// In other words, the product of all the inputs when there's only one input
+// The multiplication node can be removed.
+pub fn simplify_binary_multiplication_node(diagram: &mut StringDiagram, address: Address) {
+    // Extract information about the node at the given address
+    let (first_port_target, second_port_target, is_binary_multiplication) = match diagram.nodes.get(&address) {
+        Some(Node::Multiplication(ports)) if ports.len() == 2 => 
+            (ports[0].clone(), ports[1].clone(), true),
+        _ => return // return if not applicable
+    };
+
+    // If it is an Multiplication node with exactly two ports
+    if is_binary_multiplication {
+        // Remove the Multiplication node from the diagram
+        diagram.nodes.remove(&address);
+
+        // Update the target links of both ports to point at each other
+        diagram.replace_port(&first_port_target, &second_port_target);
+        diagram.replace_port(&second_port_target, &first_port_target);
     }
 }
 
@@ -1264,12 +1318,17 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                     }
                 }
                 Node::Addition(ports) => {
+                    if ports.len() == 2 {
+                        simplify_binary_addition_node(diagram, *prime_node_address);
+                        changed = true;
+                        break;
+                    }
                     for (port_index, target_port) in ports.iter().enumerate() {
                         if port_index > 0 {
                             if let Some(Node::Addition(_)) = diagram.nodes.get(&target_port.0) {
                                 if target_port.1 == 0 {
                                     // Fuse addition nodes
-                                    fuse_addition_nodes(diagram, *prime_node_address, port_index);
+                                    fuse_addition_nodes_basic(diagram, *prime_node_address, port_index);
                                     changed = true;
                                     break;
                                 }
@@ -1278,12 +1337,17 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                     }
                 }
                 Node::Multiplication(ports) => {
+                    if ports.len() == 2 {
+                        simplify_binary_multiplication_node(diagram, *prime_node_address);
+                        changed = true;
+                        break;
+                    }
                     for (port_index, target_port) in ports.iter().enumerate() {
                         if port_index > 0 {
                             if let Some(Node::Multiplication(_)) = diagram.nodes.get(&target_port.0) {
                                 if target_port.1 == 0 {
                                     // Fuse multiplication nodes
-                                    fuse_multiplication_nodes(diagram, *prime_node_address, port_index);
+                                    fuse_multiplication_nodes_basic(diagram, *prime_node_address, port_index);
                                     changed = true;
                                     break;
                                 }
@@ -1495,7 +1559,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        fuse_addition_nodes(&mut diagram, addr1, 1);
+        fuse_addition_nodes_basic(&mut diagram, addr1, 1);
 
         assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
 
@@ -1525,7 +1589,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        fuse_multiplication_nodes(&mut diagram, addr1, 1);
+        fuse_multiplication_nodes_basic(&mut diagram, addr1, 1);
 
         assert!(diagram.is_well_formed(), "Check that the modified diagram still makes sense");
 
@@ -2008,4 +2072,49 @@ mod tests {
         assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
     }
 
+    #[test]
+    fn test_simplify_binary_addition_node() {
+        // Create a simple diagram with a single constant addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 1)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i3 =  diagram.add_node(Node::Addition(vec![Port(i2, 0), Port(i1, 0)]));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        simplify_binary_addition_node(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        assert!(diagram.nodes.get(&i3).is_none(), "check that the original ExponentiateConstant node connected to the first port has been removed");
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
+
+    #[test]
+    fn test_simplify_binary_multiplication_node() {
+        // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 1)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i3 =  diagram.add_node(Node::Multiplication(vec![Port(i2, 0), Port(i1, 0)]));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        simplify_binary_multiplication_node(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        assert!(diagram.nodes.get(&i3).is_none(), "check that the original ExponentiateConstant node connected to the first port has been removed");
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
 }
