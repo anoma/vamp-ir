@@ -980,9 +980,74 @@ pub fn unrestricted_unary_simplification(diagram: &mut StringDiagram, address: A
     }
 }
 
+// If a constant, m, is connected to the first port of an addition by constant, n, node, this
+// produces the equations
+// Y = m
+// Y = n + X
+// These can be combined into
+// X = m - n
+pub fn add_constant_constant_head(diagram: &mut StringDiagram, address: Address) {
+    // Extract the necessary data
+    let (n, first_port, second_port) = 
+        if let Some(Node::AddConstant(n, first_port, second_port)) = diagram.nodes.get(&address) {
+            (n.clone(), first_port.clone(), second_port.clone())
+        } else {
+            return; // Exit if it is not an AddConstant node
+        };
+
+    let m = if let Some(Node::Constant(m, _)) = diagram.nodes.get(&first_port.0) {
+        m.clone()
+    } else {
+        return; // Exit if the target node is not a Constant node
+    };
+    
+    // Now that the necessary data is extracted, perform the mutable operations
+    let new_constant_value = m - n;
+
+    // Replace the AddConstant node with the new constant node
+    diagram.nodes.insert(address, Node::Constant(new_constant_value, second_port.clone()));
+
+    // Update the target link of the second port of the AddConstant node
+    diagram.replace_port(&second_port, &Port(address, 0));
+
+    // Remove the original constant node connected to the first port
+    diagram.nodes.remove(&first_port.0);
+}
 
 
+// If a constant, m, is connected to the first port of an addition by constant, n, node, this
+// produces the equations
+// Y = n + X
+// X = m
+// These can be combined into
+// Y = n + m
+pub fn add_constant_constant_tail(diagram: &mut StringDiagram, address: Address) {
+    // Extract the necessary data
+    let (n, first_port, second_port) = 
+        if let Some(Node::AddConstant(n, first_port, second_port)) = diagram.nodes.get(&address) {
+            (n.clone(), first_port.clone(), second_port.clone())
+        } else {
+            return; // Exit if it is not an AddConstant node
+        };
 
+    let m = if let Some(Node::Constant(m, _)) = diagram.nodes.get(&second_port.0) {
+        m.clone()
+    } else {
+        return; // Exit if the target node is not a Constant node
+    };
+    
+    // Now that the necessary data is extracted, perform the mutable operations
+    let new_constant_value = n + m;
+
+    // Replace the AddConstant node with the new constant node
+    diagram.nodes.insert(address, Node::Constant(new_constant_value, first_port.clone()));
+
+    // Update the target link of the second port of the AddConstant node
+    diagram.replace_port(&first_port, &Port(address, 0));
+
+    // Remove the original constant node connected to the first port
+    diagram.nodes.remove(&second_port.0);
+}
 
 pub fn simplify_string_diagram(diagram: &mut StringDiagram) {
     let mut changed = true;
@@ -1030,6 +1095,18 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram) {
                                 }
                             }
                         }
+                    }
+                }
+                Node::AddConstant(_, port1, port2) => {
+                    if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
+                        add_constant_constant_head(diagram, *prime_node_address);
+                        changed = true;
+                        break;
+                    }
+                    if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
+                        add_constant_constant_tail(diagram, *prime_node_address);
+                        changed = true;
+                        break;
                     }
                 }
                 Node::Constant(_, port) => {
@@ -1303,7 +1380,7 @@ mod tests {
 
     #[test]
     fn test_constant_constant_eq() {
-        // Create a simple diagram with a single multiplication node and a few ancillary nodes.
+        // Create a simple diagram with a single pair of interacting constants and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 =  diagram.add_node(Node::Unrestricted(Port(1, 0)));
         diagram.add_node(Node::Unrestricted(Port(i1, 0)));
@@ -1326,7 +1403,7 @@ mod tests {
 
     #[test]
     fn test_constant_constant_neq() {
-        // Create a simple diagram with a single multiplication node and a few ancillary nodes.
+        // Create a simple diagram with a single pair of interacting constants and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 =  diagram.add_node(Node::Unrestricted(Port(1, 0)));
         diagram.add_node(Node::Unrestricted(Port(i1, 0)));
@@ -1356,7 +1433,7 @@ mod tests {
 
     #[test]
     fn test_unrestricted_constant() {
-        // Create a simple diagram with a single multiplication node and a few ancillary nodes.
+        // Create a simple diagram with a single interacting constant and unrestricted and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 =  diagram.add_node(Node::Unrestricted(Port(1, 0)));
         diagram.add_node(Node::Unrestricted(Port(i1, 0)));
@@ -1379,7 +1456,7 @@ mod tests {
 
     #[test]
     fn test_unrestricted_unrestricted() {
-        // Create a simple diagram with a single multiplication node and a few ancillary nodes.
+        // Create a simple diagram with interacting unrestricted nodes and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 =  diagram.add_node(Node::Unrestricted(Port(1, 0)));
         diagram.add_node(Node::Unrestricted(Port(i1, 0)));
@@ -1400,4 +1477,77 @@ mod tests {
         assert_eq!(diagram.nodes.len() + 2, node_count, "Node count should have decreased by 2");
     }
     
+    #[test]
+    fn test_add_constant_constant_head() {
+        // Create a simple diagram with a single constant addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Constant(BigInt::from(16), Port(2, 0)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(2, 1)));
+        let i3 =  diagram.add_node(Node::AddConstant(BigInt::from(32), Port(i1, 0), Port(i2, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        add_constant_constant_head(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        // Check the updated diagram
+        // First, check that the AddConstant node at address i3 has been replaced with a Constant node of value -16.
+        if let Some(node) = diagram.nodes.get(&i3) {
+            match node {
+                Node::Constant(value, port) => {
+                    assert_eq!(value, &BigInt::from(-16));
+                    assert_eq!(port, &Port(i2, 0));
+                }
+                _ => panic!("Node is not a Constant node."),
+            }
+        } else {
+            panic!("Node at address i3 does not exist.");
+        }
+
+        // Next, check that the original Constant node connected to the first port has been removed.
+        assert!(diagram.nodes.get(&i1).is_none());
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
+
+    #[test]
+    fn test_add_constant_constant_tail() {
+        // Create a simple diagram with a single constant addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 =  diagram.add_node(Node::Constant(BigInt::from(16), Port(2, 1)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(2, 0)));
+        let i3 =  diagram.add_node(Node::AddConstant(BigInt::from(32), Port(i2, 0), Port(i1, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        add_constant_constant_tail(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        // Check the updated diagram
+        // First, check that the AddConstant node at address i3 has been replaced with a Constant node of value 48.
+        if let Some(node) = diagram.nodes.get(&i3) {
+            match node {
+                Node::Constant(value, port) => {
+                    assert_eq!(value, &BigInt::from(48));
+                    assert_eq!(port, &Port(i2, 0));
+                }
+                _ => panic!("Node is not a Constant node."),
+            }
+        } else {
+            panic!("Node at address i3 does not exist.");
+        }
+
+        // Next, check that the original Constant node connected to the first port has been removed.
+        assert!(diagram.nodes.get(&i1).is_none());
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
+
+
 }
