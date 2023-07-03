@@ -1535,6 +1535,52 @@ pub fn simplify_exp_constant_with_one(diagram: &mut StringDiagram, address: Addr
     }
 }
 
+
+// If we have two MultiplyConstant in series, this creates the equations
+// Z = Y ^ m
+// Y = X ^ n
+// These can be fused into
+// Z = X ^ (m * n)
+// So long as m and n are positive. In a finite field, this is just being nonzero.
+pub fn fuse_exponentiation_by_constant_nodes_hd_tl(diagram: &mut StringDiagram, address: Address, field_ops: &dyn FieldOps) {
+    // Extract information about the node at the given address
+    let (second_node_address, second_node_value, first_node_value, second_node_second_port) = {
+        match diagram.nodes.get(&address) {
+            Some(Node::ExponentiateConstant(value, _, second_port)) => {
+                match diagram.nodes.get(&second_port.0) {
+                    Some(Node::ExponentiateConstant(second_node_value, _, second_node_second_port)) if second_port.1 == 0 => {
+                        if *second_node_value != BigInt::from(0) && *value != BigInt::from(0) {
+                            (second_port.0, second_node_value.clone(), value.clone(), second_node_second_port.clone())
+                        } else {
+                            return
+                        }
+                    },
+                    _ => return, // The second port of the first node is not connected to the first port of another ExponentiateConstant node
+                }
+            },
+            _ => return, // Not an ExponentiateConstant node or doesn't exist
+        }
+    };
+
+    // Sum the values from the first and second node
+    let new_value = field_ops.infix(InfixOp::Multiply, first_node_value, second_node_value);
+
+    // Update the first node value in the diagram and set its second port to the second port of the second node
+    if let Some(node) = diagram.nodes.get_mut(&address) {
+        if let Node::ExponentiateConstant(value, _, second_port) = node {
+            *value = new_value;
+            *second_port = second_node_second_port.clone();
+        }
+    }
+
+    // Update the target link of the second port to point to the first node
+    diagram.replace_port(&second_node_second_port, &Port(address, 1));
+
+    // Remove the second ExponentiateConstant node from the diagram
+    diagram.nodes.remove(&second_node_address);
+}
+
+
 pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps) {
     let mut changed = true;
     
@@ -1680,6 +1726,13 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                         exp_constant_constant_tail(diagram, *prime_node_address, field_ops);
                         changed = true;
                         break;
+                    }
+                    if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+                        if port2.1 == 0 {
+                            fuse_exponentiation_by_constant_nodes_hd_tl(diagram, *prime_node_address, field_ops);
+                            changed = true;
+                            break;
+                        }
                     }
                 }
                 Node::Constant(_, port) => {
@@ -2598,4 +2651,37 @@ mod tests {
         assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
     }
     
+    #[test]
+    fn test_fuse_exponentiation_by_constant_nodes_hd_tl() {
+        // Create a simple diagram with a single constant exponentiation node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0)));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1)));
+        let i3 = diagram.add_node(Node::ExponentiateConstant(BigInt::from(10), Port(i1, 0), Port(3, 0)));
+        let i4 = diagram.add_node(Node::ExponentiateConstant(BigInt::from(12), Port(2, 1), Port(i2, 0)));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        fuse_exponentiation_by_constant_nodes_hd_tl(&mut diagram, i3, &());
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        if let Some(node) = diagram.nodes.get(&i3) {
+            match node {
+                Node::ExponentiateConstant(value, _, port) => {
+                    assert_eq!(value, &BigInt::from(120));
+                    assert_eq!(port, &Port(i2, 0));
+                }
+                _ => panic!("Node is not an ExponentiateConstant node."),
+            }
+        } else {
+            panic!("Node at address i3 does not exist.");
+        }
+
+        assert!(diagram.nodes.get(&i4).is_none(), "check that the second ExponentiateConstant node connected to the first port has been removed");
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
+    }
 }
