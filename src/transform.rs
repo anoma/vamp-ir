@@ -1304,6 +1304,7 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps, config: &Config) ->
     // Start doing basic optimizations
     copy_propagate(&mut module_3ac, &prover_defs);
     eliminate_dead_equalities(&mut module_3ac);
+    println!("\n\n{}", module_3ac);
 
     let mut file = File::create("/home/carlo/Documents/Work/test.ll").unwrap();
     let mut conc_c = 0;

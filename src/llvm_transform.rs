@@ -10,7 +10,7 @@ pub trait DisplayLLVM {
 impl DisplayLLVM for Module {
     fn display_llvm(&self, file: &mut File, con_c: &mut i32) {
         *con_c = 0;
-        write!(file, "define void @main() {{\nentry:\n").unwrap();
+        write!(file, "define i1 @main() {{\nentry:\n").unwrap();
         for var in &self.pubs {
             if let Some(name) = &var.name {
                 writeln!(file, "%{name}{}p = alloca i64", var.id).unwrap();
@@ -28,7 +28,13 @@ impl DisplayLLVM for Module {
         for expr in &self.exprs {
             expr.display_llvm(file, con_c);
         }
-        write!(file, "ret void\n}}").unwrap();
+        writeln!(file, "%res1 = and i1 %constr1, %constr2").unwrap();
+        for i in 2..*con_c {
+            writeln!(file, "%res{} = and i1 %res{}, %constr{}", i, i-1, i+1).unwrap();
+        }
+
+        write!(file, "ret i1 %res{}\n}}\n", *con_c - 1).unwrap();
+
     }
 }
 
@@ -43,7 +49,14 @@ impl DisplayLLVM for LetBinding {
         match &self.1.v {
             Expr::Variable(var) => {
                 self.0.display_llvm(file, con_c);
-                writeln!(file, " = load i64, i64* %{}", var.id).unwrap();
+                writeln!(file, "p = alloca i64").unwrap();
+                write!(file, "store i64 %v{}, i64* ", var.id).unwrap();
+                self.0.display_llvm(file, con_c);
+                writeln!(file, "p").unwrap();
+                self.0.display_llvm(file, con_c);
+                write!(file, "= load i64, i64* ").unwrap();
+                self.0.display_llvm(file, con_c);
+                writeln!(file, "p").unwrap();
             }
             Expr::Constant(val) => {
                 self.0.display_llvm(file, con_c);
