@@ -1,7 +1,7 @@
 use crate::ast::{Expr, InfixOp, Module, Pat, Variable};
 use crate::error::Error;
-use crate::transform::{collect_module_variables, compile, FieldOps};
 use crate::string::simplify_3ac;
+use crate::transform::{collect_module_variables, compile, FieldOps};
 
 use serde_json::Map;
 use std::collections::{HashMap, HashSet};
@@ -396,12 +396,13 @@ pub fn dump_equations_mathematica(
                 // a = c, for variables a and c
                 (Expr::Variable(_), Expr::Negate(var)) => {
                     if let Expr::Variable(_) = var.v {
-                    write!(
-                        writer,
-                        "{} == - {}",
-                        atom_to_string(&left.v),
-                        atom_to_string(&var.v)
-                    )?;}
+                        write!(
+                            writer,
+                            "{} == - {}",
+                            atom_to_string(&left.v),
+                            atom_to_string(&var.v)
+                        )?;
+                    }
                 }
 
                 // a = b op c, for variable a
