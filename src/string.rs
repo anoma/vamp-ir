@@ -901,21 +901,18 @@ pub fn fuse_addition_nodes_basic(diagram: &mut StringDiagram, prime_node_address
 // The addition node can be removed.
 pub fn simplify_binary_addition_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
-    let (first_port_target, second_port_target, is_binary_addition) = match diagram.nodes.get(&address) {
+    let (first_port_target, second_port_target) = match diagram.nodes.get(&address) {
         Some(Node::Addition(ports)) if ports.len() == 2 => 
-            (ports[0].clone(), ports[1].clone(), true),
+            (ports[0].clone(), ports[1].clone(),),
         _ => return // return if not applicable
     };
 
-    // If it is an Addition node with exactly two ports
-    if is_binary_addition {
-        // Remove the Addition node from the diagram
-        diagram.nodes.remove(&address);
+    // Remove the Addition node from the diagram
+    diagram.nodes.remove(&address);
 
-        // Update the target links of both ports to point at each other
-        diagram.replace_port(&first_port_target, &second_port_target);
-        diagram.replace_port(&second_port_target, &first_port_target);
-    }
+    // Update the target links of both ports to point at each other
+    diagram.replace_port(&first_port_target, &second_port_target);
+    diagram.replace_port(&second_port_target, &first_port_target);
 }
 
 // If we have
@@ -981,21 +978,18 @@ pub fn fuse_multiplication_nodes_basic(diagram: &mut StringDiagram, prime_node_a
 // The multiplication node can be removed.
 pub fn simplify_binary_multiplication_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
-    let (first_port_target, second_port_target, is_binary_multiplication) = match diagram.nodes.get(&address) {
+    let (first_port_target, second_port_target) = match diagram.nodes.get(&address) {
         Some(Node::Multiplication(ports)) if ports.len() == 2 => 
-            (ports[0].clone(), ports[1].clone(), true),
+            (ports[0].clone(), ports[1].clone()),
         _ => return // return if not applicable
     };
 
-    // If it is an Multiplication node with exactly two ports
-    if is_binary_multiplication {
-        // Remove the Multiplication node from the diagram
-        diagram.nodes.remove(&address);
+    // Remove the Multiplication node from the diagram
+    diagram.nodes.remove(&address);
 
-        // Update the target links of both ports to point at each other
-        diagram.replace_port(&first_port_target, &second_port_target);
-        diagram.replace_port(&second_port_target, &first_port_target);
-    }
+    // Update the target links of both ports to point at each other
+    diagram.replace_port(&first_port_target, &second_port_target);
+    diagram.replace_port(&second_port_target, &first_port_target);
 }
 
 // If two constants are connected, they are either trivially true (of their values are equal)
@@ -1624,6 +1618,27 @@ pub fn simplify_equality_with_unrestricted(diagram: &mut StringDiagram, address:
     }
 }
 
+// If we have X = Y expressed with an unmarked equality node, that node can be removed.
+pub fn simplify_binary_equality_node(diagram: &mut StringDiagram, address: Address) {
+    // Extract information about the node at the given address
+    let (first_port_target, second_port_target) = match diagram.nodes.get(&address) {
+        Some(Node::Equality(vars, ports)) if ports.len() == 2 => 
+            if vars.len() == 0 {
+                (ports[0].clone(), ports[1].clone())
+            } else {
+                return // return if inputs exist (can't remove them)
+            }
+        _ => return // return if not applicable
+    };
+
+    // Remove the Addition node from the diagram
+    diagram.nodes.remove(&address);
+
+    // Update the target links of both ports to point at each other
+    diagram.replace_port(&first_port_target, &second_port_target);
+    diagram.replace_port(&second_port_target, &first_port_target);
+}
+
 pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps) {
     let mut changed = true;
     
@@ -1634,7 +1649,12 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
         let current_nodes = diagram.nodes.clone();
         for (prime_node_address, node) in current_nodes.iter() {
             match node {
-                Node::Equality(_, ports) => {
+                Node::Equality(vars, ports) => {
+                    if vars.len() == 0 {
+                        simplify_binary_equality_node(diagram, *prime_node_address);
+                        changed = true;
+                        break;
+                    }
                     for (port_index, target_port) in ports.iter().enumerate() {
                         if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
                             simplify_equality_with_unrestricted(diagram, *prime_node_address, port_index);
@@ -2467,7 +2487,7 @@ mod tests {
 
         assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
 
-        assert!(diagram.nodes.get(&i3).is_none(), "check that the original ExponentiateConstant node connected to the first port has been removed");
+        assert!(diagram.nodes.get(&i3).is_none(), "check that the original Addition node connected to the first port has been removed");
 
         assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
     }
@@ -2490,7 +2510,7 @@ mod tests {
 
         assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
 
-        assert!(diagram.nodes.get(&i3).is_none(), "check that the original ExponentiateConstant node connected to the first port has been removed");
+        assert!(diagram.nodes.get(&i3).is_none(), "check that the original Multiplication node connected to the first port has been removed");
 
         assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
     }
@@ -2758,5 +2778,28 @@ mod tests {
         } else {
             panic!("Expected Equality node!");
         }
+    }
+
+    #[test]
+    fn test_simplify_binary_equation_node() {
+        // Create a simple diagram with a single constant addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let i1 =  diagram.add_node(Node::Unrestricted(Port(4, 1)));
+        let i2 =  diagram.add_node(Node::Unrestricted(Port(4, 0)));
+        let i3 =  diagram.add_node(Node::Equality(vec![], vec![Port(i2, 0), Port(i1, 0)]));
+
+        assert!(diagram.is_well_formed(), "Check that the starting diagram makes sense");
+
+        let node_count = diagram.nodes.len();
+
+        simplify_binary_equality_node(&mut diagram, i3);
+
+        assert!(diagram.is_well_formed(), "Check that the diagram still makes sense");
+
+        assert!(diagram.nodes.get(&i3).is_none(), "check that the original Equality node connected to the first port has been removed");
+
+        assert_eq!(diagram.nodes.len() + 1, node_count, "Node count should have decreased by 1");
     }
 }
