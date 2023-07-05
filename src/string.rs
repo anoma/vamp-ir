@@ -2311,6 +2311,48 @@ fn simplify_addition_unrestricted(
     diagram.nodes.remove(&target_port.0);
 }
 
+fn delete_const_op_connected_to_unrestricted(
+    diagram: &mut StringDiagram,
+    address: Address,
+    port_index: PortIndex,
+) {
+    // Extract necessary information from the diagram
+    let (port1, port2) = match diagram.nodes.get(&address) {
+        Some(
+            Node::AddConstant(_, p1, p2)
+            | Node::MultiplyConstant(_, p1, p2)
+            | Node::ExponentiateConstant(_, p1, p2),
+        ) => {
+            if port_index == 0 || port_index == 1 {
+                (p1.clone(), p2.clone())
+            } else {
+                return;
+            }
+        }
+        _ => return,
+    };
+
+    // Determine if either of the ports is connected to an Unrestricted node
+    let is_port1_unrestricted = matches!(diagram.nodes.get(&port1.0), Some(Node::Unrestricted(_)));
+    let is_port2_unrestricted = matches!(diagram.nodes.get(&port2.0), Some(Node::Unrestricted(_)));
+
+    let (unrestricted_port, other_port) = if is_port1_unrestricted {
+        (port1, port2)
+    } else if is_port2_unrestricted {
+        (port2, port1)
+    } else {
+        return;
+    };
+
+    // At this point, one of the ports is connected to an Unrestricted node
+    // Update the diagram by connecting the other port to where the Unrestricted port was pointing
+    diagram.replace_port(&unrestricted_port, &other_port);
+    diagram.replace_port(&other_port, &unrestricted_port);
+
+    // Remove the AddConstant or MultiplyConstant node
+    diagram.nodes.remove(&address);
+}
+
 pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps) {
     let mut changed = true;
 
@@ -2474,6 +2516,24 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                         changed = true;
                         break;
                     }
+                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+                        delete_const_op_connected_to_unrestricted(
+                            diagram,
+                            *prime_node_address,
+                            port1.1,
+                        );
+                        changed = true;
+                        break;
+                    }
+                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
+                        delete_const_op_connected_to_unrestricted(
+                            diagram,
+                            *prime_node_address,
+                            port2.1,
+                        );
+                        changed = true;
+                        break;
+                    }
                     if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
                         if port2.1 == 0 {
                             fuse_addition_by_constant_nodes_hd_hd(
@@ -2527,6 +2587,26 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                         changed = true;
                         break;
                     }
+                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+                        delete_const_op_connected_to_unrestricted(
+                            diagram,
+                            *prime_node_address,
+                            port1.1,
+                        );
+                        changed = true;
+                        break;
+                    }
+                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
+                        if value != &BigInt::from(0) {
+                            delete_const_op_connected_to_unrestricted(
+                                diagram,
+                                *prime_node_address,
+                                port2.1,
+                            );
+                            changed = true;
+                            break;
+                        }
+                    }
                     if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
                         if port2.1 == 0 {
                             fuse_multiplication_by_constant_nodes_hd_hd(
@@ -2559,7 +2639,7 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                         }
                     }
                 }
-                Node::ExponentiateConstant(value, _, port2) => {
+                Node::ExponentiateConstant(value, port1, port2) => {
                     if *value == BigInt::from(1) {
                         simplify_exp_constant_with_one(diagram, *prime_node_address);
                         changed = true;
@@ -2570,6 +2650,18 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                         changed = true;
                         break;
                     }
+                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+                        if value != &BigInt::from(0) {
+                            delete_const_op_connected_to_unrestricted(
+                                diagram,
+                                *prime_node_address,
+                                port1.1,
+                            );
+                            changed = true;
+                            break;
+                        }
+                    }
+                    // ??? if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) ????
                     if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
                         if port2.1 == 0 {
                             fuse_exponentiation_by_constant_nodes_hd_tl(
@@ -4694,6 +4786,78 @@ mod tests {
             diagram.nodes.len(),
             node_count + 4 - 2,
             "Node count should have changed, 4 new const, 2 deleted nodes"
+        );
+    }
+
+    #[test]
+    fn test_simplify_addition_const_unrestricted_1() {
+        // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(2, 0)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let ia = diagram.add_node(Node::AddConstant(BigInt::from(15), Port(i1, 0), Port(4, 0)));
+        diagram.add_node(Node::Unrestricted(Port(3, 1)));
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the starting diagram makes sense"
+        );
+
+        let node_count = diagram.nodes.len();
+
+        delete_const_op_connected_to_unrestricted(&mut diagram, ia, 0);
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the diagram still makes sense"
+        );
+
+        assert!(
+            diagram.nodes.get(&ia).is_none(),
+            "check that the original AddConstant node has been removed"
+        );
+
+        assert_eq!(
+            diagram.nodes.len() + 1,
+            node_count,
+            "Node count should have one less"
+        );
+    }
+
+    #[test]
+    fn test_simplify_addition_const_unrestricted_2() {
+        // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(2, 0)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let ia = diagram.add_node(Node::AddConstant(BigInt::from(15), Port(i1, 0), Port(4, 0)));
+        diagram.add_node(Node::Unrestricted(Port(3, 1)));
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the starting diagram makes sense"
+        );
+
+        let node_count = diagram.nodes.len();
+
+        delete_const_op_connected_to_unrestricted(&mut diagram, ia, 1);
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the diagram still makes sense"
+        );
+
+        assert!(
+            diagram.nodes.get(&ia).is_none(),
+            "check that the original AddConstant node has been removed"
+        );
+
+        assert_eq!(
+            diagram.nodes.len() + 1,
+            node_count,
+            "Node count should have one less"
         );
     }
 }
