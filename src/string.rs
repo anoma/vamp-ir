@@ -2082,26 +2082,26 @@ fn simplify_multiplication_const_multiplication(
     };
 
     let (value, first_port, second_port) = match diagram.nodes.get(&target_address) {
-        Some(Node::AddConstant(value, first_port, second_port)) => {
+        Some(Node::MultiplyConstant(value, first_port, second_port)) => {
             (value.clone(), first_port.clone(), second_port.clone())
         }
         _ => return,
     };
 
-    // If AddConstant node needs to be fliped, negate its value.
+    // If MultiplyConstant node needs to be fliped, negate its value.
     let new_value = if target_port_index == 1 {
         field_ops.infix(InfixOp::Divide, BigInt::from(1), value)
     } else {
         value
     };
 
-    // Whatever the head of the Multiplication node is pointing to should now point to the head of the AddConstant node.
+    // Whatever the head of the Multiplication node is pointing to should now point to the head of the MultiplyConstant node.
     diagram.replace_port(&old_head_port, &Port(target_address, 0));
 
-    // The head of the Multiplication node should now point to the tail of the AddConstant node.
+    // The head of the Multiplication node should now point to the tail of the MultiplyConstant node.
     diagram.replace_port(&Port(address, 0), &Port(target_address, 1));
 
-    // Make the necessary connection based on which port of the AddConstant node was connected to the Multiplication node.
+    // Make the necessary connection based on which port of the MultiplyConstant node was connected to the Multiplication node.
     if target_port_index == 0 {
         diagram.replace_port(&Port(address, port_index), &second_port);
         diagram.replace_port(&second_port, &Port(address, port_index));
@@ -2110,10 +2110,10 @@ fn simplify_multiplication_const_multiplication(
         diagram.replace_port(&first_port, &Port(address, port_index));
     };
 
-    // Insert the updated AddConstant node.
+    // Insert the updated MultiplyConstant node.
     diagram.nodes.insert(
         target_address,
-        Node::AddConstant(new_value, old_head_port, Port(address, 0)),
+        Node::MultiplyConstant(new_value, old_head_port, Port(address, 0)),
     );
 }
 
@@ -4056,7 +4056,7 @@ mod tests {
             Port(8, 0),
             Port(i5, 0),
         ]));
-        let ic = diagram.add_node(Node::AddConstant(
+        let ic = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(15),
             Port(ia, 3),
             Port(i4, 0),
@@ -4090,12 +4090,12 @@ mod tests {
 
         if let Some(node) = diagram.nodes.get(&ic) {
             match node {
-                Node::AddConstant(val, port1, port2) => {
+                Node::MultiplyConstant(val, port1, port2) => {
                     assert_eq!(port1, &Port(i1, 0));
                     assert_eq!(port2, &Port(ia, 0));
                     assert_eq!(val, &BigInt::from(15));
                 }
-                _ => panic!("Node is not an AddConstant node."),
+                _ => panic!("Node is not an MultiplyConstant node."),
             }
         } else {
             panic!("Node at address ic does not exist.");
@@ -4126,7 +4126,7 @@ mod tests {
             Port(8, 1),
             Port(i5, 0),
         ]));
-        let ic = diagram.add_node(Node::AddConstant(
+        let ic = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(15),
             Port(i4, 0),
             Port(ia, 3),
@@ -4160,12 +4160,12 @@ mod tests {
 
         if let Some(node) = diagram.nodes.get(&ic) {
             match node {
-                Node::AddConstant(val, port1, port2) => {
+                Node::MultiplyConstant(val, port1, port2) => {
                     assert_eq!(port1, &Port(i1, 0));
                     assert_eq!(port2, &Port(ia, 0));
                     assert_eq!(val, &BigInt::from(1 / 15));
                 }
-                _ => panic!("Node is not an AddConstant node."),
+                _ => panic!("Node is not an MultiplyConstant node."),
             }
         } else {
             panic!("Node at address ic does not exist.");
