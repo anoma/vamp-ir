@@ -151,12 +151,11 @@ fn get_or_create_equality_node(
     // Does this variable already have an address? If not, make one.
     let equality_address = *variable_addresses.entry(variable.id).or_insert_with(|| {
         // If we're looking at an input variable, store it.
-        let input_vec: Vec<Variable>;
-        if input_ids.contains(&variable.id) {
-            input_vec = vec![variable.clone()];
+        let input_vec = if input_ids.contains(&variable.id) {
+            vec![variable.clone()]
         } else {
-            input_vec = vec![];
-        }
+            vec![]
+        };
 
         diagram.add_node(Node::Equality(input_vec, Vec::new()))
     });
@@ -196,7 +195,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                     };
 
                     let (equality_address, new_port_index) = get_or_create_equality_node(
-                        &var,
+                        var,
                         Port(target_address, 0),
                         &mut diagram,
                         &mut variable_addresses,
@@ -229,14 +228,14 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                     };
 
                     let (equality_address1, new_port_index1) = get_or_create_equality_node(
-                        &var1,
+                        var1,
                         Port(target_address, 0),
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
                     );
                     let (equality_address2, new_port_index2) = get_or_create_equality_node(
-                        &var2,
+                        var2,
                         Port(target_address, 1),
                         &mut diagram,
                         &mut variable_addresses,
@@ -274,14 +273,14 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                         };
 
                         let (equality_address1, new_port_index1) = get_or_create_equality_node(
-                            &var1,
+                            var1,
                             Port(target_address, 0),
                             &mut diagram,
                             &mut variable_addresses,
                             input_ids,
                         );
                         let (equality_address2, new_port_index2) = get_or_create_equality_node(
-                            &var2,
+                            var2,
                             Port(target_address, 1),
                             &mut diagram,
                             &mut variable_addresses,
@@ -319,7 +318,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
 
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
-                                    &var,
+                                    var,
                                     Port(target_address, 1),
                                     &mut diagram,
                                     &mut variable_addresses,
@@ -346,7 +345,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                 ];
                             } else {
                                 let (address0, port_index0) = get_or_create_equality_node(
-                                    &var,
+                                    var,
                                     Port(target_address, 0),
                                     &mut diagram,
                                     &mut variable_addresses,
@@ -382,7 +381,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
 
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
-                                    &var,
+                                    var,
                                     Port(target_address, 1),
                                     &mut diagram,
                                     &mut variable_addresses,
@@ -407,7 +406,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                 ];
                             } else {
                                 let (address0, port_index0) = get_or_create_equality_node(
-                                    &var,
+                                    var,
                                     Port(target_address, 0),
                                     &mut diagram,
                                     &mut variable_addresses,
@@ -441,7 +440,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
 
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
-                                    &var,
+                                    var,
                                     Port(target_address, 1),
                                     &mut diagram,
                                     &mut variable_addresses,
@@ -466,7 +465,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                 ];
                             } else {
                                 let (address0, port_index0) = get_or_create_equality_node(
-                                    &var,
+                                    var,
                                     Port(target_address, 0),
                                     &mut diagram,
                                     &mut variable_addresses,
@@ -496,7 +495,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
 
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
-                                    &var,
+                                    var,
                                     Port(target_address, 1),
                                     &mut diagram,
                                     &mut variable_addresses,
@@ -519,7 +518,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                 ];
                             } else {
                                 let (address0, port_index0) = get_or_create_equality_node(
-                                    &var,
+                                    var,
                                     Port(target_address, 0),
                                     &mut diagram,
                                     &mut variable_addresses,
@@ -657,7 +656,7 @@ pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
     let port_vars = construct_port_vars(diagram);
     let mut expressions = Vec::new();
 
-    for (_, node) in &diagram.nodes {
+    for node in diagram.nodes.values() {
         match node {
             Node::Addition(ports) => {
                 // Additionns should already be split up, and trivial removed
@@ -845,8 +844,8 @@ pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
 
 pub fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
-    let (first_two_ports, mut remaining_ports) = if let Some(node) = diagram.nodes.get(&address) {
-        if let Node::Addition(ports) = node {
+    let (first_two_ports, mut remaining_ports) =
+        if let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
             if ports.len() > 3 {
                 (
                     vec![ports[0].clone(), ports[1].clone()],
@@ -857,10 +856,7 @@ pub fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
             }
         } else {
             return;
-        }
-    } else {
-        return;
-    };
+        };
 
     // Create a new addition node with the first two ports of the original node
     let new_node_ports = vec![
@@ -874,11 +870,9 @@ pub fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
     remaining_ports.insert(0, Port(new_address, 2));
 
     // Replace the node in the diagram with the updated node
-    if let Some(node) = diagram.nodes.get_mut(&address) {
-        if let Node::Addition(ports) = node {
-            ports.clear();
-            ports.extend_from_slice(&remaining_ports);
-        }
+    if let Some(Node::Addition(ports)) = diagram.nodes.get_mut(&address) {
+        ports.clear();
+        ports.extend_from_slice(&remaining_ports);
     }
 
     // Update the output and first inpuit link to point at the new node
@@ -904,8 +898,8 @@ pub fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) {
 
 pub fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
-    let (first_two_ports, mut remaining_ports) = if let Some(node) = diagram.nodes.get(&address) {
-        if let Node::Multiplication(ports) = node {
+    let (first_two_ports, mut remaining_ports) =
+        if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address) {
             if ports.len() > 3 {
                 (
                     vec![ports[0].clone(), ports[1].clone()],
@@ -916,10 +910,7 @@ pub fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) 
             }
         } else {
             return;
-        }
-    } else {
-        return;
-    };
+        };
 
     // Create a new multiplication node with the first two ports of the original node
     let new_node_ports = vec![
@@ -933,11 +924,9 @@ pub fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) 
     remaining_ports.insert(0, Port(new_address, 2));
 
     // Replace the node in the diagram with the updated node
-    if let Some(node) = diagram.nodes.get_mut(&address) {
-        if let Node::Multiplication(ports) = node {
-            ports.clear();
-            ports.extend_from_slice(&remaining_ports);
-        }
+    if let Some(Node::Multiplication(ports)) = diagram.nodes.get_mut(&address) {
+        ports.clear();
+        ports.extend_from_slice(&remaining_ports);
     }
 
     // Update the output and first inpuit link to point at the new node
@@ -991,7 +980,7 @@ pub fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) 
 
     // Create a new multiplication node
     let mut multiplication_ports = Vec::new();
-    multiplication_ports.push(p1.clone()); // Keep the first argument the same
+    multiplication_ports.push(p1); // Keep the first argument the same
     for i in 0..exp_value {
         // Point the multiplication ports to the equality ports
         multiplication_ports.push(Port(equality_address, i + 1));
@@ -1414,11 +1403,9 @@ pub fn fuse_addition_by_constant_nodes_hd_tl(
     let new_value = field_ops.infix(InfixOp::Add, first_node_value, second_node_value);
 
     // Update the first node value in the diagram and set its second port to the second port of the second node
-    if let Some(node) = diagram.nodes.get_mut(&address) {
-        if let Node::AddConstant(value, _, second_port) = node {
-            *value = new_value;
-            *second_port = second_node_second_port.clone();
-        }
+    if let Some(Node::AddConstant(value, _, second_port)) = diagram.nodes.get_mut(&address) {
+        *value = new_value;
+        *second_port = second_node_second_port.clone();
     }
 
     // Update the target link of the second port to point to the first node
@@ -1464,11 +1451,9 @@ pub fn fuse_addition_by_constant_nodes_hd_hd(
     let new_value = field_ops.infix(InfixOp::Subtract, first_node_value, second_node_value);
 
     // Update the first node value in the diagram and set its second port to the second port of the second node
-    if let Some(node) = diagram.nodes.get_mut(&address) {
-        if let Node::AddConstant(value, first_port, _) = node {
-            *value = new_value;
-            *first_port = second_node_second_port.clone();
-        }
+    if let Some(Node::AddConstant(value, first_port, _)) = diagram.nodes.get_mut(&address) {
+        *value = new_value;
+        *first_port = second_node_second_port.clone();
     }
 
     // Update the target link of the second port to point to the first node
@@ -1514,11 +1499,9 @@ pub fn fuse_addition_by_constant_nodes_tl_tl(
     let new_value = field_ops.infix(InfixOp::Subtract, first_node_value, second_node_value);
 
     // Update the first node value in the diagram and set its second port to the second port of the second node
-    if let Some(node) = diagram.nodes.get_mut(&address) {
-        if let Node::AddConstant(value, _, second_port) = node {
-            *value = new_value;
-            *second_port = second_node_first_port.clone();
-        }
+    if let Some(Node::AddConstant(value, _, second_port)) = diagram.nodes.get_mut(&address) {
+        *value = new_value;
+        *second_port = second_node_first_port.clone();
     }
 
     // Update the target link of the second port to point to the first node
@@ -1702,11 +1685,9 @@ pub fn fuse_multiplication_by_constant_nodes_hd_tl(
     let new_value = field_ops.infix(InfixOp::Multiply, first_node_value, second_node_value);
 
     // Update the first node value in the diagram and set its second port to the second port of the second node
-    if let Some(node) = diagram.nodes.get_mut(&address) {
-        if let Node::MultiplyConstant(value, _, second_port) = node {
-            *value = new_value;
-            *second_port = second_node_second_port.clone();
-        }
+    if let Some(Node::MultiplyConstant(value, _, second_port)) = diagram.nodes.get_mut(&address) {
+        *value = new_value;
+        *second_port = second_node_second_port.clone();
     }
 
     // Update the target link of the second port to point to the first node
@@ -1954,11 +1935,10 @@ pub fn fuse_exponentiation_by_constant_nodes_hd_tl(
     let new_value = field_ops.infix(InfixOp::Multiply, first_node_value, second_node_value);
 
     // Update the first node value in the diagram and set its second port to the second port of the second node
-    if let Some(node) = diagram.nodes.get_mut(&address) {
-        if let Node::ExponentiateConstant(value, _, second_port) = node {
-            *value = new_value;
-            *second_port = second_node_second_port.clone();
-        }
+    if let Some(Node::ExponentiateConstant(value, _, second_port)) = diagram.nodes.get_mut(&address)
+    {
+        *value = new_value;
+        *second_port = second_node_second_port.clone();
     }
 
     // Update the target link of the second port to point to the first node
@@ -2018,7 +1998,7 @@ pub fn simplify_binary_equality_node(diagram: &mut StringDiagram, address: Addre
     // Extract information about the node at the given address
     let (first_port_target, second_port_target) = match diagram.nodes.get(&address) {
         Some(Node::Equality(vars, ports)) if ports.len() == 2 => {
-            if vars.len() == 0 {
+            if vars.is_empty() {
                 (ports[0].clone(), ports[1].clone())
             } else {
                 return; // return if inputs exist (can't remove them)
@@ -2046,7 +2026,7 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
         for (prime_node_address, node) in current_nodes.iter() {
             match node {
                 Node::Equality(vars, ports) => {
-                    if vars.len() == 0 {
+                    if vars.is_empty() {
                         simplify_binary_equality_node(diagram, *prime_node_address);
                         changed = true;
                         break;
