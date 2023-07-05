@@ -2015,6 +2015,108 @@ pub fn simplify_binary_equality_node(diagram: &mut StringDiagram, address: Addre
     diagram.replace_port(&second_port_target, &first_port_target);
 }
 
+fn simplify_addition_const_addition(
+    diagram: &mut StringDiagram,
+    address: Address,
+    port_index: PortIndex,
+    field_ops: &dyn FieldOps,
+) {
+    // Extract the necessary information from the diagram.
+    let (old_head_port, target_address, target_port_index) = {
+        let ports = match diagram.nodes.get(&address) {
+            Some(Node::Addition(ports)) if port_index < ports.len() => ports,
+            _ => return,
+        };
+        (ports[0].clone(), ports[port_index].0, ports[port_index].1)
+    };
+
+    let (value, first_port, second_port) = match diagram.nodes.get(&target_address) {
+        Some(Node::AddConstant(value, first_port, second_port)) => {
+            (value.clone(), first_port.clone(), second_port.clone())
+        }
+        _ => return,
+    };
+
+    // If AddConstant node needs to be fliped, negate its value.
+    let new_value = if target_port_index == 1 {
+        field_ops.negate(value)
+    } else {
+        value
+    };
+
+    // Whatever the head of the Addition node is pointing to should now point to the head of the AddConstant node.
+    diagram.replace_port(&old_head_port, &Port(target_address, 0));
+
+    // The head of the Addition node should now point to the tail of the AddConstant node.
+    diagram.replace_port(&Port(address, 0), &Port(target_address, 1));
+
+    // Make the necessary connection based on which port of the AddConstant node was connected to the Addition node.
+    if target_port_index == 0 {
+        diagram.replace_port(&Port(address, port_index), &second_port);
+        diagram.replace_port(&second_port, &Port(address, port_index));
+    } else {
+        diagram.replace_port(&Port(address, port_index), &first_port);
+        diagram.replace_port(&first_port, &Port(address, port_index));
+    };
+
+    // Insert the updated AddConstant node.
+    diagram.nodes.insert(
+        target_address,
+        Node::AddConstant(new_value, old_head_port, Port(address, 0)),
+    );
+}
+
+fn simplify_multiplication_const_multiplication(
+    diagram: &mut StringDiagram,
+    address: Address,
+    port_index: PortIndex,
+    field_ops: &dyn FieldOps,
+) {
+    // Extract the necessary information from the diagram.
+    let (old_head_port, target_address, target_port_index) = {
+        let ports = match diagram.nodes.get(&address) {
+            Some(Node::Multiplication(ports)) if port_index < ports.len() => ports,
+            _ => return,
+        };
+        (ports[0].clone(), ports[port_index].0, ports[port_index].1)
+    };
+
+    let (value, first_port, second_port) = match diagram.nodes.get(&target_address) {
+        Some(Node::AddConstant(value, first_port, second_port)) => {
+            (value.clone(), first_port.clone(), second_port.clone())
+        }
+        _ => return,
+    };
+
+    // If AddConstant node needs to be fliped, negate its value.
+    let new_value = if target_port_index == 1 {
+        field_ops.infix(InfixOp::Divide, BigInt::from(1), value)
+    } else {
+        value
+    };
+
+    // Whatever the head of the Multiplication node is pointing to should now point to the head of the AddConstant node.
+    diagram.replace_port(&old_head_port, &Port(target_address, 0));
+
+    // The head of the Multiplication node should now point to the tail of the AddConstant node.
+    diagram.replace_port(&Port(address, 0), &Port(target_address, 1));
+
+    // Make the necessary connection based on which port of the AddConstant node was connected to the Multiplication node.
+    if target_port_index == 0 {
+        diagram.replace_port(&Port(address, port_index), &second_port);
+        diagram.replace_port(&second_port, &Port(address, port_index));
+    } else {
+        diagram.replace_port(&Port(address, port_index), &first_port);
+        diagram.replace_port(&first_port, &Port(address, port_index));
+    };
+
+    // Insert the updated AddConstant node.
+    diagram.nodes.insert(
+        target_address,
+        Node::AddConstant(new_value, old_head_port, Port(address, 0)),
+    );
+}
+
 pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps) {
     let mut changed = true;
 
@@ -2069,6 +2171,19 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                                     break;
                                 }
                             }
+                            if let Some(Node::AddConstant(_, _, _)) =
+                                diagram.nodes.get(&target_port.0)
+                            {
+                                // Propagate constant
+                                simplify_addition_const_addition(
+                                    diagram,
+                                    *prime_node_address,
+                                    port_index,
+                                    field_ops,
+                                );
+                                changed = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -2088,6 +2203,22 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                                         diagram,
                                         *prime_node_address,
                                         port_index,
+                                    );
+                                    changed = true;
+                                    break;
+                                }
+                            }
+
+                            if let Some(Node::MultiplyConstant(val, _, _)) =
+                                diagram.nodes.get(&target_port.0)
+                            {
+                                if val != &BigInt::from(0) {
+                                    // Propagate constant
+                                    simplify_multiplication_const_multiplication(
+                                        diagram,
+                                        *prime_node_address,
+                                        port_index,
+                                        field_ops,
                                     );
                                     changed = true;
                                     break;
@@ -3764,6 +3895,286 @@ mod tests {
             diagram.nodes.len() + 1,
             node_count,
             "Node count should have decreased by 1"
+        );
+    }
+
+    #[test]
+    fn test_simplify_addition_const_addition_hd() {
+        // Create a simple diagram with a single constant addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0)));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1)));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2)));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 1)));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4)));
+        let ia = diagram.add_node(Node::Addition(vec![
+            Port(i1, 0),
+            Port(i2, 0),
+            Port(i3, 0),
+            Port(8, 0),
+            Port(i5, 0),
+        ]));
+        let ic = diagram.add_node(Node::AddConstant(
+            BigInt::from(15),
+            Port(ia, 3),
+            Port(i4, 0),
+        ));
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the starting diagram makes sense"
+        );
+
+        let node_count = diagram.nodes.len();
+
+        simplify_addition_const_addition(&mut diagram, ia, 3, &());
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the diagram still makes sense"
+        );
+
+        if let Some(node) = diagram.nodes.get(&ia) {
+            match node {
+                Node::Addition(ports) => {
+                    assert_eq!(ports[0], Port(ic, 1));
+                    assert_eq!(ports[3], Port(i4, 0));
+                }
+                _ => panic!("Node is not an Addition node."),
+            }
+        } else {
+            panic!("Node at address ia does not exist.");
+        }
+
+        if let Some(node) = diagram.nodes.get(&ic) {
+            match node {
+                Node::AddConstant(val, port1, port2) => {
+                    assert_eq!(port1, &Port(i1, 0));
+                    assert_eq!(port2, &Port(ia, 0));
+                    assert_eq!(val, &BigInt::from(15));
+                }
+                _ => panic!("Node is not an AddConstant node."),
+            }
+        } else {
+            panic!("Node at address ic does not exist.");
+        }
+
+        assert_eq!(
+            diagram.nodes.len(),
+            node_count,
+            "Node count should not have changed"
+        );
+    }
+
+    #[test]
+    fn test_simplify_addition_const_addition_tl() {
+        // Create a simple diagram with a single constant addition node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0)));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1)));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2)));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 0)));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4)));
+        let ia = diagram.add_node(Node::Addition(vec![
+            Port(i1, 0),
+            Port(i2, 0),
+            Port(i3, 0),
+            Port(8, 1),
+            Port(i5, 0),
+        ]));
+        let ic = diagram.add_node(Node::AddConstant(
+            BigInt::from(15),
+            Port(i4, 0),
+            Port(ia, 3),
+        ));
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the starting diagram makes sense"
+        );
+
+        let node_count = diagram.nodes.len();
+
+        simplify_addition_const_addition(&mut diagram, ia, 3, &());
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the diagram still makes sense"
+        );
+
+        if let Some(node) = diagram.nodes.get(&ia) {
+            match node {
+                Node::Addition(ports) => {
+                    assert_eq!(ports[0], Port(ic, 1));
+                    assert_eq!(ports[3], Port(i4, 0));
+                }
+                _ => panic!("Node is not an Addition node."),
+            }
+        } else {
+            panic!("Node at address ia does not exist.");
+        }
+
+        if let Some(node) = diagram.nodes.get(&ic) {
+            match node {
+                Node::AddConstant(val, port1, port2) => {
+                    assert_eq!(port1, &Port(i1, 0));
+                    assert_eq!(port2, &Port(ia, 0));
+                    assert_eq!(val, &BigInt::from(-15));
+                }
+                _ => panic!("Node is not an AddConstant node."),
+            }
+        } else {
+            panic!("Node at address ic does not exist.");
+        }
+
+        assert_eq!(
+            diagram.nodes.len(),
+            node_count,
+            "Node count should not have changed"
+        );
+    }
+
+    #[test]
+    fn test_simplify_multiplication_const_multiplication_hd() {
+        // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0)));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1)));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2)));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 1)));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4)));
+        let ia = diagram.add_node(Node::Multiplication(vec![
+            Port(i1, 0),
+            Port(i2, 0),
+            Port(i3, 0),
+            Port(8, 0),
+            Port(i5, 0),
+        ]));
+        let ic = diagram.add_node(Node::AddConstant(
+            BigInt::from(15),
+            Port(ia, 3),
+            Port(i4, 0),
+        ));
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the starting diagram makes sense"
+        );
+
+        let node_count = diagram.nodes.len();
+
+        simplify_multiplication_const_multiplication(&mut diagram, ia, 3, &());
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the diagram still makes sense"
+        );
+
+        if let Some(node) = diagram.nodes.get(&ia) {
+            match node {
+                Node::Multiplication(ports) => {
+                    assert_eq!(ports[0], Port(ic, 1));
+                    assert_eq!(ports[3], Port(i4, 0));
+                }
+                _ => panic!("Node is not an Multiplication node."),
+            }
+        } else {
+            panic!("Node at address ia does not exist.");
+        }
+
+        if let Some(node) = diagram.nodes.get(&ic) {
+            match node {
+                Node::AddConstant(val, port1, port2) => {
+                    assert_eq!(port1, &Port(i1, 0));
+                    assert_eq!(port2, &Port(ia, 0));
+                    assert_eq!(val, &BigInt::from(15));
+                }
+                _ => panic!("Node is not an AddConstant node."),
+            }
+        } else {
+            panic!("Node at address ic does not exist.");
+        }
+
+        assert_eq!(
+            diagram.nodes.len(),
+            node_count,
+            "Node count should not have changed"
+        );
+    }
+
+    #[test]
+    fn test_simplify_multiplication_const_multiplication_tl() {
+        // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
+        let mut diagram = StringDiagram::new();
+        diagram.add_node(Node::Unrestricted(Port(1, 0)));
+        diagram.add_node(Node::Unrestricted(Port(0, 0)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0)));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1)));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2)));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 0)));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4)));
+        let ia = diagram.add_node(Node::Multiplication(vec![
+            Port(i1, 0),
+            Port(i2, 0),
+            Port(i3, 0),
+            Port(8, 1),
+            Port(i5, 0),
+        ]));
+        let ic = diagram.add_node(Node::AddConstant(
+            BigInt::from(15),
+            Port(i4, 0),
+            Port(ia, 3),
+        ));
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the starting diagram makes sense"
+        );
+
+        let node_count = diagram.nodes.len();
+
+        simplify_multiplication_const_multiplication(&mut diagram, ia, 3, &());
+
+        assert!(
+            diagram.is_well_formed(),
+            "Check that the diagram still makes sense"
+        );
+
+        if let Some(node) = diagram.nodes.get(&ia) {
+            match node {
+                Node::Multiplication(ports) => {
+                    assert_eq!(ports[0], Port(ic, 1));
+                    assert_eq!(ports[3], Port(i4, 0));
+                }
+                _ => panic!("Node is not an Multiplication node."),
+            }
+        } else {
+            panic!("Node at address ia does not exist.");
+        }
+
+        if let Some(node) = diagram.nodes.get(&ic) {
+            match node {
+                Node::AddConstant(val, port1, port2) => {
+                    assert_eq!(port1, &Port(i1, 0));
+                    assert_eq!(port2, &Port(ia, 0));
+                    assert_eq!(val, &BigInt::from(1 / 15));
+                }
+                _ => panic!("Node is not an AddConstant node."),
+            }
+        } else {
+            panic!("Node at address ic does not exist.");
+        }
+
+        assert_eq!(
+            diagram.nodes.len(),
+            node_count,
+            "Node count should not have changed"
         );
     }
 }
