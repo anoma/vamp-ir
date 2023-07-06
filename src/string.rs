@@ -2271,13 +2271,15 @@ fn simplify_equality_const(diagram: &mut StringDiagram, address: Address, port_i
 }
 
 // If something unrestructed is used in an addition, then everything else is also unrestructed.
-fn simplify_addition_unrestricted(
+fn simplify_addmul_unrestricted(
     diagram: &mut StringDiagram,
     address: Address,
     port_index: PortIndex,
 ) {
     // Extract the necessary information
-    let target_port = if let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
+    let target_port = if let Some(Node::Addition(ports) | Node::Multiplication(ports)) =
+        diagram.nodes.get(&address)
+    {
         if let Some(target_port) = ports.get(port_index) {
             if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
                 target_port.clone()
@@ -2293,7 +2295,9 @@ fn simplify_addition_unrestricted(
 
     // Gather all the ports that need to be updated
     let mut ports_to_update = Vec::new();
-    if let Some(Node::Addition(ports)) = diagram.nodes.get_mut(&address) {
+    if let Some(Node::Addition(ports) | Node::Multiplication(ports)) =
+        diagram.nodes.get_mut(&address)
+    {
         for (index, port) in ports.iter().enumerate() {
             if index != port_index {
                 ports_to_update.push(port.clone());
@@ -2407,7 +2411,7 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                     for (port_index, target_port) in ports.iter().enumerate() {
                         if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
                             // Propagate unrestricted
-                            simplify_addition_unrestricted(
+                            simplify_addmul_unrestricted(
                                 diagram,
                                 *prime_node_address,
                                 port_index,
@@ -2457,6 +2461,18 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                         break;
                     }
                     for (port_index, target_port) in ports.iter().enumerate() {
+                        if port_index == 0 {
+                            if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
+                                // Propagate unrestricted
+                                simplify_addmul_unrestricted(
+                                    diagram,
+                                    *prime_node_address,
+                                    port_index,
+                                );
+                                changed = true;
+                                break;
+                            }
+                        }
                         if port_index > 0 {
                             if let Some(Node::Multiplication(_)) = diagram.nodes.get(&target_port.0)
                             {
@@ -4740,7 +4756,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_addition_unrestricted() {
+    fn test_simplify_addmul_unrestricted() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0)));
@@ -4765,7 +4781,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_addition_unrestricted(&mut diagram, ia, 3);
+        simplify_addmul_unrestricted(&mut diagram, ia, 3);
 
         assert!(
             diagram.is_well_formed(),
