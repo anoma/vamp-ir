@@ -2487,6 +2487,16 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                             changed = true;
                             changed_node = true;
                         }
+                        if !changed_node && vars.is_empty() && ports.len() == 1 {
+                            if let Some(Node::Unrestricted(_) | Node::Constant(_, _)) =
+                                diagram.nodes.get(&ports[0].0)
+                            {
+                                diagram.nodes.remove(&prime_node_address);
+                                diagram.nodes.remove(&ports[0].0);
+                                changed = true;
+                                changed_node = true;
+                            }
+                        }
                         if !changed_node && vars.is_empty() && ports.len() == 2 {
                             simplify_binary_equality_node(diagram, prime_node_address);
                             changed = true;
