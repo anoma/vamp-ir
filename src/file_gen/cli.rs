@@ -15,6 +15,9 @@ use std::path::PathBuf;
 
 use num_bigint::BigInt;
 
+use crate::halo2::synth::PrimeFieldOps as Halo2PrimeFieldOps;
+use halo2_proofs::pasta::Fp;
+
 use crate::qprintln;
 use crate::util::Config;
 
@@ -171,18 +174,38 @@ fn atom_to_string(expr: &Expr) -> String {
     }
 }
 
-pub fn dump_equations_three_addr(module_3ac: &Module, path: &PathBuf) -> std::io::Result<()> {
+pub fn dump_equations_three_addr(
+    module_3ac: &Module,
+    path: &PathBuf,
+    config: &Config,
+) -> std::io::Result<()> {
     let file = OpenOptions::new().write(true).create(true).open(path)?;
     let mut writer = BufWriter::new(file);
 
-    for expr in &module_3ac.exprs {
+    // Collect only public variables for demo
+    let mut input_variables2 = HashMap::new();
+    input_variables2.reserve(module_3ac.pubs.len());
+    input_variables2.extend(module_3ac.pubs.iter().map(|var| (var.id, var.clone())));
+    let mut input_ids = HashSet::new();
+    for (id, _) in input_variables2 {
+        input_ids.insert(id);
+    }
+
+    qprintln!(config, "** Performing simplification...");
+    let simp_expr = simplify_3ac(
+        module_3ac.exprs.clone(),
+        &input_ids,
+        &Halo2PrimeFieldOps::<Fp>::default(),
+    );
+
+    for expr in simp_expr {
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
             match (&left.v, &right.v) {
                 // a = c, for constant c and variables a
                 (Expr::Variable(_), Expr::Constant(_)) => {
                     writeln!(
                         writer,
-                        "= {} {},",
+                        "{} = {},",
                         atom_to_string(&left.v),
                         atom_to_string(&right.v)
                     )?;
@@ -192,21 +215,33 @@ pub fn dump_equations_three_addr(module_3ac: &Module, path: &PathBuf) -> std::io
                 (Expr::Variable(_), Expr::Variable(_)) => {
                     writeln!(
                         writer,
-                        "= {} {},",
+                        "{} = {},",
                         atom_to_string(&left.v),
                         atom_to_string(&right.v)
                     )?;
+                }
+
+                // a = - c, for variables a and c
+                (Expr::Variable(_), Expr::Negate(var)) => {
+                    if let Expr::Variable(_) = var.v {
+                        write!(
+                            writer,
+                            "{} = - {}",
+                            atom_to_string(&left.v),
+                            atom_to_string(&var.v)
+                        )?;
+                    }
                 }
 
                 // a = b op c, for variable a
                 (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
                     writeln!(
                         writer,
-                        "{} {} {} {},",
-                        op,
+                        "{} = {} {} {},",
+                        atom_to_string(&left.v),
                         atom_to_string(&t1.v),
+                        op,
                         atom_to_string(&t2.v),
-                        atom_to_string(&left.v)
                     )?;
                 }
 
@@ -230,7 +265,7 @@ pub fn three_addr_file_cmd(
     let module_3ac = compile(module, &(), config);
 
     qprintln!(config, "** Writing equations to file...");
-    dump_equations_three_addr(&module_3ac, output)
+    dump_equations_three_addr(&module_3ac, output, config)
         .map_err(|err| qprintln!(config, "{:?}", err))
         .ok();
     qprintln!(config, "** Three address file generation success!");
@@ -352,22 +387,8 @@ pub fn dump_equations_mathematica(
 
     writeln!(writer, "FindInstance[")?;
 
-    let mut input_variables2 = HashMap::new();
-    collect_module_variables(module_3ac, &mut input_variables2);
-    // Defined variables should not be requested from user
-    for def in &module_3ac.defs {
-        if let Pat::Variable(var) = &def.0 .0.v {
-            input_variables2.remove(&var.id);
-        }
-    }
-    let mut input_ids = HashSet::new();
-    for (id, _) in input_variables2 {
-        input_ids.insert(id);
-    }
-
-    let simp_expr = simplify_3ac(module_3ac.exprs.clone(), &input_ids, &());
-
-    for (index, expr) in simp_expr.iter().enumerate() {
+    qprintln!(config, "** Writing to file...");
+    for (index, expr) in module_3ac.exprs.iter().enumerate() {
         write!(writer, "  ")?;
 
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
@@ -393,7 +414,7 @@ pub fn dump_equations_mathematica(
                     )?;
                 }
 
-                // a = c, for variables a and c
+                // a = - c, for variables a and c
                 (Expr::Variable(_), Expr::Negate(var)) => {
                     if let Expr::Variable(_) = var.v {
                         write!(
