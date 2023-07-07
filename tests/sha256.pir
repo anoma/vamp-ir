@@ -1,3 +1,20 @@
+pub m0;
+pub m1;
+pub m2;
+pub m3;
+pub m4;
+pub m5;
+pub m6;
+pub m7;
+pub m8;
+pub m9;
+pub m10;
+pub m11;
+pub m12;
+pub m13;
+pub m14;
+pub m15;
+
 // Ensure that the given argument is 1 or 0, and returns it
 def bool x = { x*(x-1) = 0; x };
 
@@ -219,23 +236,6 @@ def maj x y z = {
 // The input needs to be a multiple of 512, and at the moment is 24.
 // We are going to round up to 512.
 // The "abc" message we are going to use is:
-
-def m0 = 0x61626380;
-def m1 = 0x00000000;
-def m2 = 0x00000000;
-def m3 = 0x00000000;
-def m4 = 0x00000000;
-def m5 = 0x00000000;
-def m6 = 0x00000000;
-def m7 = 0x00000000;
-def m8 = 0x00000000;
-def m9 = 0x00000000;
-def m10 = 0x00000000;
-def m11 = 0x00000000;
-def m12 = 0x00000000;
-def m13 = 0x00000000;
-def m14 = 0x00000000;
-def m15 = 0x00000018;
 
 // PARSING THE MESSAGE
 // We need to parse the message into 32 bit words.

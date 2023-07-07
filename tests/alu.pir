@@ -6,6 +6,24 @@
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
 
+pub a1;
+pub a2;
+pub a3;
+pub a4;
+pub a5;
+pub a6;
+pub a7;
+pub a8;
+
+pub b1;
+pub b2;
+pub b3;
+pub b4;
+pub b5;
+pub b6;
+pub b7;
+pub b8;
+
 // Access elements of a list
 
 def hd (h:t) = h;
@@ -227,24 +245,18 @@ def rem n a b = snd (divrem n a b);
 
 // Check the operations work correctly
 
-242 = xor 8 13 255;
+a1 = xor 8 b1 255;
 
-254 = not 8 1;
+a2 = not 8 b2;
 
-1 = ult 8 2 3;
+a3 = ult 8 b3 3;
 
-1 = ult 8 2 255;
+a4 = ult 8 b4 255;
 
-1 = ult 8 0 255;
+a5 = ult 8 b5 255;
 
-1 = slt 8 255 0;
+a6 = slt 8 255 b6;
 
-1 = slt 8 255 127;
+a7 = slt 8 255 b7;
 
-1 = sle 8 5 5;
-
-(25,21) = divrem 32 3846 153;
-
-range 4 15;
-
-def D = 10;
+a8 = sle 8 5 b8;

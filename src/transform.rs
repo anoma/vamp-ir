@@ -1302,9 +1302,9 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps, config: &Config) ->
     let mut module_3ac = Module::default();
     flatten_module_to_3ac(&constraints, &prover_defs, &mut module_3ac, &mut vg);
     // Start doing basic optimizations
-    copy_propagate(&mut module_3ac, &prover_defs);
-    eliminate_dead_equalities(&mut module_3ac);
-    println!("\n\n{}", module_3ac);
+    //copy_propagate(&mut module_3ac, &prover_defs);
+    //eliminate_dead_equalities(&mut module_3ac);
+    //println!("\n\n{}", module_3ac);
 
     let mut file = File::create("/home/carlo/Documents/Work/test.ll").unwrap();
     let mut conc_c = 0;

@@ -10,18 +10,25 @@ pub trait DisplayLLVM {
 impl DisplayLLVM for Module {
     fn display_llvm(&self, file: &mut File, con_c: &mut i32) {
         *con_c = 0;
-        write!(file, "define i1 @main() {{\nentry:\n").unwrap();
+        write!(file, "define i1 @main(").unwrap();
+        let mut f_i = 0;
         for var in &self.pubs {
-            if let Some(name) = &var.name {
-                writeln!(file, "%{name}{}p = alloca i64", var.id).unwrap();
-                writeln!(file, "store i64 1, i64* %{name}{}p", var.id).unwrap();
-                writeln!(file, "%{name}{} = load i64, i64* %{name}{}p", var.id, var.id).unwrap();
+            if f_i == 0 {
+                if let Some(name) = &var.name {
+                    write!(file, "i64 %{name}").unwrap();
+                } else {
+                    write!(file, "i64 %v{}", var.id).unwrap();
+                }
+                f_i += 1;
             } else {
-                writeln!(file, "%{}p = alloca i64", var.id).unwrap();
-                writeln!(file, "store i64 1, i64* %{}p", var.id).unwrap();
-                writeln!(file, "%{} = load i64, i64* %{}p", var.id, var.id).unwrap();
+                if let Some(name) = &var.name {
+                    write!(file, ", i64 %{name}").unwrap();
+                } else {
+                    write!(file, "i64 %v{}, ", var.id).unwrap();
+                }
             }
         }
+        writeln!(file, ") {{\nentry:").unwrap();
         for def in &self.defs {
             def.display_llvm(file, con_c);
         }
@@ -142,13 +149,11 @@ impl DisplayLLVM for TExpr {
 
 impl DisplayLLVM for Variable {
     fn display_llvm(&self, file: &mut File, con_c: &mut i32) {
-        write!(file, "%").unwrap();
         if let Some(name) = &self.name {
-            write!(file, "{}", name).unwrap();
+            write!(file, "%{}", name).unwrap();
         } else {
-            write!(file, "v").unwrap();
+            write!(file, "%v{}", self.id).unwrap();
         }
-        write!(file, "{}", self.id).unwrap();
     }
 }
 

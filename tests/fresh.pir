@@ -6,7 +6,9 @@
    vamp-ir verify -u params.pp -c circuit.plonk -p proof.plonk
 */
 
-pub x;
+pub a;
+pub b;
+def x = a + b;
 
 // Ensure that the given argument is 1 or 0, and returns it
 
