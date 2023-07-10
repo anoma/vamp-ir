@@ -4,6 +4,7 @@ pub mod file_gen;
 pub mod halo2;
 pub mod plonk;
 pub mod repl;
+pub mod string;
 pub mod transform;
 mod typecheck;
 pub mod util;
