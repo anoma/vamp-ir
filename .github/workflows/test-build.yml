@@ -60,6 +60,7 @@ jobs:
         # 
 
       - name: Run tests
+        if: matrix.arch == 'x86_64-musl'
         run: cargo test --verbose
       
       - name: release
@@ -96,6 +97,7 @@ jobs:
           cargo clippy || true
 
       - name: Run tests
+        if: matrix.target == 'x86_64-apple-darwin'
         run: cargo test --verbose
 
       - name: release
