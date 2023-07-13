@@ -935,6 +935,8 @@ impl Variable {
         Self { id, name: None }
     }
 
+    pub fn new_name(id: VariableId, name: Option<String>) -> Self { Self {id, name}}
+
     pub fn parse(pair: Pair<Rule>) -> Option<Self> {
         if pair.as_rule() != Rule::valueName {
             return None;

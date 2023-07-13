@@ -6,7 +6,7 @@ use crate::typecheck::{
     expand_expr_variables, expand_pattern_variables, infer_module_types, print_types,
     strip_module_types, Type,
 };
-use crate::llvm_transform::DisplayLLVM;
+use crate::llvm_transform::{back_to_3ac, DisplayLLVM};
 use crate::util::Config;
 use ark_ff::{One, Zero};
 use num_bigint::BigInt;
@@ -1302,13 +1302,15 @@ pub fn compile(mut module: Module, field_ops: &dyn FieldOps, config: &Config) ->
     let mut module_3ac = Module::default();
     flatten_module_to_3ac(&constraints, &prover_defs, &mut module_3ac, &mut vg);
     // Start doing basic optimizations
-    //copy_propagate(&mut module_3ac, &prover_defs);
-    //eliminate_dead_equalities(&mut module_3ac);
-    //println!("\n\n{}", module_3ac);
+    copy_propagate(&mut module_3ac, &prover_defs);
+    eliminate_dead_equalities(&mut module_3ac);
+    println!("\n\n{:?}", module_3ac.defs[0]);
 
     let mut file = File::create("/home/carlo/Documents/Work/test.ll").unwrap();
     let mut conc_c = 0;
     module_3ac.display_llvm(&mut file, &mut conc_c);
+    let module_test = back_to_3ac("/home/carlo/Documents/Work/sha256_llvm/optimized_O1.ll");
+    println!("{:?}", module_test);
     module_3ac
 }
 

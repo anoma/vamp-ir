@@ -1,6 +1,8 @@
 use std::fs::File;
-use std::io::Write;
-
+use std::io;
+use std::io::{BufRead, Write};
+use crate::ast;
+use crate::transform::VarGen;
 use crate::ast::{Definition, Expr, InfixOp, LetBinding, Module, Pat, TExpr, TPat, Variable};
 
 pub trait DisplayLLVM {
@@ -55,15 +57,27 @@ impl DisplayLLVM for LetBinding {
     fn display_llvm(&self, file: &mut File, con_c: &mut i32) {
         match &self.1.v {
             Expr::Variable(var) => {
-                self.0.display_llvm(file, con_c);
-                writeln!(file, "p = alloca i64").unwrap();
-                write!(file, "store i64 %v{}, i64* ", var.id).unwrap();
-                self.0.display_llvm(file, con_c);
-                writeln!(file, "p").unwrap();
-                self.0.display_llvm(file, con_c);
-                write!(file, "= load i64, i64* ").unwrap();
-                self.0.display_llvm(file, con_c);
-                writeln!(file, "p").unwrap();
+                if let Some(name) = &var.name {
+                    self.0.display_llvm(file, con_c);
+                    writeln!(file, "p = alloca i64").unwrap();
+                    write!(file, "store i64 %{name}, i64* ").unwrap();
+                    self.0.display_llvm(file, con_c);
+                    writeln!(file, "p").unwrap();
+                    self.0.display_llvm(file, con_c);
+                    write!(file, "= load i64, i64* ").unwrap();
+                    self.0.display_llvm(file, con_c);
+                    writeln!(file, "p").unwrap();
+                } else {
+                    self.0.display_llvm(file, con_c);
+                    writeln!(file, "p = alloca i64").unwrap();
+                    write!(file, "store i64 %v{}, i64* ", var.id).unwrap();
+                    self.0.display_llvm(file, con_c);
+                    writeln!(file, "p").unwrap();
+                    self.0.display_llvm(file, con_c);
+                    write!(file, "= load i64, i64* ").unwrap();
+                    self.0.display_llvm(file, con_c);
+                    writeln!(file, "p").unwrap();
+                }
             }
             Expr::Constant(val) => {
                 self.0.display_llvm(file, con_c);
@@ -161,14 +175,60 @@ impl DisplayLLVM for InfixOp {
     fn display_llvm(&self, file: &mut File, con_c: &mut i32) {
         match self {
             Self::Divide => write!(file, "udiv i64 "),
-            Self::DivideZ => write!(file, "|"),
+            Self::Modulo => write!(file, "urem i64 "),
             Self::IntDivide => write!(file, "udiv i64 "),
             Self::Multiply => write!(file, "mul i64 "),
             Self::Add => write!(file, "add i64 "),
             Self::Subtract => write!(file, "sub i64 "),
             Self::Equal => write!(file, "%constr{} = icmp eq i64 ", *con_c),
-            Self::Exponentiate => write!(file, "^"),
-            Self::Modulo => write!(file, "urem i64 "),
+            _ =>  panic!("Invalid InfixOp value for LLVM encountered. {:?}", self)
         }.unwrap();
     }
+}
+
+pub fn back_to_3ac(filename: &str) -> Module {
+    let file = File::open(filename).unwrap();
+    let reader = io::BufReader::new(file);
+    let mut lines = reader.lines().skip(4).collect::<io::Result<Vec<String>>>().unwrap();
+    let mut module_3ac = Module::default();
+
+    fn get_arguments(input: &str) -> Vec<String> {
+        let mut result = Vec::new();
+
+        // Find the opening parenthesis index
+        let open_parenthesis_index = input.find('(');
+
+        if let Some(open_index) = open_parenthesis_index {
+            // Find the closing parenthesis index
+            let close_parenthesis_index = input.find(')');
+
+            if let Some(close_index) = close_parenthesis_index {
+                // Extract the substring between the parenthesis
+                let arguments_str = &input[open_index + 1..close_index];
+
+                // Split the arguments by commas
+                let arguments: Vec<&str> = arguments_str.split(',').collect();
+
+                // Iterate over the arguments and trim whitespace
+                for arg in arguments {
+                    let trimmed_arg = arg.trim();
+
+                    // Extract the characters after the "%"
+                    if let Some(arg_chars) = trimmed_arg.split_once('%') {
+                        result.push(arg_chars.1.to_owned());
+                    }
+                }
+            }
+        }
+        result
+    }
+
+    let pub_input_names = get_arguments(lines[0].as_ref());
+    let mut gen = VarGen::new();
+    for name in pub_input_names {
+        let id = gen.generate_id();
+        module_3ac.pubs.push(ast::Variable::new_name(id, Option::from(name)));
+    }
+    println!("{:?}", lines[2]);
+    module_3ac
 }
