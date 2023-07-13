@@ -59,9 +59,8 @@ jobs:
           cargo clippy || true
         # 
 
-      # uncomment this once there tests to run
-      # - name: Run tests
-      #   run: cargo test --verbose
+      - name: Run tests
+        run: cargo test --verbose
       
       - name: release
         if: success()
@@ -96,9 +95,8 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy || true
 
-      # uncomment this once there tests to run
-      # - name: Run tests
-      #   run: cargo test --verbose
+      - name: Run tests
+        run: cargo test --verbose
 
       - name: release
         if: success()
