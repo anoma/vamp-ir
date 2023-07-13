@@ -2047,6 +2047,7 @@ dependencies = [
  "proptest",
  "rand_core",
  "serde_json",
+ "walkdir",
 ]
 
 [[package]]
