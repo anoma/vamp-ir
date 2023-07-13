@@ -107,7 +107,7 @@ fn prove_halo2_cmd(
                 "* Reading inputs from file {}...",
                 path_to_inputs.to_string_lossy()
             );
-            read_inputs_from_file(&circuit.module, path_to_inputs)
+            read_inputs_from_file(&circuit.module, path_to_inputs).unwrap()
         }
         None => {
             if expected_path_to_inputs.exists() {
@@ -116,7 +116,7 @@ fn prove_halo2_cmd(
                     "* Reading inputs from file {}...",
                     expected_path_to_inputs.to_string_lossy()
                 );
-                read_inputs_from_file(&circuit.module, &expected_path_to_inputs)
+                read_inputs_from_file(&circuit.module, &expected_path_to_inputs).unwrap()
             } else {
                 qprintln!(config, "* Soliciting circuit witnesses...");
                 prompt_inputs(&circuit.module)

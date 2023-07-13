@@ -8,18 +8,55 @@ use std::{
 use ark_serialize::Write;
 use num_traits::Num;
 
+use crate::error::Error;
+use crate::error::Error::{InvalidVariableAssignmentValue, MissingVariableAssignment};
 use crate::{
     ast::{Module, Pat, VariableId},
     transform::collect_module_variables,
 };
 
+/// Convert named circuit assignments to assignments of vamp-ir variableIds.
+/// Useful for calling vamp-ir Halo2Module::populate_variable_assignments.
+pub(crate) fn get_circuit_assignments<F>(
+    module: &Module,
+    named_assignments: &HashMap<String, F>,
+) -> Result<HashMap<VariableId, F>, Error>
+where
+    F: Clone + Num + Neg<Output = F>,
+    <F as Num>::FromStrRadixErr: std::fmt::Debug,
+{
+    let mut input_variables = HashMap::new();
+    collect_module_variables(module, &mut input_variables);
+    // Defined variables should not be requested from user
+    for def in &module.defs {
+        if let Pat::Variable(var) = &def.0 .0.v {
+            input_variables.remove(&var.id);
+        }
+    }
+
+    input_variables
+        .iter()
+        .filter_map(|(id, expected_var)| {
+            expected_var.name.as_deref().map(|var_name| {
+                named_assignments
+                    .get(var_name)
+                    .cloned()
+                    .ok_or_else(|| MissingVariableAssignment {
+                        var_name: var_name.to_string(),
+                    })
+                    .map(|assignment| (*id, assignment))
+            })
+        })
+        .collect()
+}
+
 /* Read satisfying inputs to the given program from a file. */
 pub fn read_inputs_from_file<F>(
     annotated: &Module,
     path_to_inputs: &PathBuf,
-) -> HashMap<VariableId, F>
+) -> Result<HashMap<VariableId, F>, Error>
 where
-    F: Num + Neg<Output = F>,
+    F: Clone + Num + Neg<Output = F>,
     <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug,
 {
     let contents = fs::read_to_string(path_to_inputs).expect("Could not read inputs file");
@@ -28,29 +65,20 @@ where
     let named_assignments: HashMap<String, String> =
         json5::from_str(&contents).expect("Could not parse JSON5");
 
-    // Get the expected inputs from the circuit module
-    let mut input_variables = HashMap::new();
-    collect_module_variables(annotated, &mut input_variables);
-
-    // Defined variables should not be requested from user
-    for def in &annotated.defs {
-        if let Pat::Variable(var) = &def.0 .0.v {
-            input_variables.remove(&var.id);
-        }
-    }
-
-    let mut variable_assignments = HashMap::new();
-
-    // Check that the user supplied the expected inputs
-    for (id, expected_var) in input_variables {
-        variable_assignments.insert(
-            id,
-            parse_prefixed_num(&named_assignments[&expected_var.name.unwrap()].clone())
-                .expect("input not an integer"),
-        );
-    }
-
-    variable_assignments
+    let fp_named_assignments: HashMap<String, F> = named_assignments
+        .into_iter()
+        .map(
+            |(var_name, str_value)| {
+                let n = parse_prefixed_num::<F>(&str_value).map_err(|_| {
+                    InvalidVariableAssignmentValue {
+                        var_name: var_name.clone(),
+                    }
+                })?;
+                Ok((var_name.clone(), n))
+            },
+        )
+        .collect::<Result<HashMap<String, F>, Error>>()?;
+    get_circuit_assignments(annotated, &fp_named_assignments)
 }
 
 /* Prompt for satisfying inputs to the given program. */
