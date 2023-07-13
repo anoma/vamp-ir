@@ -202,9 +202,14 @@ impl std::fmt::Display for Error {
 
             Self::ParseError { e } => write!(f, "Error while parsing file: {e}"),
 
-            Self::MissingVariableAssignment { var_name } => write!(f, "Missing assignment for variable: {var_name}"),
+            Self::MissingVariableAssignment { var_name } => {
+                write!(f, "Missing assignment for variable: {var_name}")
+            }
 
-            Self::InvalidVariableAssignmentValue { var_name } => write!(f, "The assignment for variable: {var_name} has an invalid value")
+            Self::InvalidVariableAssignmentValue { var_name } => write!(
+                f,
+                "The assignment for variable: {var_name} has an invalid value"
+            ),
         }
     }
 }

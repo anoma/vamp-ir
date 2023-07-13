@@ -67,16 +67,14 @@ where
 
     let fp_named_assignments: HashMap<String, F> = named_assignments
         .into_iter()
-        .map(
-            |(var_name, str_value)| {
-                let n = parse_prefixed_num::<F>(&str_value).map_err(|_| {
-                    InvalidVariableAssignmentValue {
-                        var_name: var_name.clone(),
-                    }
-                })?;
-                Ok((var_name.clone(), n))
-            },
-        )
+        .map(|(var_name, str_value)| {
+            let n = parse_prefixed_num::<F>(&str_value).map_err(|_| {
+                InvalidVariableAssignmentValue {
+                    var_name: var_name.clone(),
+                }
+            })?;
+            Ok((var_name.clone(), n))
+        })
         .collect::<Result<HashMap<String, F>, Error>>()?;
     get_circuit_assignments(annotated, &fp_named_assignments)
 }
