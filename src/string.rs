@@ -23,6 +23,9 @@ pub enum Node {
     Unrestricted(Port),                       // The port is an unrestricted natural number
     Constant(BigInt, Port),                   // The port is equal to the constant
     Contradiction,                            // Shouldn't exist in a coherent diagram
+
+    CVVAdd(BigInt, Port, Port), // First port plus the second equals the constant (Only used during 3ac translation)
+    CVVMul(BigInt, Port, Port), // First port times the second equals the constant (Only used during 3ac translation)
 }
 
 // Define the String Diagram
@@ -60,7 +63,9 @@ impl StringDiagram {
                 }
                 Node::AddConstant(_, port1, port2)
                 | Node::MultiplyConstant(_, port1, port2)
-                | Node::ExponentiateConstant(_, port1, port2) => {
+                | Node::ExponentiateConstant(_, port1, port2)
+                | Node::CVVAdd(_, port1, port2)
+                | Node::CVVMul(_, port1, port2) => {
                     if !self.is_connected_back(port1, (*address, 0))
                         || !self.is_connected_back(port2, (*address, 1))
                     {
@@ -94,7 +99,9 @@ impl StringDiagram {
                 }
                 Node::AddConstant(_, port1, port2)
                 | Node::MultiplyConstant(_, port1, port2)
-                | Node::ExponentiateConstant(_, port1, port2) => {
+                | Node::ExponentiateConstant(_, port1, port2)
+                | Node::CVVAdd(_, port1, port2)
+                | Node::CVVMul(_, port1, port2) => {
                     let back_port = if *target_port_index == 0 {
                         port1
                     } else {
@@ -123,7 +130,9 @@ impl StringDiagram {
                 }
                 Node::AddConstant(_, port1, port2)
                 | Node::MultiplyConstant(_, port1, port2)
-                | Node::ExponentiateConstant(_, port1, port2) => {
+                | Node::ExponentiateConstant(_, port1, port2)
+                | Node::CVVAdd(_, port1, port2)
+                | Node::CVVMul(_, port1, port2) => {
                     if *target_index == 0 {
                         *port1 = new_port.clone();
                     } else if *target_index == 1 {
@@ -149,7 +158,9 @@ impl StringDiagram {
                 }
                 Node::AddConstant(_, port1, port2)
                 | Node::MultiplyConstant(_, port1, port2)
-                | Node::ExponentiateConstant(_, port1, port2) => {
+                | Node::ExponentiateConstant(_, port1, port2)
+                | Node::CVVAdd(_, port1, port2)
+                | Node::CVVMul(_, port1, port2) => {
                     vec![port1.clone(), port2.clone()]
                 }
                 Node::Unrestricted(port) | Node::Constant(_, port) => vec![port.clone()],
@@ -193,7 +204,6 @@ fn get_or_create_equality_node(
     } else {
         panic!("Expected an equality node");
     }
-    //println!("Ports at {} now {:?}.", equality_address, diagram.nodes.get_mut(&equality_address).unwrap().clone());
 
     (equality_address, next_idx)
 }
@@ -204,7 +214,6 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
     let mut variable_addresses: HashMap<VariableId, Address> = HashMap::new();
 
     for eq in equations {
-        //println!("Equation {eq:?}");
         if let Expr::Infix(InfixOp::Equal, left, right) = eq.v {
             match (&left.v, &right.v) {
                 (Expr::Variable(var), Expr::Constant(c)) => {
@@ -227,7 +236,6 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                         input_ids,
                     );
 
-                    //println!("0: Adding {:?} at {}", Node::Constant(c.clone(), Port(equality_address, new_port_index)), diagram.next_address);
                     diagram.add_node(Node::Constant(
                         c.clone(),
                         Port(equality_address, new_port_index),
@@ -268,7 +276,6 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                     );
 
                     // Connect these nodes by adding an equality node that points to both.
-                    //println!("1: Adding {:?} at {}", Node::Equality(None, vec![Port(equality_address1, new_port_index1), Port(equality_address2, new_port_index2)]), diagram.next_address);
                     diagram.add_node(Node::Equality(
                         vec![],
                         vec![
@@ -312,7 +319,6 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                             input_ids,
                         );
 
-                        //println!("2: Adding {:?} at {}", Node::MultiplyConstant((-1).into(), Port(equality_address1, new_port_index1), Port(equality_address2, new_port_index2)), diagram.next_address);
                         diagram.add_node(Node::MultiplyConstant(
                             (-1).into(),
                             Port(equality_address1, new_port_index1),
@@ -412,7 +418,6 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut variable_addresses,
                                     input_ids,
                                 );
-                                //println!("5: Adding {:?} at {}", Node::Constant(const1.clone(), Port(target_address, 0)), diagram.next_address);
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
                                     Port(target_address, 0),
@@ -437,7 +442,6 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut variable_addresses,
                                     input_ids,
                                 );
-                                //println!("6: Adding {:?} at {}", Node::Constant(const1.clone(), Port(target_address, 1)), diagram.next_address);
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
                                     Port(target_address, 1),
@@ -478,7 +482,6 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut variable_addresses,
                                     input_ids,
                                 );
-                                //println!("7: Adding {:?} at {}", Node::Constant(const2.clone(), Port(target_address, 2)), diagram.next_address);
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
                                     Port(target_address, 2),
@@ -503,7 +506,6 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut variable_addresses,
                                     input_ids,
                                 );
-                                //println!("8: Adding {:?} at {}", Node::Constant(const2.clone(), Port(target_address, 2)), diagram.next_address);
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
                                     Port(target_address, 2),
@@ -526,12 +528,10 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut variable_addresses,
                                     input_ids,
                                 );
-                                //println!("9: Adding {:?} at {}", Node::Constant(const1.clone(), Port(target_address, 0)), diagram.next_address);
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
                                     Port(target_address, 0),
                                 ));
-                                //println!("10: Adding {:?} at {}", Node::Constant(const2.clone(), Port(target_address, 2)), diagram.next_address);
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
                                     Port(target_address, 2),
@@ -549,12 +549,10 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut variable_addresses,
                                     input_ids,
                                 );
-                                //println!("11: Adding {:?} at {}", Node::Constant(const1.clone(), Port(target_address, 1)), diagram.next_address);
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
                                     Port(target_address, 1),
                                 ));
-                                //println!("12: Adding {:?} at {}", Node::Constant(const2.clone(), Port(target_address, 2)), diagram.next_address);
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
                                     Port(target_address, 2),
@@ -570,14 +568,13 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                     }
 
                     if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Subtract) {
-                        //println!("3: Adding {:?} at {}", Node::Addition(ports.clone()), diagram.next_address);
                         diagram.add_node(Node::Addition(ports));
                     } else if matches!(op, InfixOp::Multiply) || matches!(op, InfixOp::Divide) {
-                        //println!("4: Adding {:?} at {}", Node::Multiplication(ports.clone()), diagram.next_address);
                         diagram.add_node(Node::Multiplication(ports));
                     }
                 }
-                _ => {
+                expr => {
+                    println!("Unsupported: {expr:?}")
                     // Unsupported case
                 }
             }
@@ -642,18 +639,8 @@ fn construct_port_vars(diagram: &StringDiagram) -> HashMap<Port, Variable> {
     }
 
     // Assign variables to the remaining ports if they don't have one
-    for (address, node) in &diagram.nodes {
-        let ports = match node {
-            Node::Equality(_, ports) => ports.clone(),
-            Node::Addition(ports) => ports.clone(),
-            Node::Multiplication(ports) => ports.clone(),
-            Node::AddConstant(_, p1, p2) => vec![p1.clone(), p2.clone()],
-            Node::MultiplyConstant(_, p1, p2) => vec![p1.clone(), p2.clone()],
-            Node::ExponentiateConstant(_, p1, p2) => vec![p1.clone(), p2.clone()],
-            Node::Unrestricted(p) => vec![p.clone()],
-            Node::Constant(_, p) => vec![p.clone()],
-            Node::Contradiction => vec![],
-        };
+    for (address, _) in &diagram.nodes {
+        let ports = diagram.port_list(address);
 
         for (index, target_port) in ports.iter().enumerate() {
             let current_port = Port(*address, index);
@@ -810,6 +797,58 @@ pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
                                 InfixOp::Multiply,
                                 Box::new(TExpr {
                                     v: Expr::Constant(value.clone()),
+                                    t: None,
+                                }),
+                                Box::new(TExpr {
+                                    v: Expr::Variable(port_vars[p2].clone()),
+                                    t: None,
+                                }),
+                            ),
+                            t: None,
+                        }),
+                    ),
+                    t: None,
+                });
+            }
+            Node::CVVAdd(value, p1, p2) => {
+                expressions.push(TExpr {
+                    v: Expr::Infix(
+                        InfixOp::Equal,
+                        Box::new(TExpr {
+                            v: Expr::Constant(value.clone()),
+                            t: None,
+                        }),
+                        Box::new(TExpr {
+                            v: Expr::Infix(
+                                InfixOp::Add,
+                                Box::new(TExpr {
+                                    v: Expr::Variable(port_vars[p1].clone()),
+                                    t: None,
+                                }),
+                                Box::new(TExpr {
+                                    v: Expr::Variable(port_vars[p2].clone()),
+                                    t: None,
+                                }),
+                            ),
+                            t: None,
+                        }),
+                    ),
+                    t: None,
+                });
+            }
+            Node::CVVMul(value, p1, p2) => {
+                expressions.push(TExpr {
+                    v: Expr::Infix(
+                        InfixOp::Equal,
+                        Box::new(TExpr {
+                            v: Expr::Constant(value.clone()),
+                            t: None,
+                        }),
+                        Box::new(TExpr {
+                            v: Expr::Infix(
+                                InfixOp::Multiply,
+                                Box::new(TExpr {
+                                    v: Expr::Variable(port_vars[p1].clone()),
                                     t: None,
                                 }),
                                 Box::new(TExpr {
@@ -2764,7 +2803,6 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
     let mut addresses_to_process: Vec<Address> = diagram.nodes.keys().cloned().collect();
 
     while !addresses_to_process.is_empty() {
-        println!("\rTo Proc: {}", addresses_to_process.len());
         let mut new_addresses = HashSet::new();
 
         for address in addresses_to_process {
@@ -2783,6 +2821,48 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
 
         // Convert the HashSet to a Vec for the next iteration.
         addresses_to_process = new_addresses.into_iter().collect();
+    }
+}
+
+pub fn simplify_cvv_addmul(diagram: &mut StringDiagram, address: Address) {
+    // Clone the node
+    let node = if let Some(node) = diagram.nodes.get(&address) {
+        node.clone()
+    } else {
+        return;
+    };
+
+    let (head_port, tail1_port, tail2_port) = match &node {
+        // Check if it's an Addition or Multiplication node with exactly 3 ports
+        Node::Addition(ports) | Node::Multiplication(ports) if ports.len() == 3 => {
+            // Get the ports
+            (ports[0].clone(), ports[1].clone(), ports[2].clone())
+        }
+        _ => return,
+    };
+
+    // Check if the head is pointing at a Constant node
+    if let Some(Node::Constant(value, _)) = diagram.nodes.get(&head_port.0) {
+        // Replace the Addition/Multiplication node with a CVVAdd/CVVMul node
+        let new_node = match &node {
+            Node::Addition(_) => {
+                Node::CVVAdd(value.clone(), tail1_port.clone(), tail2_port.clone())
+            }
+            Node::Multiplication(_) => {
+                Node::CVVMul(value.clone(), tail1_port.clone(), tail2_port.clone())
+            }
+            _ => return,
+        };
+
+        // Update the node in the diagram
+        diagram.nodes.insert(address, new_node);
+
+        // Update the linking ports of the new node
+        diagram.replace_port(&tail1_port, &Port(address, 0));
+        diagram.replace_port(&tail2_port, &Port(address, 1));
+
+        // Now that we have updated the node and linking ports, we can safely remove the Constant node
+        diagram.nodes.remove(&head_port.0);
     }
 }
 
@@ -2808,12 +2888,24 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) {
                             decompose_addition_node(diagram, prime_node_address);
                             changed = true;
                         }
+                        if ports.len() == 3 {
+                            if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
+                                simplify_cvv_addmul(diagram, prime_node_address);
+                                changed = true;
+                            }
+                        }
                     }
                     Node::Multiplication(ports) => {
                         // If there are more than three ports in the multiplication node, decompose it
                         if ports.len() > 3 {
                             decompose_multiplication_node(diagram, prime_node_address);
                             changed = true;
+                        }
+                        if ports.len() == 3 {
+                            if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
+                                simplify_cvv_addmul(diagram, prime_node_address);
+                                changed = true;
+                            }
                         }
                     }
                     Node::ExponentiateConstant(_, _, _) => {
