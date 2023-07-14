@@ -1,13 +1,9 @@
-use crate::ast::Module;
 use crate::error::Error;
-use crate::halo2::synth::{keygen, make_constant, prover, verifier, Halo2Module, PrimeFieldOps};
+use crate::halo2::synth::{keygen, make_constant, prover, verifier};
 use crate::qprintln;
-use crate::transform::compile;
 use crate::util::{prompt_inputs, read_inputs_from_file, Config};
 
-use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::plonk::keygen_vk;
-use halo2_proofs::poly::commitment::Params;
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_serialize::{Read, SerializationError};
@@ -15,13 +11,13 @@ use std::io::Write;
 
 use clap::{Args, Subcommand};
 
-use bincode::error::{DecodeError, EncodeError};
+use crate::halo2::api::HaloCircuitData;
 use ff::PrimeField;
+use halo2_proofs::pasta::Fp;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 #[derive(Subcommand)]
 pub enum Halo2Commands {
@@ -72,19 +68,10 @@ fn compile_halo2_cmd(
     Halo2Compile { source, output }: &Halo2Compile,
     config: &Config,
 ) -> Result<(), Error> {
-    qprintln!(config, "* Compiling constraints...");
-    let unparsed_file = fs::read_to_string(source).expect("cannot read file");
-    let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module, &PrimeFieldOps::<Fp>::default(), config);
-
-    qprintln!(config, "* Synthesizing arithmetic circuit...");
-    let module_rc = Rc::new(module_3ac);
-    let circuit = Halo2Module::<Fp>::new(module_rc);
-    let params: Params<EqAffine> = Params::new(circuit.k);
+    let source = fs::read_to_string(source).expect("cannot read file");
+    let halo_circuit_data = crate::halo2::api::compile(source, &config)?;
     let mut circuit_file = File::create(output).expect("unable to create circuit file");
-    HaloCircuitData { params, circuit }
-        .write(&mut circuit_file)
-        .unwrap();
+    halo_circuit_data.write(&mut circuit_file).unwrap();
 
     qprintln!(config, "* Constraint compilation success!");
 
@@ -232,37 +219,6 @@ fn verify_halo2_cmd(
 struct ProofDataHalo2 {
     proof: Vec<u8>,
     public_inputs: Vec<u8>,
-}
-
-/* Captures all the data required to use a Halo2 circuit. */
-struct HaloCircuitData {
-    params: Params<EqAffine>,
-    circuit: Halo2Module<Fp>,
-}
-
-impl HaloCircuitData {
-    fn read<R>(mut reader: R) -> Result<Self, DecodeError>
-    where
-        R: std::io::Read,
-    {
-        let params = Params::<EqAffine>::read(&mut reader)
-            .map_err(|x| DecodeError::OtherString(x.to_string()))?;
-        let circuit: Halo2Module<Fp> =
-            bincode::decode_from_std_read(&mut reader, bincode::config::standard())?;
-        Ok(Self { params, circuit })
-    }
-
-    fn write<W>(&self, mut writer: W) -> Result<(), EncodeError>
-    where
-        W: std::io::Write,
-    {
-        self.params
-            .write(&mut writer)
-            .expect("unable to create circuit file");
-        bincode::encode_into_std_write(&self.circuit, &mut writer, bincode::config::standard())
-            .expect("unable to create circuit file");
-        Ok(())
-    }
 }
 
 pub fn halo2(halo2_commands: &Halo2Commands, config: &Config) -> Result<(), Error> {

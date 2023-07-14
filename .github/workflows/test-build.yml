@@ -59,9 +59,9 @@ jobs:
           cargo clippy || true
         # 
 
-      # uncomment this once there tests to run
-      # - name: Run tests
-      #   run: cargo test --verbose
+      - name: Run tests
+        if: matrix.arch == 'x86_64-musl'
+        run: cargo test --verbose
       
       - name: release
         if: success()
@@ -96,9 +96,9 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy || true
 
-      # uncomment this once there tests to run
-      # - name: Run tests
-      #   run: cargo test --verbose
+      - name: Run tests
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: cargo test --verbose
 
       - name: release
         if: success()

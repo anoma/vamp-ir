@@ -5,6 +5,8 @@ use crate::{
 
 #[derive(Debug)]
 pub enum Error {
+    ParseError { e: String },
+
     // Compilation errors
 
     // cannot apply {} to {}
@@ -191,6 +193,7 @@ impl std::fmt::Display for Error {
 
             // invalid field at repl
             Self::InvalidField => write!(f, "Invalid field value"),
+            Error::ParseError { e } => write!(f, "Error while parsing file: {e}"),
         }
     }
 }

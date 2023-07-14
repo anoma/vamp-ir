@@ -48,6 +48,7 @@ harness = false
 [dev-dependencies]
 criterion = "0.3"
 proptest = "1.0.0"
+walkdir = "2"
 
 [target.'cfg(unix)'.dev-dependencies]
 inferno = ">=0.11, <0.11.5" # MSRV 1.59
