@@ -139,6 +139,31 @@ impl StringDiagram {
             }
         }
     }
+
+    // Get all the ports of an address.
+    pub fn port_list(&self, target_address: &Address) -> Vec<Port> {
+        if let Some(node) = self.nodes.get(target_address) {
+            match node {
+                Node::Equality(_, ports) | Node::Addition(ports) | Node::Multiplication(ports) => {
+                    ports.to_vec()
+                }
+                Node::AddConstant(_, port1, port2)
+                | Node::MultiplyConstant(_, port1, port2)
+                | Node::ExponentiateConstant(_, port1, port2) => {
+                    vec![port1.clone(), port2.clone()]
+                }
+                Node::Unrestricted(port) | Node::Constant(_, port) => vec![port.clone()],
+                Node::Contradiction => vec![],
+            }
+        } else {
+            vec![]
+        }
+    }
+
+    // Get all the addresses linked to an address.
+    pub fn address_list(&self, target_address: &Address) -> Vec<Address> {
+        return self.port_list(target_address).iter().map(|p| p.0).collect();
+    }
 }
 
 fn get_or_create_equality_node(
@@ -951,6 +976,9 @@ pub fn decompose_multiplication_node(diagram: &mut StringDiagram, address: Addre
 }
 
 // Split X = Y ^ n into X = Y * Y * ... * Y
+// TODO: This is dumb. It needs to be split so that
+//       X = Y ^ 2*n => Y1 = Y ^ n /\ X = Y1 * Y1, etc.
+//       much smaller that way
 pub fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) {
     // Get the data needed from the node at the address
     let (exp, p1, p2) =
@@ -2462,477 +2490,299 @@ fn swap_add_and_multiply_constants_tl_tl(
     );
 }
 
+// Try applying a single simplification step to an address.
+// Return a list of *still existing* addresses of nodes that have been modified.
+pub fn simplify_string_diagram_step(
+    diagram: &mut StringDiagram,
+    field_ops: &dyn FieldOps,
+    address: Address,
+) -> Vec<Address> {
+    if let Some(node) = diagram.nodes.get(&address).cloned() {
+        match node {
+            Node::Equality(vars, ports) => {
+                if ports.is_empty() {
+                    // Delete empty equations
+                    diagram.nodes.remove(&address);
+                    return vec![];
+                }
+                if vars.is_empty() && ports.len() == 1 {
+                    if let Some(Node::Unrestricted(_) | Node::Constant(_, _)) =
+                        diagram.nodes.get(&ports[0].0)
+                    {
+                        diagram.nodes.remove(&address);
+                        diagram.nodes.remove(&ports[0].0);
+
+                        return vec![];
+                    }
+                }
+                if vars.is_empty() && ports.len() == 2 {
+                    simplify_binary_equality_node(diagram, address);
+
+                    return vec![ports[0].0, ports[1].0];
+                }
+                for (port_index, target_port) in ports.iter().enumerate() {
+                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
+                        simplify_equality_with_unrestricted(diagram, address, port_index);
+                        return vec![address];
+                    }
+                    if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
+                        simplify_equality_const(diagram, address, port_index);
+
+                        return ports.iter().map(|p| p.0).collect();
+                    }
+
+                    if let Some(Node::Equality(_, _)) = diagram.nodes.get(&target_port.0) {
+                        // Fuse equality nodes
+                        fuse_equality_nodes(diagram, address, port_index);
+
+                        return vec![address];
+                    }
+                }
+                vec![]
+            }
+            Node::Addition(ports) => {
+                if ports.len() == 2 {
+                    simplify_binary_addition_node(diagram, address);
+                    return vec![ports[0].0, ports[1].0];
+                }
+                for (port_index, target_port) in ports.iter().enumerate() {
+                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
+                        // Propagate unrestricted
+                        simplify_addmul_unrestricted(diagram, address, port_index);
+                        return ports.iter().map(|p| p.0).collect();
+                    }
+                    if port_index > 0 {
+                        if let Some(Node::Addition(_)) = diagram.nodes.get(&target_port.0) {
+                            if target_port.1 == 0 {
+                                // Fuse addition nodes
+                                fuse_addition_nodes_basic(diagram, address, port_index);
+                                return vec![address];
+                            }
+                        }
+                        if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&target_port.0)
+                        {
+                            // Propagate constant
+                            simplify_addition_const_addition(
+                                diagram, address, port_index, field_ops,
+                            );
+                            return vec![address, target_port.0];
+                        }
+                        if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
+                            // Propagate constant
+                            simplify_addition_const(diagram, address, port_index);
+                            return vec![address, target_port.0];
+                        }
+                    }
+                }
+                vec![]
+            }
+            Node::Multiplication(ports) => {
+                if ports.len() == 2 {
+                    simplify_binary_multiplication_node(diagram, address);
+                    return vec![ports[0].0, ports[1].0];
+                }
+                for (port_index, target_port) in ports.iter().enumerate() {
+                    if port_index == 0 {
+                        if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
+                            // Propagate unrestricted
+                            simplify_addmul_unrestricted(diagram, address, port_index);
+                            return ports.iter().map(|p| p.0).collect();
+                        }
+                    }
+                    if port_index > 0 {
+                        if let Some(Node::Multiplication(_)) = diagram.nodes.get(&target_port.0) {
+                            if target_port.1 == 0 {
+                                // Fuse multiplication nodes
+                                fuse_multiplication_nodes_basic(diagram, address, port_index);
+                                return vec![address];
+                            }
+                        }
+
+                        if let Some(Node::MultiplyConstant(val, _, _)) =
+                            diagram.nodes.get(&target_port.0)
+                        {
+                            if val != &BigInt::from(0) {
+                                // Propagate constant
+                                simplify_multiplication_const_multiplication(
+                                    diagram, address, port_index, field_ops,
+                                );
+                                return vec![address, target_port.0];
+                            }
+                        }
+                        if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
+                            // Propagate constant
+                            simplify_multiplication_const(diagram, address, port_index);
+                            return vec![address, target_port.0];
+                        }
+                    }
+                }
+                vec![]
+            }
+            Node::AddConstant(value, port1, port2) => {
+                if value == BigInt::from(0) {
+                    simplify_add_constant_with_zero(diagram, address);
+                    return vec![port1.0, port2.0];
+                }
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
+                    add_constant_constant_head(diagram, address, field_ops);
+                    return vec![address];
+                }
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
+                    add_constant_constant_tail(diagram, address, field_ops);
+                    return vec![address];
+                }
+                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+                    delete_const_op_connected_to_unrestricted(diagram, address, port1.1);
+                    return vec![address];
+                }
+                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
+                    delete_const_op_connected_to_unrestricted(diagram, address, port2.1);
+                    return vec![address];
+                }
+                if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
+                    if port1.1 == 0 {
+                        fuse_addition_by_constant_nodes_hd_hd(diagram, address, field_ops);
+                        return vec![address];
+                    }
+                }
+                if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+                    if port2.1 == 0 {
+                        fuse_addition_by_constant_nodes_hd_tl(diagram, address, field_ops);
+                    }
+                    if port2.1 == 1 {
+                        fuse_addition_by_constant_nodes_tl_tl(diagram, address, field_ops);
+                    }
+                    return vec![address];
+                }
+                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+                    if port2.1 == 1 {
+                        swap_add_and_multiply_constants_tl_tl(diagram, address, field_ops);
+                        return vec![address, port2.0];
+                    }
+                }
+                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
+                    if port1.1 == 1 {
+                        swap_add_and_multiply_constants_hd_tl(diagram, address, field_ops);
+                        return vec![address, port1.0];
+                    }
+                }
+                vec![]
+            }
+            Node::MultiplyConstant(value, port1, port2) => {
+                if value == BigInt::from(0) {
+                    simplify_mul_constant_with_zero(diagram, address);
+                    return vec![port1.0, port2.0];
+                }
+                if value == BigInt::from(1) {
+                    simplify_mul_constant_with_one(diagram, address);
+                    return vec![port1.0, port2.0];
+                }
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
+                    mul_constant_constant_head(diagram, address, field_ops);
+                    return vec![address];
+                }
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
+                    mul_constant_constant_tail(diagram, address, field_ops);
+                    return vec![address];
+                }
+                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+                    delete_const_op_connected_to_unrestricted(diagram, address, port1.1);
+                    return vec![address];
+                }
+                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
+                    if value != BigInt::from(0) {
+                        delete_const_op_connected_to_unrestricted(diagram, address, port2.1);
+                        return vec![address];
+                    }
+                }
+                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
+                    if port2.1 == 0 {
+                        fuse_multiplication_by_constant_nodes_hd_hd(diagram, address, field_ops);
+                        return vec![address];
+                    }
+                }
+                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+                    if port2.1 == 0 {
+                        fuse_multiplication_by_constant_nodes_hd_tl(diagram, address, field_ops);
+                    }
+                    if port2.1 == 1 {
+                        fuse_multiplication_by_constant_nodes_tl_tl(diagram, address, field_ops);
+                    }
+                    return vec![address];
+                }
+                vec![]
+            }
+            Node::ExponentiateConstant(value, port1, port2) => {
+                if value == BigInt::from(1) {
+                    simplify_exp_constant_with_one(diagram, address);
+                    return vec![port1.0, port2.0];
+                }
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
+                    exp_constant_constant_tail(diagram, address, field_ops);
+                    return vec![address];
+                }
+
+                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+                    if value != BigInt::from(0) {
+                        delete_const_op_connected_to_unrestricted(diagram, address, port1.1);
+                        return vec![address];
+                    }
+                }
+
+                // ??? if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) ????
+                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+                    if port2.1 == 0 {
+                        fuse_exponentiation_by_constant_nodes_hd_tl(diagram, address, field_ops);
+                        return vec![address];
+                    }
+                }
+                vec![]
+            }
+            Node::Constant(_, port) => {
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
+                    constant_constant_simplification(diagram, address);
+                }
+                vec![]
+            }
+            Node::Unrestricted(port) => {
+                if let Some(Node::Constant(_, _) | Node::Unrestricted(_)) =
+                    diagram.nodes.get(&port.0)
+                {
+                    unrestricted_unary_simplification(diagram, address);
+                }
+                vec![]
+            }
+            _ => vec![],
+        }
+    } else {
+        vec![]
+    }
+}
+
 pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps) {
-    let mut changed = true;
-    let mut changed_node;
+    // Initialize the vector with all the addresses in the diagram.
+    let mut addresses_to_process: Vec<Address> = diagram.nodes.keys().cloned().collect();
 
-    while changed {
-        println!("Size {}", diagram.nodes.len());
-        changed = false;
+    while !addresses_to_process.is_empty() {
+        println!("\rTo Proc: {}", addresses_to_process.len());
+        let mut new_addresses = HashSet::new();
 
-        // Collect the keys into a Vec
-        let current_node_keys: Vec<_> = diagram.nodes.keys().cloned().collect();
-
-        // Now iterate through the node keys
-        for prime_node_address in current_node_keys {
-            changed_node = false;
-
-            // It's a good practice to check if the node still exists, in case it was deleted
-            if let Some(node) = diagram.nodes.get(&prime_node_address).cloned() {
-                match node {
-                    Node::Equality(vars, ports) => {
-                        if !changed_node && ports.is_empty() {
-                            // Delete empty equations
-                            diagram.nodes.remove(&prime_node_address);
-                            changed = true;
-                            changed_node = true;
-                        }
-                        if !changed_node && vars.is_empty() && ports.len() == 1 {
-                            if let Some(Node::Unrestricted(_) | Node::Constant(_, _)) =
-                                diagram.nodes.get(&ports[0].0)
-                            {
-                                diagram.nodes.remove(&prime_node_address);
-                                diagram.nodes.remove(&ports[0].0);
-                                changed = true;
-                                changed_node = true;
-                            }
-                        }
-                        if !changed_node && vars.is_empty() && ports.len() == 2 {
-                            simplify_binary_equality_node(diagram, prime_node_address);
-                            changed = true;
-                            changed_node = true;
-                        }
-                        for (port_index, target_port) in ports.iter().enumerate() {
-                            if !changed_node {
-                                if let Some(Node::Unrestricted(_)) =
-                                    diagram.nodes.get(&target_port.0)
-                                {
-                                    simplify_equality_with_unrestricted(
-                                        diagram,
-                                        prime_node_address,
-                                        port_index,
-                                    );
-                                    changed = true;
-                                    changed_node = true;
-                                }
-                            }
-                            if !changed_node {
-                                if let Some(Node::Constant(_, _)) =
-                                    diagram.nodes.get(&target_port.0)
-                                {
-                                    simplify_equality_const(
-                                        diagram,
-                                        prime_node_address,
-                                        port_index,
-                                    );
-                                    changed = true;
-                                    changed_node = true;
-                                }
-                            }
-                            if !changed_node {
-                                if let Some(Node::Equality(_, _)) =
-                                    diagram.nodes.get(&target_port.0)
-                                {
-                                    // Fuse equality nodes
-                                    fuse_equality_nodes(diagram, prime_node_address, port_index);
-                                    changed = true;
-                                    changed_node = true;
-                                }
-                            }
-                        }
-                    }
-                    Node::Addition(ports) => {
-                        if !changed_node && ports.len() == 2 {
-                            simplify_binary_addition_node(diagram, prime_node_address);
-                            changed = true;
-                            changed_node = true;
-                        }
-                        for (port_index, target_port) in ports.iter().enumerate() {
-                            if !changed_node {
-                                if let Some(Node::Unrestricted(_)) =
-                                    diagram.nodes.get(&target_port.0)
-                                {
-                                    // Propagate unrestricted
-                                    simplify_addmul_unrestricted(
-                                        diagram,
-                                        prime_node_address,
-                                        port_index,
-                                    );
-                                    changed = true;
-                                    changed_node = true;
-                                }
-                            }
-                            if port_index > 0 {
-                                if !changed_node {
-                                    if let Some(Node::Addition(_)) =
-                                        diagram.nodes.get(&target_port.0)
-                                    {
-                                        if target_port.1 == 0 {
-                                            // Fuse addition nodes
-                                            fuse_addition_nodes_basic(
-                                                diagram,
-                                                prime_node_address,
-                                                port_index,
-                                            );
-                                            changed = true;
-                                            changed_node = true;
-                                        }
-                                    }
-                                }
-                                if !changed_node {
-                                    if let Some(Node::AddConstant(_, _, _)) =
-                                        diagram.nodes.get(&target_port.0)
-                                    {
-                                        // Propagate constant
-                                        simplify_addition_const_addition(
-                                            diagram,
-                                            prime_node_address,
-                                            port_index,
-                                            field_ops,
-                                        );
-                                        changed = true;
-                                        changed_node = true;
-                                    }
-                                }
-                                if !changed_node {
-                                    if let Some(Node::Constant(_, _)) =
-                                        diagram.nodes.get(&target_port.0)
-                                    {
-                                        // Propagate constant
-                                        simplify_addition_const(
-                                            diagram,
-                                            prime_node_address,
-                                            port_index,
-                                        );
-                                        changed = true;
-                                        changed_node = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Node::Multiplication(ports) => {
-                        if !changed_node && ports.len() == 2 {
-                            simplify_binary_multiplication_node(diagram, prime_node_address);
-                            changed = true;
-                            changed_node = true;
-                        }
-                        for (port_index, target_port) in ports.iter().enumerate() {
-                            if port_index == 0 && !changed_node {
-                                if let Some(Node::Unrestricted(_)) =
-                                    diagram.nodes.get(&target_port.0)
-                                {
-                                    // Propagate unrestricted
-                                    simplify_addmul_unrestricted(
-                                        diagram,
-                                        prime_node_address,
-                                        port_index,
-                                    );
-                                    changed = true;
-                                    changed_node = true;
-                                }
-                            }
-                            if port_index > 0 {
-                                if !changed_node {
-                                    if let Some(Node::Multiplication(_)) =
-                                        diagram.nodes.get(&target_port.0)
-                                    {
-                                        if target_port.1 == 0 {
-                                            // Fuse multiplication nodes
-                                            fuse_multiplication_nodes_basic(
-                                                diagram,
-                                                prime_node_address,
-                                                port_index,
-                                            );
-                                            changed = true;
-                                            changed_node = true;
-                                        }
-                                    }
-                                }
-
-                                if !changed_node {
-                                    if let Some(Node::MultiplyConstant(val, _, _)) =
-                                        diagram.nodes.get(&target_port.0)
-                                    {
-                                        if val != &BigInt::from(0) {
-                                            // Propagate constant
-                                            simplify_multiplication_const_multiplication(
-                                                diagram,
-                                                prime_node_address,
-                                                port_index,
-                                                field_ops,
-                                            );
-                                            changed = true;
-                                            changed_node = true;
-                                        }
-                                    }
-                                }
-                                if !changed_node {
-                                    if let Some(Node::Constant(_, _)) =
-                                        diagram.nodes.get(&target_port.0)
-                                    {
-                                        // Propagate constant
-                                        simplify_multiplication_const(
-                                            diagram,
-                                            prime_node_address,
-                                            port_index,
-                                        );
-                                        changed = true;
-                                        changed_node = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Node::AddConstant(value, port1, port2) => {
-                        if !changed_node && value == BigInt::from(0) {
-                            simplify_add_constant_with_zero(diagram, prime_node_address);
-                            changed = true;
-                            changed_node = true;
-                        }
-                        if !changed_node {
-                            if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
-                                add_constant_constant_head(diagram, prime_node_address, field_ops);
-                                changed = true;
-                                changed_node = true;
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                                add_constant_constant_tail(diagram, prime_node_address, field_ops);
-                                changed = true;
-                                changed_node = true;
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-                                delete_const_op_connected_to_unrestricted(
-                                    diagram,
-                                    prime_node_address,
-                                    port1.1,
-                                );
-                                changed = true;
-                                changed_node = true;
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
-                                delete_const_op_connected_to_unrestricted(
-                                    diagram,
-                                    prime_node_address,
-                                    port2.1,
-                                );
-                                changed = true;
-                                changed_node = true;
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
-                                if port1.1 == 0 {
-                                    fuse_addition_by_constant_nodes_hd_hd(
-                                        diagram,
-                                        prime_node_address,
-                                        field_ops,
-                                    );
-                                    changed = true;
-                                    changed_node = true;
-                                }
-                            }
-                        }
-                        if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
-                            if !changed_node && port2.1 == 0 {
-                                fuse_addition_by_constant_nodes_hd_tl(
-                                    diagram,
-                                    prime_node_address,
-                                    field_ops,
-                                );
-                                changed = true;
-                                changed_node = true;
-                            }
-                            if !changed_node && port2.1 == 1 {
-                                fuse_addition_by_constant_nodes_tl_tl(
-                                    diagram,
-                                    prime_node_address,
-                                    field_ops,
-                                );
-                                changed = true;
-                                changed_node = true;
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::MultiplyConstant(_, _, _)) =
-                                diagram.nodes.get(&port2.0)
-                            {
-                                if port2.1 == 1 {
-                                    swap_add_and_multiply_constants_tl_tl(
-                                        diagram,
-                                        prime_node_address,
-                                        field_ops,
-                                    );
-                                    changed = true;
-                                    changed_node = true;
-                                }
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::MultiplyConstant(_, _, _)) =
-                                diagram.nodes.get(&port1.0)
-                            {
-                                if port1.1 == 1 {
-                                    swap_add_and_multiply_constants_hd_tl(
-                                        diagram,
-                                        prime_node_address,
-                                        field_ops,
-                                    );
-                                    changed = true;
-                                }
-                            }
-                        }
-                    }
-                    Node::MultiplyConstant(value, port1, port2) => {
-                        if !changed_node && value == BigInt::from(0) {
-                            simplify_mul_constant_with_zero(diagram, prime_node_address);
-                            changed = true;
-                            changed_node = true;
-                        }
-                        if !changed_node && value == BigInt::from(1) {
-                            simplify_mul_constant_with_one(diagram, prime_node_address);
-                            changed = true;
-                            changed_node = true;
-                        }
-                        if !changed_node {
-                            if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
-                                mul_constant_constant_head(diagram, prime_node_address, field_ops);
-                                changed = true;
-                                changed_node = true;
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                                mul_constant_constant_tail(diagram, prime_node_address, field_ops);
-                                changed = true;
-                                changed_node = true;
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-                                delete_const_op_connected_to_unrestricted(
-                                    diagram,
-                                    prime_node_address,
-                                    port1.1,
-                                );
-                                changed = true;
-                                changed_node = true;
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
-                                if value != BigInt::from(0) {
-                                    delete_const_op_connected_to_unrestricted(
-                                        diagram,
-                                        prime_node_address,
-                                        port2.1,
-                                    );
-                                    changed = true;
-                                    changed_node = true;
-                                }
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::MultiplyConstant(_, _, _)) =
-                                diagram.nodes.get(&port1.0)
-                            {
-                                if port2.1 == 0 {
-                                    fuse_multiplication_by_constant_nodes_hd_hd(
-                                        diagram,
-                                        prime_node_address,
-                                        field_ops,
-                                    );
-                                    changed = true;
-                                    changed_node = true;
-                                }
-                            }
-                        }
-                        if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
-                            if !changed_node && port2.1 == 0 {
-                                fuse_multiplication_by_constant_nodes_hd_tl(
-                                    diagram,
-                                    prime_node_address,
-                                    field_ops,
-                                );
-                                changed = true;
-                                changed_node = true;
-                            }
-                            if !changed_node && port2.1 == 1 {
-                                fuse_multiplication_by_constant_nodes_tl_tl(
-                                    diagram,
-                                    prime_node_address,
-                                    field_ops,
-                                );
-                                changed = true;
-                            }
-                        }
-                    }
-                    Node::ExponentiateConstant(value, port1, port2) => {
-                        if value == BigInt::from(1) {
-                            simplify_exp_constant_with_one(diagram, prime_node_address);
-                            changed = true;
-                            changed_node = true;
-                        }
-                        if !changed_node {
-                            if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                                exp_constant_constant_tail(diagram, prime_node_address, field_ops);
-                                changed = true;
-                                changed_node = true;
-                            }
-                        }
-                        if !changed_node {
-                            if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-                                if value != BigInt::from(0) {
-                                    delete_const_op_connected_to_unrestricted(
-                                        diagram,
-                                        prime_node_address,
-                                        port1.1,
-                                    );
-                                    changed = true;
-                                    changed_node = true;
-                                }
-                            }
-                        }
-                        // ??? if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) ????
-                        if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
-                            if !changed_node && port2.1 == 0 {
-                                fuse_exponentiation_by_constant_nodes_hd_tl(
-                                    diagram,
-                                    prime_node_address,
-                                    field_ops,
-                                );
-                                changed = true;
-                            }
-                        }
-                    }
-                    Node::Constant(_, port) => {
-                        if !changed_node {
-                            if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
-                                constant_constant_simplification(diagram, prime_node_address);
-                                changed = true;
-                            }
-                        }
-                    }
-                    Node::Unrestricted(port) => {
-                        if !changed_node {
-                            if let Some(Node::Constant(_, _) | Node::Unrestricted(_)) =
-                                diagram.nodes.get(&port.0)
-                            {
-                                unrestricted_unary_simplification(diagram, prime_node_address);
-                                changed = true;
-                            }
-                        }
-                    }
-                    _ => {}
+        for address in addresses_to_process {
+            // Apply a single simplification step to the address.
+            let modified_addresses = simplify_string_diagram_step(diagram, field_ops, address);
+            // Add the modified addresses to the hash set.
+            for modified_address in modified_addresses {
+                new_addresses.insert(modified_address);
+                // Look up any connecting addresses and add them to the hash set.
+                let connected_addresses = diagram.address_list(&modified_address);
+                for connected_address in connected_addresses {
+                    new_addresses.insert(connected_address);
                 }
             }
         }
+
+        // Convert the HashSet to a Vec for the next iteration.
+        addresses_to_process = new_addresses.into_iter().collect();
     }
 }
 
