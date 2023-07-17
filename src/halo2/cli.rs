@@ -1,22 +1,24 @@
 use crate::error::Error;
-use crate::halo2::synth::{keygen, make_constant, prover, verifier};
+use crate::halo2::api::{prove_from_int_variable_assignments, ProofDataHalo2};
+use crate::halo2::synth::verifier;
+
 use crate::qprintln;
-use crate::util::{prompt_inputs, read_inputs_from_file, Config};
+use crate::util::{get_circuit_assignments, prompt_inputs, read_inputs_from_file2, Config};
 
 use halo2_proofs::plonk::keygen_vk;
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_serialize::{Read, SerializationError};
-use std::io::Write;
 
 use clap::{Args, Subcommand};
 
 use crate::halo2::api::HaloCircuitData;
 use ff::PrimeField;
 use halo2_proofs::pasta::Fp;
+use num_bigint::BigInt;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
+use std::ops::Deref;
 use std::path::PathBuf;
 
 #[derive(Subcommand)]
@@ -78,6 +80,22 @@ fn compile_halo2_cmd(
     Ok(())
 }
 
+fn prove_from_file(
+    path_to_inputs: &PathBuf,
+    circuit_data: &HaloCircuitData,
+    config: &Config,
+) -> Result<ProofDataHalo2, Error> {
+    qprintln!(
+        config,
+        "* Reading inputs from file {}...",
+        path_to_inputs.to_string_lossy()
+    );
+    let raw_inputs: HashMap<String, BigInt> = read_inputs_from_file2(path_to_inputs).unwrap();
+    let inputs =
+        get_circuit_assignments::<BigInt>(circuit_data.circuit.module.deref(), &raw_inputs)?;
+    prove_from_int_variable_assignments(circuit_data, &inputs, config)
+}
+
 /* Implements the subcommand that creates a proof from interactively entered
  * inputs. */
 fn prove_halo2_cmd(
@@ -94,79 +112,28 @@ fn prove_halo2_cmd(
     let mut expected_path_to_inputs = circuit.clone();
     expected_path_to_inputs.set_extension("inputs");
 
-    let HaloCircuitData {
-        params,
-        mut circuit,
-    } = HaloCircuitData::read(&mut circuit_file).unwrap();
-
-    // Prompt for program inputs
-    let var_assignments_ints = match inputs {
-        Some(path_to_inputs) => {
-            qprintln!(
-                config,
-                "* Reading inputs from file {}...",
-                path_to_inputs.to_string_lossy()
-            );
-            read_inputs_from_file(&circuit.module, path_to_inputs).unwrap()
-        }
-        None => {
-            if expected_path_to_inputs.exists() {
-                qprintln!(
-                    config,
-                    "* Reading inputs from file {}...",
-                    expected_path_to_inputs.to_string_lossy()
-                );
-                read_inputs_from_file(&circuit.module, &expected_path_to_inputs).unwrap()
-            } else {
-                qprintln!(config, "* Soliciting circuit witnesses...");
-                prompt_inputs(&circuit.module)
-            }
-        }
-    };
-
-    let mut var_assignments = HashMap::new();
-    for (k, v) in var_assignments_ints {
-        var_assignments.insert(k, make_constant(v));
-    }
-
-    // Populate variable definitions
-    circuit.populate_variables(var_assignments.clone());
-
-    // Get public inputs Fp
-    let binding = circuit
-        .module
-        .pubs
-        .iter()
-        .map(|inst| var_assignments[&inst.id])
-        .collect::<Vec<Fp>>();
-    let instances = binding.as_slice();
-
-    // Generating proving key
-    qprintln!(config, "* Generating proving key...");
-    let (pk, _vk) = keygen(&circuit, &params)?;
+    let circuit_data = HaloCircuitData::read(&mut circuit_file).unwrap();
 
     // Start proving witnesses
     qprintln!(config, "* Proving knowledge of witnesses...");
-    let proof = prover(circuit, &params, &pk, instances)?;
-
-    // Serilize Public Inputs
-    // Convert Vec<Fp> to Vec<u8>
-    let public_inputs: Vec<u8> = instances
-        .iter()
-        .flat_map(|fp| {
-            let repr = fp.to_repr();
-            repr.as_ref().to_vec()
-        })
-        .collect();
+    let proof_data = match inputs {
+        Some(path_to_inputs) => prove_from_file(path_to_inputs, &circuit_data, config),
+        None => {
+            if expected_path_to_inputs.exists() {
+                prove_from_file(&expected_path_to_inputs, &circuit_data, config)
+            } else {
+                qprintln!(config, "* Soliciting circuit witnesses...");
+                let inputs = prompt_inputs(&circuit_data.circuit.module);
+                prove_from_int_variable_assignments(&circuit_data, &inputs, config)
+            }
+        }
+    }?;
 
     qprintln!(config, "* Serializing proof to storage...");
     let mut proof_file = File::create(output).expect("unable to create proof file");
-    ProofDataHalo2 {
-        proof,
-        public_inputs,
-    }
-    .serialize(&mut proof_file)
-    .expect("Proof serialization failed");
+    proof_data
+        .serialize(&mut proof_file)
+        .expect("Proof serialization failed");
 
     qprintln!(config, "* Proof generation success!");
     Ok(())
@@ -213,12 +180,6 @@ fn verify_halo2_cmd(
         qprintln!(config, "* Result from verifier: {:?}", verifier_result);
         Err(Error::ProofVerificationFailure)
     }
-}
-
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
-struct ProofDataHalo2 {
-    proof: Vec<u8>,
-    public_inputs: Vec<u8>,
 }
 
 pub fn halo2(halo2_commands: &Halo2Commands, config: &Config) -> Result<(), Error> {

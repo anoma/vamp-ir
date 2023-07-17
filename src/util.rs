@@ -8,6 +8,7 @@ use std::{
 use ark_serialize::Write;
 use num_traits::Num;
 
+use crate::ast::Variable;
 use crate::error::Error;
 use crate::error::Error::{InvalidVariableAssignmentValue, MissingVariableAssignment};
 use crate::{
@@ -17,13 +18,12 @@ use crate::{
 
 /// Convert named circuit assignments to assignments of vamp-ir variableIds.
 /// Useful for calling vamp-ir Halo2Module::populate_variable_assignments.
-pub(crate) fn get_circuit_assignments<F>(
+pub(crate) fn get_circuit_assignments<T>(
     module: &Module,
-    named_assignments: &HashMap<String, F>,
-) -> Result<HashMap<VariableId, F>, Error>
+    named_assignments: &HashMap<String, T>,
+) -> Result<HashMap<VariableId, T>, Error>
 where
-    F: Clone + Num + Neg<Output = F>,
-    <F as Num>::FromStrRadixErr: std::fmt::Debug,
+    T: Clone,
 {
     let mut input_variables = HashMap::new();
     collect_module_variables(module, &mut input_variables);
@@ -48,6 +48,31 @@ where
             })
         })
         .collect()
+}
+
+/* Read satisfying inputs to the given program from a file. */
+pub fn read_inputs_from_file2<F>(path_to_inputs: &PathBuf) -> Result<HashMap<String, F>, Error>
+where
+    F: Clone + Num + Neg<Output = F>,
+    <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug,
+{
+    let contents = fs::read_to_string(path_to_inputs).expect("Could not read inputs file");
+
+    // Read the user-supplied inputs from the file
+    let named_assignments: HashMap<String, String> =
+        json5::from_str(&contents).expect("Could not parse JSON5");
+
+    named_assignments
+        .into_iter()
+        .map(|(var_name, str_value)| {
+            let n = parse_prefixed_num::<F>(&str_value).map_err(|_| {
+                InvalidVariableAssignmentValue {
+                    var_name: var_name.clone(),
+                }
+            })?;
+            Ok((var_name.clone(), n))
+        })
+        .collect::<Result<HashMap<String, F>, Error>>()
 }
 
 /* Read satisfying inputs to the given program from a file. */
@@ -99,10 +124,15 @@ where
         public_variables.insert(var.id);
     }
 
-    let mut var_assignments = HashMap::new();
+    let named_input_variables: Vec<(VariableId, Variable)> = input_variables
+        .into_iter()
+        .filter(|(_id, var)| var.name.is_some())
+        .collect();
+
+    let mut var_assignments: HashMap<VariableId, F> = HashMap::new();
 
     // Solicit input variables from user and solve for choice point values
-    for (id, var) in input_variables {
+    for (id, var) in named_input_variables {
         let visibility = if public_variables.contains(&id) {
             "(public)"
         } else {

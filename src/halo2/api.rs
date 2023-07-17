@@ -1,12 +1,19 @@
-use crate::ast::Module;
+use crate::ast::{Module, VariableId};
 use crate::error::Error;
-use crate::error::Error::ParseError;
-use crate::halo2::synth::{Halo2Module, PrimeFieldOps};
+use crate::error::Error::{BackendError, ParseError};
+use crate::halo2::synth::make_constant;
+use crate::halo2::synth::{keygen, prover, Halo2Module, PrimeFieldOps};
 use crate::qprintln;
-use crate::util::Config;
+use crate::util::{get_circuit_assignments, Config};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::{Read, SerializationError};
 use bincode::error::{DecodeError, EncodeError};
+use ff::PrimeField;
 use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::poly::commitment::Params;
+use num_bigint::BigInt;
+use std::collections::HashMap;
+use std::io::Write;
 use std::rc::Rc;
 
 pub fn compile(source: impl AsRef<str>, config: &Config) -> Result<HaloCircuitData, Error> {
@@ -20,10 +27,80 @@ pub fn compile(source: impl AsRef<str>, config: &Config) -> Result<HaloCircuitDa
     Ok(HaloCircuitData { params, circuit })
 }
 
+pub fn prove(
+    circuit_data: &HaloCircuitData,
+    named_assignments: &HashMap<String, Fp>,
+    config: &Config,
+) -> Result<ProofDataHalo2, Error> {
+    let module = circuit_data.circuit.module.as_ref();
+    let assignments = get_circuit_assignments(module, named_assignments)?;
+    prove_from_variable_assignments(circuit_data, &assignments, config)
+}
+
+pub(crate) fn prove_from_int_variable_assignments(
+    circuit_data: &HaloCircuitData,
+    int_assignments: &HashMap<VariableId, BigInt>,
+    config: &Config,
+) -> Result<ProofDataHalo2, Error> {
+    let assignments: HashMap<VariableId, Fp> = int_assignments
+        .iter()
+        .map(|(id, f)| (*id, make_constant::<Fp>(f.clone())))
+        .collect();
+    prove_from_variable_assignments(circuit_data, &assignments, config)
+}
+
+pub(crate) fn prove_from_variable_assignments(
+    circuit_data: &HaloCircuitData,
+    assignments: &HashMap<VariableId, Fp>,
+    config: &Config,
+) -> Result<ProofDataHalo2, Error> {
+    let params = &circuit_data.params;
+    let module = circuit_data.circuit.module.as_ref();
+
+    // Populate variable definitions
+    let mut circuit = circuit_data.circuit.clone();
+    circuit.populate_variables(assignments.clone());
+
+    // Get public inputs Fp
+    let binding = module
+        .pubs
+        .iter()
+        .map(|inst| assignments[&inst.id])
+        .collect::<Vec<Fp>>();
+    let instances = binding.as_slice();
+
+    let public_inputs: Vec<u8> = instances
+        .iter()
+        .flat_map(|fp| {
+            let repr = fp.to_repr();
+            repr.as_ref().to_vec()
+        })
+        .collect();
+
+    // Generating proving key
+    qprintln!(config, "* Generating proving key...");
+    let (pk, _vk) = keygen(&circuit, &params)?;
+
+    // Start proving witnesses
+    qprintln!(config, "* Proving knowledge of witnesses...");
+    let proof = prover(circuit.clone(), &params, &pk, instances)
+        .map_err(|e| BackendError { e: e.to_string() })?;
+    Ok(ProofDataHalo2 {
+        proof,
+        public_inputs,
+    })
+}
+
 /* Captures all the data required to use a Halo2 circuit. */
 pub struct HaloCircuitData {
     pub params: Params<EqAffine>,
     pub circuit: Halo2Module<Fp>,
+}
+
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+pub struct ProofDataHalo2 {
+    pub proof: Vec<u8>,
+    pub public_inputs: Vec<u8>,
 }
 
 impl HaloCircuitData {
