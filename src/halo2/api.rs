@@ -150,4 +150,28 @@ mod tests {
         let config = Config { quiet: true };
         assert!(compile("1/0 = 1;", &config).is_err());
     }
+
+    #[test]
+    fn test_prove_valid() {
+        let config = Config { quiet: true };
+        let circuit = compile("x = 1;", &config).unwrap();
+        let assignments = HashMap::from([("x", Fp::one())]);
+        assert!(prove(&circuit, &assignments, &config).is_ok());
+    }
+
+    #[test]
+    fn test_prove_missing_assignment() {
+        let config = Config { quiet: true };
+        let circuit = compile("x = 1;", &config).unwrap();
+        let assignments: HashMap<String, Fp> = HashMap::new();
+        assert!(prove(&circuit, &assignments, &config).is_err());
+    }
+
+    #[test]
+    fn test_prove_invalid_assignment() {
+        let config = Config { quiet: true };
+        let circuit = compile("x = 1;", &config).unwrap();
+        let assignments = HashMap::from([("x", Fp::zero())]);
+        assert!(prove(&circuit, &assignments, &config).is_ok());
+    }
 }
