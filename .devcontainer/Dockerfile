@@ -31,7 +31,7 @@ RUN sudo bash -c 'curl -s https://api.github.com/repos/anoma/vamp-ir/releases/la
       | grep -a "browser_download_url" \
       | cut -d : -f 2,3 \
       | tr -d \" \
-      | wget --output-document vamp-ir.tar.gz -qi - \
-      && tar xfv vamp-ir.tar.gz --directory=/home/vscode/.local/bin/'
+      | wget -qi - \
+      && tar xfv vamp-ir-x86_64-unknown-linux-musl.tar.gz --directory=/home/vscode/.local/bin/'
 
 RUN sudo bash -c 'chmod +x /home/vscode/.local/bin/vamp-ir'
