@@ -924,6 +924,47 @@ pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
     expressions
 }
 
+pub enum RewriteRule {
+    SplitAdditionNode(Address),
+    SplitMultiplicationNode(Address),
+    SplitExponentiationNode(Address),
+    FuseEqualityNodes(Address, PortIndex),
+    FuseAdditionNodes(Address, PortIndex),
+    RemoveBinaryAdditionNode(Address),
+    FuseMultiplicationNodes(Address, PortIndex),
+    RemoveBinaryMultiplicationNode(Address),
+    ConstantConstantRemoval(Address),
+    UnrestrictedUnaryRemoval(Address),
+    AddConstantConstantHead(Address),
+    AddConstantConstantTail(Address),
+    AddConstantZero(Address),
+    FuseAdditionByConstantHdTl(Address),
+    FuseAdditionByConstantTlTl(Address),
+    FuseAdditionByConstantHdHd(Address),
+    MulConstantConstantHead(Address),
+    MulConstantConstantTail(Address),
+    MulConstantZero(Address),
+    MulConstantOne(Address),
+    FuseMultiplicationByConstantHdTl(Address),
+    FuseMultiplicationByConstantTlTl(Address),
+    FuseMultiplicationByConstantHdHd(Address),
+    ExpConstantConstantTail(Address),
+    ExpConstantConstantOne(Address),
+    FuseExponentiationByConstantHdTl(Address),
+    EqualityUnrestricted(Address, PortIndex),
+    RemoveBinaryEqualityNode(Address),
+    AdditionConstAddition(Address, PortIndex),
+    MultiplicationConstMultiplication(Address, PortIndex),
+    AdditionConst(Address, PortIndex),
+    MultiplicationConst(Address, PortIndex),
+    EqualityConst(Address, PortIndex),
+    AddMulUnrestricted(Address, PortIndex),
+    DeleteConstAddUnrestricted(Address, PortIndex),
+    DeleteConstMulUnrestricted(Address, PortIndex),
+    SwapAddMulConstantsHdTl(Address),
+    SwapAddMulConstantsTlTl(Address),
+}
+
 pub fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_two_ports, mut remaining_ports) =
