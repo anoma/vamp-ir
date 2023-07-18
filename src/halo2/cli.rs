@@ -71,7 +71,7 @@ fn compile_halo2_cmd(
     config: &Config,
 ) -> Result<(), Error> {
     let source = fs::read_to_string(source).expect("cannot read file");
-    let halo_circuit_data = crate::halo2::api::compile(source, &config)?;
+    let halo_circuit_data = crate::halo2::api::compile(source, config)?;
     let mut circuit_file = File::create(output).expect("unable to create circuit file");
     halo_circuit_data.write(&mut circuit_file).unwrap();
 
