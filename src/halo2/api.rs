@@ -29,19 +29,24 @@ pub fn compile(source: impl AsRef<str>, config: &Config) -> Result<HaloCircuitDa
 
 pub fn prove(
     circuit_data: &HaloCircuitData,
-    named_assignments: &HashMap<String, Fp>,
+    named_assignments: &HashMap<impl AsRef<str>, Fp>,
     config: &Config,
 ) -> Result<ProofDataHalo2, Error> {
     let module = circuit_data.circuit.module.as_ref();
-    let assignments = get_circuit_assignments(module, named_assignments)?;
-    prove_from_variable_assignments(circuit_data, &assignments, config)
+    let named_string_assignments: HashMap<String, Fp> = named_assignments
+        .into_iter()
+        .map(|(key, value)| (key.as_ref().to_string(), *value))
+        .collect();
+    let assignments = get_circuit_assignments(module, &named_string_assignments)?;
+    let proof_data = prove_from_variable_assignments(circuit_data, &assignments, config)?;
+    Ok(ProofDataHalo2::from_proof_data_cli_halo2(proof_data))
 }
 
 pub(crate) fn prove_from_int_variable_assignments(
     circuit_data: &HaloCircuitData,
     int_assignments: &HashMap<VariableId, BigInt>,
     config: &Config,
-) -> Result<ProofDataHalo2, Error> {
+) -> Result<ProofDataCliHalo2, Error> {
     let assignments: HashMap<VariableId, Fp> = int_assignments
         .iter()
         .map(|(id, f)| (*id, make_constant::<Fp>(f.clone())))
@@ -53,7 +58,7 @@ pub(crate) fn prove_from_variable_assignments(
     circuit_data: &HaloCircuitData,
     assignments: &HashMap<VariableId, Fp>,
     config: &Config,
-) -> Result<ProofDataHalo2, Error> {
+) -> Result<ProofDataCliHalo2, Error> {
     let params = &circuit_data.params;
     let module = circuit_data.circuit.module.as_ref();
 
@@ -85,7 +90,7 @@ pub(crate) fn prove_from_variable_assignments(
     qprintln!(config, "* Proving knowledge of witnesses...");
     let proof = prover(circuit.clone(), &params, &pk, instances)
         .map_err(|e| BackendError { e: e.to_string() })?;
-    Ok(ProofDataHalo2 {
+    Ok(ProofDataCliHalo2 {
         proof,
         public_inputs,
     })
@@ -97,10 +102,22 @@ pub struct HaloCircuitData {
     pub circuit: Halo2Module<Fp>,
 }
 
-#[derive(CanonicalSerialize, CanonicalDeserialize)]
 pub struct ProofDataHalo2 {
     pub proof: Vec<u8>,
-    pub public_inputs: Vec<u8>,
+}
+
+impl ProofDataHalo2 {
+    fn from_proof_data_cli_halo2(proof_data: ProofDataCliHalo2) -> ProofDataHalo2 {
+        ProofDataHalo2 {
+            proof: proof_data.proof,
+        }
+    }
+}
+
+#[derive(CanonicalSerialize, CanonicalDeserialize)]
+pub(crate) struct ProofDataCliHalo2 {
+    pub(crate) proof: Vec<u8>,
+    pub(crate) public_inputs: Vec<u8>,
 }
 
 impl HaloCircuitData {

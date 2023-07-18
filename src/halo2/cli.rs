@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::halo2::api::{prove_from_int_variable_assignments, ProofDataHalo2};
+use crate::halo2::api::{prove_from_int_variable_assignments, ProofDataCliHalo2};
 use crate::halo2::synth::verifier;
 
 use crate::qprintln;
@@ -84,7 +84,7 @@ fn prove_from_file(
     path_to_inputs: &PathBuf,
     circuit_data: &HaloCircuitData,
     config: &Config,
-) -> Result<ProofDataHalo2, Error> {
+) -> Result<ProofDataCliHalo2, Error> {
     qprintln!(
         config,
         "* Reading inputs from file {}...",
@@ -153,10 +153,10 @@ fn verify_halo2_cmd(
 
     qprintln!(config, "* Reading zero-knowledge proof...");
     let mut proof_file = File::open(proof).expect("unable to load proof file");
-    let ProofDataHalo2 {
+    let ProofDataCliHalo2 {
         proof,
         public_inputs,
-    } = ProofDataHalo2::deserialize(&mut proof_file).unwrap();
+    } = ProofDataCliHalo2::deserialize(&mut proof_file).unwrap();
 
     let instances_vec: Vec<Fp> = public_inputs
         .chunks(32)
