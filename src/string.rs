@@ -1,5 +1,6 @@
 // TODO:
 // Definition resynthesis
+// Addition-constmul reorientation
 // Enum-driven reverse rewriting
 // Distributivity-based greedy searching
 // Constant op-equality distributivity
@@ -135,6 +136,7 @@ impl StringDiagram {
         false
     }
 
+    // Replace the port *at* target_port *with* new_port.
     pub fn replace_port(&mut self, target_port: &Port, new_port: &Port) {
         let Port(target_address, target_index) = target_port;
 
@@ -391,7 +393,8 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     Port(address0, port_index0),
                                     Port(address2, port_index2),
                                 ];
-                            } else {
+                            } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
+                            {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
                                     Port(target_address, 0),
@@ -418,6 +421,8 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     Port(address1, port_index1),
                                     Port(address2, port_index2),
                                 ];
+                            } else {
+                                panic!("Invalid operation encountered: {op}")
                             }
                         }
                         (Expr::Constant(const1), Expr::Variable(term_var2)) => {
@@ -451,7 +456,8 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     Port(address0, port_index0),
                                     Port(address2, port_index2),
                                 ];
-                            } else {
+                            } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
+                            {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
                                     Port(target_address, 0),
@@ -475,6 +481,8 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     Port(address1, 0),
                                     Port(address2, port_index2),
                                 ];
+                            } else {
+                                panic!("Invalid operation encountered: {op}")
                             }
                         }
                         (Expr::Variable(term_var1), Expr::Constant(const2)) => {
@@ -508,7 +516,8 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     Port(address0, port_index0),
                                     Port(address2, 0),
                                 ];
-                            } else {
+                            } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
+                            {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
                                     Port(target_address, 0),
@@ -532,6 +541,8 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     Port(address1, port_index1),
                                     Port(address2, 0),
                                 ];
+                            } else {
+                                panic!("Invalid operation encountered: {op}")
                             }
                         }
                         (Expr::Constant(const1), Expr::Constant(const2)) => {
@@ -558,7 +569,8 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     Port(address0, port_index0),
                                     Port(address2, 0),
                                 ];
-                            } else {
+                            } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
+                            {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
                                     Port(target_address, 0),
@@ -579,6 +591,8 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     Port(address1, 0),
                                     Port(address2, 0),
                                 ];
+                            } else {
+                                panic!("Invalid operation encountered: {op}")
                             }
                         }
                         _ => panic!("Impossible"),
@@ -3047,7 +3061,7 @@ pub fn simplify_string_diagram_step(
     if let Some(rule) = gen_string_diagram_step(diagram, address) {
         apply_rewrite_step(diagram, field_ops, rule)
     } else {
-        return vec![];
+        vec![]
     }
 }
 

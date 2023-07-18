@@ -5,6 +5,7 @@ pub mod halo2;
 pub mod plonk;
 pub mod repl;
 pub mod string;
+mod string_tests;
 pub mod transform;
 mod typecheck;
 pub mod util;
