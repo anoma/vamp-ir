@@ -6,6 +6,7 @@ use std::{
 };
 
 use ark_serialize::Write;
+
 use num_traits::Num;
 
 use crate::ast::Variable;
@@ -51,7 +52,7 @@ where
 }
 
 /* Read satisfying inputs to the given program from a file. */
-pub fn read_inputs_from_file2<F>(path_to_inputs: &PathBuf) -> Result<HashMap<String, F>, Error>
+pub fn read_inputs_from_file<F>(path_to_inputs: &PathBuf) -> Result<HashMap<String, F>, Error>
 where
     F: Clone + Num + Neg<Output = F>,
     <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug,
@@ -73,35 +74,6 @@ where
             Ok((var_name.clone(), n))
         })
         .collect::<Result<HashMap<String, F>, Error>>()
-}
-
-/* Read satisfying inputs to the given program from a file. */
-pub fn read_inputs_from_file<F>(
-    annotated: &Module,
-    path_to_inputs: &PathBuf,
-) -> Result<HashMap<VariableId, F>, Error>
-where
-    F: Clone + Num + Neg<Output = F>,
-    <F as num_traits::Num>::FromStrRadixErr: std::fmt::Debug,
-{
-    let contents = fs::read_to_string(path_to_inputs).expect("Could not read inputs file");
-
-    // Read the user-supplied inputs from the file
-    let named_assignments: HashMap<String, String> =
-        json5::from_str(&contents).expect("Could not parse JSON5");
-
-    let fp_named_assignments: HashMap<String, F> = named_assignments
-        .into_iter()
-        .map(|(var_name, str_value)| {
-            let n = parse_prefixed_num::<F>(&str_value).map_err(|_| {
-                InvalidVariableAssignmentValue {
-                    var_name: var_name.clone(),
-                }
-            })?;
-            Ok((var_name.clone(), n))
-        })
-        .collect::<Result<HashMap<String, F>, Error>>()?;
-    get_circuit_assignments(annotated, &fp_named_assignments)
 }
 
 /* Prompt for satisfying inputs to the given program. */

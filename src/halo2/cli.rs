@@ -3,7 +3,7 @@ use crate::halo2::api::{prove_from_int_variable_assignments, ProofDataHalo2};
 use crate::halo2::synth::verifier;
 
 use crate::qprintln;
-use crate::util::{get_circuit_assignments, prompt_inputs, read_inputs_from_file2, Config};
+use crate::util::{get_circuit_assignments, prompt_inputs, read_inputs_from_file, Config};
 
 use halo2_proofs::plonk::keygen_vk;
 
@@ -90,7 +90,7 @@ fn prove_from_file(
         "* Reading inputs from file {}...",
         path_to_inputs.to_string_lossy()
     );
-    let raw_inputs: HashMap<String, BigInt> = read_inputs_from_file2(path_to_inputs).unwrap();
+    let raw_inputs: HashMap<String, BigInt> = read_inputs_from_file(path_to_inputs).unwrap();
     let inputs =
         get_circuit_assignments::<BigInt>(circuit_data.circuit.module.deref(), &raw_inputs)?;
     prove_from_int_variable_assignments(circuit_data, &inputs, config)
