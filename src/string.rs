@@ -1,5 +1,4 @@
 // TODO:
-// Enum-driven rewriting
 // Definition resynthesis
 // Enum-driven reverse rewriting
 // Distributivity-based greedy searching
@@ -925,6 +924,8 @@ pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
 }
 
 pub enum RewriteRule {
+    DeleteEmptyEquality(Address),
+    DeleteIsolatedEquality(Address),
     SplitAdditionNode(Address),
     SplitMultiplicationNode(Address),
     SplitExponentiationNode(Address),
@@ -949,7 +950,7 @@ pub enum RewriteRule {
     FuseMultiplicationByConstantTlTl(Address),
     FuseMultiplicationByConstantHdHd(Address),
     ExpConstantConstantTail(Address),
-    ExpConstantConstantOne(Address),
+    ExpConstantOne(Address),
     FuseExponentiationByConstantHdTl(Address),
     EqualityUnrestricted(Address, PortIndex),
     RemoveBinaryEqualityNode(Address),
@@ -959,8 +960,7 @@ pub enum RewriteRule {
     MultiplicationConst(Address, PortIndex),
     EqualityConst(Address, PortIndex),
     AddMulUnrestricted(Address, PortIndex),
-    DeleteConstAddUnrestricted(Address, PortIndex),
-    DeleteConstMulUnrestricted(Address, PortIndex),
+    DeleteConstOpUnrestricted(Address, PortIndex),
     SwapAddMulConstantsHdTl(Address),
     SwapAddMulConstantsTlTl(Address),
 }
@@ -2576,111 +2576,82 @@ pub fn swap_add_and_multiply_constants_tl_tl(
     );
 }
 
-// Try applying a single simplification step to an address.
-// Return a list of *still existing* addresses of nodes that have been modified.
-pub fn simplify_string_diagram_step(
-    diagram: &mut StringDiagram,
-    field_ops: &dyn FieldOps,
-    address: Address,
-) -> Vec<Address> {
+// Try finding an appropriate rewrite for a given address
+pub fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<RewriteRule> {
     if let Some(node) = diagram.nodes.get(&address).cloned() {
         match node {
             Node::Equality(vars, ports) => {
                 if ports.is_empty() {
                     // Delete empty equations
-                    diagram.nodes.remove(&address);
-                    return vec![];
+                    return Some(RewriteRule::DeleteEmptyEquality(address));
                 }
                 if vars.is_empty() && ports.len() == 1 {
                     if let Some(Node::Unrestricted(_) | Node::Constant(_, _)) =
                         diagram.nodes.get(&ports[0].0)
                     {
-                        diagram.nodes.remove(&address);
-                        diagram.nodes.remove(&ports[0].0);
-
-                        return vec![];
+                        return Some(RewriteRule::DeleteIsolatedEquality(address));
                     }
                 }
                 if vars.is_empty() && ports.len() == 2 {
-                    remove_binary_equality_node(diagram, address);
-
-                    return vec![ports[0].0, ports[1].0];
+                    return Some(RewriteRule::RemoveBinaryEqualityNode(address));
                 }
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-                        equality_unrestricted(diagram, address, port_index);
-                        return vec![address];
+                        return Some(RewriteRule::EqualityUnrestricted(address, port_index));
                     }
                     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
                         if ports.len() == 1 && !vars.is_empty() {
-                            equality_const(diagram, address, port_index);
-
-                            return ports.iter().map(|p| p.0).collect();
+                            return Some(RewriteRule::EqualityConst(address, port_index));
                         }
                     }
 
                     if let Some(Node::Equality(_, _)) = diagram.nodes.get(&target_port.0) {
-                        // Fuse equality nodes
-                        fuse_equality_nodes(diagram, address, port_index);
-
-                        return vec![address];
+                        return Some(RewriteRule::FuseEqualityNodes(address, port_index));
                     }
                 }
-                vec![]
+                None
             }
             Node::Addition(ports) => {
                 if ports.len() == 2 {
-                    remove_binary_addition_node(diagram, address);
-                    return vec![ports[0].0, ports[1].0];
+                    return Some(RewriteRule::RemoveBinaryAdditionNode(address));
                 }
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-                        // Propagate unrestricted
-                        addmul_unrestricted(diagram, address, port_index);
-                        return ports.iter().map(|p| p.0).collect();
+                        return Some(RewriteRule::AddMulUnrestricted(address, port_index));
                     }
                     if port_index > 0 {
                         if let Some(Node::Addition(_)) = diagram.nodes.get(&target_port.0) {
                             if target_port.1 == 0 {
-                                // Fuse addition nodes
-                                fuse_addition_nodes(diagram, address, port_index);
-                                return vec![address];
+                                return Some(RewriteRule::FuseAdditionNodes(address, port_index));
                             }
                         }
                         if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&target_port.0)
                         {
-                            // Propagate constant
-                            addition_const_addition(diagram, address, port_index, field_ops);
-                            return vec![address, target_port.0];
+                            return Some(RewriteRule::AdditionConstAddition(address, port_index));
                         }
                         if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
-                            // Propagate constant
-                            addition_const(diagram, address, port_index);
-                            return vec![address, target_port.0];
+                            return Some(RewriteRule::AdditionConst(address, port_index));
                         }
                     }
                 }
-                vec![]
+                None
             }
             Node::Multiplication(ports) => {
                 if ports.len() == 2 {
-                    remove_binary_multiplication_node(diagram, address);
-                    return vec![ports[0].0, ports[1].0];
+                    return Some(RewriteRule::RemoveBinaryMultiplicationNode(address));
                 }
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if port_index == 0 {
                         if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-                            // Propagate unrestricted
-                            addmul_unrestricted(diagram, address, port_index);
-                            return ports.iter().map(|p| p.0).collect();
+                            return Some(RewriteRule::AddMulUnrestricted(address, port_index));
                         }
                     }
                     if port_index > 0 {
                         if let Some(Node::Multiplication(_)) = diagram.nodes.get(&target_port.0) {
                             if target_port.1 == 0 {
-                                // Fuse multiplication nodes
-                                fuse_multiplication_nodes(diagram, address, port_index);
-                                return vec![address];
+                                return Some(RewriteRule::FuseMultiplicationNodes(
+                                    address, port_index,
+                                ));
                             }
                         }
 
@@ -2688,160 +2659,395 @@ pub fn simplify_string_diagram_step(
                             diagram.nodes.get(&target_port.0)
                         {
                             if val != &BigInt::from(0) {
-                                // Propagate constant
-                                multiplication_const_multiplication(
-                                    diagram, address, port_index, field_ops,
-                                );
-                                return vec![address, target_port.0];
+                                return Some(RewriteRule::MultiplicationConstMultiplication(
+                                    address, port_index,
+                                ));
                             }
                         }
                         if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
-                            // Propagate constant
-                            multiplication_const(diagram, address, port_index);
-                            return vec![address, target_port.0];
+                            return Some(RewriteRule::MultiplicationConst(address, port_index));
                         }
                     }
                 }
-                vec![]
+                None
             }
             Node::AddConstant(value, port1, port2) => {
                 if value == BigInt::from(0) {
-                    add_constant_zero(diagram, address);
-                    return vec![port1.0, port2.0];
+                    return Some(RewriteRule::AddConstantZero(address));
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
-                    add_constant_constant_head(diagram, address, field_ops);
-                    return vec![address];
+                    return Some(RewriteRule::AddConstantConstantHead(address));
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                    add_constant_constant_tail(diagram, address, field_ops);
-                    return vec![address];
+                    return Some(RewriteRule::AddConstantConstantTail(address));
                 }
                 if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-                    delete_const_op_unrestricted(diagram, address, port1.1);
-                    return vec![address];
+                    return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
                 }
                 if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
-                    delete_const_op_unrestricted(diagram, address, port2.1);
-                    return vec![address];
+                    return Some(RewriteRule::DeleteConstOpUnrestricted(address, port2.1));
                 }
                 if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
                     if port1.1 == 0 {
-                        fuse_addition_by_constant_hd_hd(diagram, address, field_ops);
-                        return vec![address];
+                        return Some(RewriteRule::FuseAdditionByConstantHdHd(address));
                     }
                 }
                 if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
                     if port2.1 == 0 {
-                        fuse_addition_by_constant_hd_tl(diagram, address, field_ops);
+                        return Some(RewriteRule::FuseAdditionByConstantHdTl(address));
                     }
                     if port2.1 == 1 {
-                        fuse_addition_by_constant_tl_tl(diagram, address, field_ops);
+                        return Some(RewriteRule::FuseAdditionByConstantTlTl(address));
                     }
-                    return vec![address];
                 }
                 if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
                     if port2.1 == 1 {
-                        swap_add_and_multiply_constants_tl_tl(diagram, address, field_ops);
-                        return vec![address, port2.0];
+                        return Some(RewriteRule::SwapAddMulConstantsTlTl(address));
                     }
                 }
                 if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
                     if port1.1 == 1 {
-                        swap_add_and_multiply_constants_hd_tl(diagram, address, field_ops);
-                        return vec![address, port1.0];
+                        return Some(RewriteRule::SwapAddMulConstantsHdTl(address));
                     }
                 }
-                vec![]
+                None
             }
             Node::MultiplyConstant(value, port1, port2) => {
                 if value == BigInt::from(0) {
-                    mul_constant_zero(diagram, address);
-                    return vec![port1.0, port2.0];
+                    return Some(RewriteRule::MulConstantZero(address));
                 }
                 if value == BigInt::from(1) {
-                    mul_constant_one(diagram, address);
-                    return vec![port1.0, port2.0];
+                    return Some(RewriteRule::MulConstantOne(address));
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
-                    mul_constant_constant_head(diagram, address, field_ops);
-                    return vec![address];
+                    return Some(RewriteRule::MulConstantConstantHead(address));
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                    mul_constant_constant_tail(diagram, address, field_ops);
-                    return vec![address];
+                    return Some(RewriteRule::MulConstantConstantTail(address));
                 }
                 if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-                    delete_const_op_unrestricted(diagram, address, port1.1);
-                    return vec![address];
+                    return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
                 }
                 if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
                     if value != BigInt::from(0) {
-                        delete_const_op_unrestricted(diagram, address, port2.1);
-                        return vec![address];
+                        return Some(RewriteRule::DeleteConstOpUnrestricted(address, port2.1));
                     }
                 }
                 if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
                     if port2.1 == 0 {
-                        fuse_multiplication_by_constant_hd_hd(diagram, address, field_ops);
-                        return vec![address];
+                        return Some(RewriteRule::FuseMultiplicationByConstantHdHd(address));
                     }
                 }
                 if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
                     if port2.1 == 0 {
-                        fuse_multiplication_by_constant_hd_tl(diagram, address, field_ops);
+                        return Some(RewriteRule::FuseMultiplicationByConstantHdTl(address));
                     }
                     if port2.1 == 1 {
-                        fuse_multiplication_by_constant_tl_tl(diagram, address, field_ops);
+                        return Some(RewriteRule::FuseMultiplicationByConstantTlTl(address));
                     }
-                    return vec![address];
                 }
-                vec![]
+                None
             }
             Node::ExponentiateConstant(value, port1, port2) => {
                 if value == BigInt::from(1) {
-                    exp_constant_one(diagram, address);
-                    return vec![port1.0, port2.0];
+                    return Some(RewriteRule::ExpConstantOne(address));
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                    exp_constant_constant_tail(diagram, address, field_ops);
-                    return vec![address];
+                    return Some(RewriteRule::ExpConstantConstantTail(address));
                 }
 
                 if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
                     if value != BigInt::from(0) {
-                        delete_const_op_unrestricted(diagram, address, port1.1);
-                        return vec![address];
+                        return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
                     }
                 }
 
                 // ??? if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) ????
                 if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
                     if port2.1 == 0 {
-                        fuse_exponentiation_by_constant_hd_tl(diagram, address, field_ops);
-                        return vec![address];
+                        return Some(RewriteRule::FuseExponentiationByConstantHdTl(address));
                     }
                 }
-                vec![]
+                None
             }
             Node::Constant(_, port) => {
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
-                    constant_constant_removal(diagram, address);
+                    return Some(RewriteRule::ConstantConstantRemoval(address));
                 }
-                vec![]
+                None
             }
             Node::Unrestricted(port) => {
                 if let Some(Node::Constant(_, _) | Node::Unrestricted(_)) =
                     diagram.nodes.get(&port.0)
                 {
-                    unrestricted_unary_removal(diagram, address);
+                    return Some(RewriteRule::UnrestrictedUnaryRemoval(address));
                 }
-                vec![]
+                None
             }
-            _ => vec![],
+            _ => None,
         }
     } else {
-        vec![]
+        None
+    }
+}
+
+// Apply a rewrite rule and return effected addresses
+pub fn apply_rewrite_step(
+    diagram: &mut StringDiagram,
+    field_ops: &dyn FieldOps,
+    rule: RewriteRule,
+) -> Vec<Address> {
+    match rule {
+        RewriteRule::DeleteEmptyEquality(address) => {
+            diagram.nodes.remove(&address);
+            vec![]
+        }
+        RewriteRule::DeleteIsolatedEquality(address) => {
+            if let Some(Node::Equality(_, ports)) = diagram.nodes.get(&address).cloned() {
+                diagram.nodes.remove(&address);
+                diagram.nodes.remove(&ports[0].0);
+            }
+            vec![]
+        }
+        RewriteRule::SplitAdditionNode(address) => {
+            split_addition_node(diagram, address);
+            vec![address]
+        }
+        RewriteRule::SplitMultiplicationNode(address) => {
+            split_multiplication_node(diagram, address);
+            vec![address]
+        }
+        RewriteRule::SplitExponentiationNode(address) => {
+            split_exponentiation_node(diagram, address);
+            vec![address]
+        }
+        RewriteRule::FuseEqualityNodes(address, port_index) => {
+            fuse_equality_nodes(diagram, address, port_index);
+
+            vec![address]
+        }
+        RewriteRule::FuseAdditionNodes(address, port_index) => {
+            fuse_addition_nodes(diagram, address, port_index);
+            vec![address]
+        }
+        RewriteRule::RemoveBinaryAdditionNode(address) => {
+            if let Some(Node::Addition(ports)) = diagram.nodes.get(&address).cloned() {
+                remove_binary_addition_node(diagram, address);
+
+                vec![ports[0].0, ports[1].0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::FuseMultiplicationNodes(address, port_index) => {
+            fuse_multiplication_nodes(diagram, address, port_index);
+            vec![address]
+        }
+        RewriteRule::RemoveBinaryMultiplicationNode(address) => {
+            if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address).cloned() {
+                remove_binary_multiplication_node(diagram, address);
+
+                vec![ports[0].0, ports[1].0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::AddConstantZero(address) => {
+            if let Some(Node::AddConstant(_, port1, port2)) = diagram.nodes.get(&address).cloned() {
+                add_constant_zero(diagram, address);
+                vec![port1.0, port2.0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::AddConstantConstantHead(address) => {
+            add_constant_constant_head(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::AddConstantConstantTail(address) => {
+            add_constant_constant_tail(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::FuseAdditionByConstantHdTl(address) => {
+            fuse_addition_by_constant_hd_tl(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::FuseAdditionByConstantTlTl(address) => {
+            fuse_addition_by_constant_tl_tl(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::FuseAdditionByConstantHdHd(address) => {
+            fuse_addition_by_constant_hd_hd(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::EqualityUnrestricted(address, port_index) => {
+            equality_unrestricted(diagram, address, port_index);
+            vec![address]
+        }
+        RewriteRule::RemoveBinaryEqualityNode(address) => {
+            if let Some(Node::Equality(_, ports)) = diagram.nodes.get(&address).cloned() {
+                remove_binary_equality_node(diagram, address);
+
+                vec![ports[0].0, ports[1].0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::AdditionConstAddition(address, port_index) => {
+            if let Some(Node::Addition(ports)) = diagram.nodes.get(&address).cloned() {
+                let target_port = &ports[port_index];
+                addition_const_addition(diagram, address, port_index, field_ops);
+                vec![address, target_port.0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::MultiplicationConstMultiplication(address, port_index) => {
+            if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address).cloned() {
+                let target_port = &ports[port_index];
+                multiplication_const_multiplication(diagram, address, port_index, field_ops);
+                vec![address, target_port.0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::AdditionConst(address, port_index) => {
+            if let Some(Node::Addition(ports)) = diagram.nodes.get(&address).cloned() {
+                let target_port = &ports[port_index];
+                addition_const(diagram, address, port_index);
+                vec![address, target_port.0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::MultiplicationConst(address, port_index) => {
+            if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address).cloned() {
+                let target_port = &ports[port_index];
+                multiplication_const(diagram, address, port_index);
+                vec![address, target_port.0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::EqualityConst(address, port_index) => {
+            if let Some(Node::Equality(_, ports)) = diagram.nodes.get(&address).cloned() {
+                equality_const(diagram, address, port_index);
+
+                return ports.iter().map(|p| p.0).collect();
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::AddMulUnrestricted(address, port_index) => {
+            if let Some(Node::Addition(ports) | Node::Multiplication(ports)) =
+                diagram.nodes.get(&address).cloned()
+            {
+                addmul_unrestricted(diagram, address, port_index);
+                return ports.iter().map(|p| p.0).collect();
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::DeleteConstOpUnrestricted(address, port_index) => {
+            delete_const_op_unrestricted(diagram, address, port_index);
+            vec![address]
+        }
+        RewriteRule::SwapAddMulConstantsHdTl(address) => {
+            if let Some(Node::AddConstant(_, port1, _)) = diagram.nodes.get(&address).cloned() {
+                swap_add_and_multiply_constants_hd_tl(diagram, address, field_ops);
+                vec![address, port1.0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::SwapAddMulConstantsTlTl(address) => {
+            if let Some(Node::AddConstant(_, _, port2)) = diagram.nodes.get(&address).cloned() {
+                swap_add_and_multiply_constants_tl_tl(diagram, address, field_ops);
+                vec![address, port2.0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::MulConstantZero(address) => {
+            if let Some(Node::MultiplyConstant(_, port1, port2)) =
+                diagram.nodes.get(&address).cloned()
+            {
+                mul_constant_zero(diagram, address);
+                vec![port1.0, port2.0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::MulConstantOne(address) => {
+            if let Some(Node::MultiplyConstant(_, port1, port2)) =
+                diagram.nodes.get(&address).cloned()
+            {
+                mul_constant_one(diagram, address);
+                vec![port1.0, port2.0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::MulConstantConstantHead(address) => {
+            mul_constant_constant_head(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::MulConstantConstantTail(address) => {
+            mul_constant_constant_tail(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::FuseMultiplicationByConstantHdTl(address) => {
+            fuse_multiplication_by_constant_hd_tl(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::FuseMultiplicationByConstantTlTl(address) => {
+            fuse_multiplication_by_constant_tl_tl(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::FuseMultiplicationByConstantHdHd(address) => {
+            fuse_multiplication_by_constant_hd_hd(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::ExpConstantOne(address) => {
+            if let Some(Node::ExponentiateConstant(_, port1, port2)) =
+                diagram.nodes.get(&address).cloned()
+            {
+                exp_constant_one(diagram, address);
+                vec![port1.0, port2.0]
+            } else {
+                vec![]
+            }
+        }
+        RewriteRule::ExpConstantConstantTail(address) => {
+            exp_constant_constant_tail(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::FuseExponentiationByConstantHdTl(address) => {
+            fuse_exponentiation_by_constant_hd_tl(diagram, address, field_ops);
+            vec![address]
+        }
+        RewriteRule::ConstantConstantRemoval(address) => {
+            constant_constant_removal(diagram, address);
+            vec![]
+        }
+        RewriteRule::UnrestrictedUnaryRemoval(address) => {
+            unrestricted_unary_removal(diagram, address);
+            vec![]
+        }
+    }
+}
+
+// Try applying a single simplification step to an address.
+// Return a list of *still existing* addresses of nodes that have been modified.
+pub fn simplify_string_diagram_step(
+    diagram: &mut StringDiagram,
+    field_ops: &dyn FieldOps,
+    address: Address,
+) -> Vec<Address> {
+    if let Some(rule) = gen_string_diagram_step(diagram, address) {
+        apply_rewrite_step(diagram, field_ops, rule)
+    } else {
+        return vec![];
     }
 }
 

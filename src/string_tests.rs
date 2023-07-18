@@ -141,7 +141,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        fuse_equality_nodes(&mut diagram, addr1, 1);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseEqualityNodes(addr1, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -194,7 +194,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        fuse_addition_nodes(&mut diagram, addr1, 1);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseAdditionNodes(addr1, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -245,7 +245,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        fuse_multiplication_nodes(&mut diagram, addr1, 1);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseMultiplicationNodes(addr1, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -292,7 +292,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        split_addition_node(&mut diagram, addr1);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::SplitAdditionNode(addr1));
 
         assert!(
             diagram.is_well_formed(),
@@ -354,7 +354,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        split_multiplication_node(&mut diagram, addr1);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::SplitMultiplicationNode(addr1));
 
         assert!(
             diagram.is_well_formed(),
@@ -409,7 +409,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        constant_constant_removal(&mut diagram, i3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::ConstantConstantRemoval(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -488,7 +488,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        unrestricted_unary_removal(&mut diagram, i3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::UnrestrictedUnaryRemoval(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -527,7 +527,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        unrestricted_unary_removal(&mut diagram, i3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::UnrestrictedUnaryRemoval(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -569,7 +569,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        add_constant_constant_head(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::AddConstantConstantHead(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -619,7 +619,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        add_constant_constant_tail(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::AddConstantConstantTail(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -669,7 +669,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        mul_constant_constant_head(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::MulConstantConstantHead(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -719,7 +719,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        mul_constant_constant_tail(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::MulConstantConstantTail(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -769,7 +769,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        exp_constant_constant_tail(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::ExpConstantConstantTail(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -821,7 +821,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        mul_constant_zero(&mut diagram, i3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::MulConstantZero(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -877,7 +877,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        add_constant_zero(&mut diagram, i3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::AddConstantZero(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -917,7 +917,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        mul_constant_one(&mut diagram, i3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::MulConstantOne(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -954,7 +954,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        exp_constant_one(&mut diagram, i3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::ExpConstantOne(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -987,7 +987,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        remove_binary_addition_node(&mut diagram, i3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::RemoveBinaryAdditionNode(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1023,7 +1023,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        remove_binary_multiplication_node(&mut diagram, i3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::RemoveBinaryMultiplicationNode(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1055,7 +1055,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_addition_by_constant_hd_tl(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseAdditionByConstantHdTl(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1102,7 +1102,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_addition_by_constant_hd_hd(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseAdditionByConstantHdHd(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1149,7 +1149,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_addition_by_constant_tl_tl(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseAdditionByConstantTlTl(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1204,7 +1204,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_multiplication_by_constant_hd_tl(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseMultiplicationByConstantHdTl(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1256,7 +1256,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_multiplication_by_constant_hd_hd(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseMultiplicationByConstantHdHd(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1308,7 +1308,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_multiplication_by_constant_tl_tl(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseMultiplicationByConstantTlTl(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1360,7 +1360,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_exponentiation_by_constant_hd_tl(&mut diagram, i3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseExponentiationByConstantHdTl(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1407,7 +1407,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        equality_unrestricted(&mut diagram, addr1, 1);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::EqualityUnrestricted(addr1, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -1452,7 +1452,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        remove_binary_equality_node(&mut diagram, i3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::RemoveBinaryEqualityNode(i3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1502,7 +1502,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        addition_const_addition(&mut diagram, ia, 3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::AdditionConstAddition(ia, 3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1572,7 +1572,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        addition_const_addition(&mut diagram, ia, 3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::AdditionConstAddition(ia, 3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1642,7 +1642,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        multiplication_const_multiplication(&mut diagram, ia, 3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::MultiplicationConstMultiplication(ia, 3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1712,7 +1712,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        multiplication_const_multiplication(&mut diagram, ia, 3, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::MultiplicationConstMultiplication(ia, 3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1777,7 +1777,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        addition_const(&mut diagram, ia, 3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::AdditionConst(ia, 3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1842,7 +1842,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        multiplication_const(&mut diagram, ia, 3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::MultiplicationConst(ia, 3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1910,7 +1910,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        equality_const(&mut diagram, ia, 3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::EqualityConst(ia, 3));
 
         assert!(
             diagram.is_well_formed(),
@@ -1963,7 +1963,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        equality_const(&mut diagram, ia, 3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::EqualityConst(ia, 3));
 
         assert!(
             diagram.is_well_formed(),
@@ -2015,7 +2015,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        addmul_unrestricted(&mut diagram, ia, 3);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::AddMulUnrestricted(ia, 3));
 
         assert!(
             diagram.is_well_formed(),
@@ -2056,7 +2056,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        delete_const_op_unrestricted(&mut diagram, ia, 0);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::DeleteConstOpUnrestricted(ia, 0));
 
         assert!(
             diagram.is_well_formed(),
@@ -2092,7 +2092,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        delete_const_op_unrestricted(&mut diagram, ia, 1);
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::DeleteConstOpUnrestricted(ia, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -2135,7 +2135,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        swap_add_and_multiply_constants_hd_tl(&mut diagram, ia, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::SwapAddMulConstantsHdTl(ia));
 
         assert!(
             diagram.is_well_formed(),
@@ -2199,7 +2199,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        swap_add_and_multiply_constants_tl_tl(&mut diagram, ia, &());
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::SwapAddMulConstantsTlTl(ia));
 
         assert!(
             diagram.is_well_formed(),
