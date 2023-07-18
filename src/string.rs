@@ -1,3 +1,21 @@
+// TODO:
+// Enum-driven rewriting
+// Definition resynthesis
+// Enum-driven reverse rewriting
+// Distributivity-based greedy searching
+// Constant op-equality distributivity
+// Constant multiplication-addition orientation
+// Constant multiplication-addition distributivity
+// Efficient exponentiation unfolding
+// Constant exponentiation-multiplication distributivity
+// Equality self-link deletion
+// Addition self-link unrestriction
+// Multiplication self-link unrestriction
+// Addition-equality link fusion
+// Multiplication-equality link fusion
+// ???Equality-checking based fusion???
+// Implement factoring in a non-local way (detect polynomials => translate string to poly => factor poly => translate back)
+
 use crate::ast::*;
 use crate::transform::FieldOps;
 use num_bigint::BigInt;
@@ -584,7 +602,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
     diagram
 }
 
-pub fn get_variable_ids_in_equality_nodes(diagram: &StringDiagram) -> HashSet<u32> {
+fn get_variable_ids_in_equality_nodes(diagram: &StringDiagram) -> HashSet<u32> {
     let mut variable_ids = HashSet::new();
 
     for node in diagram.nodes.values() {
@@ -1126,7 +1144,7 @@ pub fn fuse_equality_nodes(
 // W = A + B + ...
 // We can fuse them into
 // X = Y + Z + ... + A + B + ...
-pub fn fuse_addition_nodes_basic(
+pub fn fuse_addition_nodes(
     diagram: &mut StringDiagram,
     prime_node_address: Address,
     port_index: PortIndex,
@@ -1187,7 +1205,7 @@ pub fn fuse_addition_nodes_basic(
 // If we have X = Y expressed through an addition node
 // In other words, the sum of all the inputs when there's only one input
 // The addition node can be removed.
-pub fn simplify_binary_addition_node(diagram: &mut StringDiagram, address: Address) {
+pub fn remove_binary_addition_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_port_target, second_port_target) = match diagram.nodes.get(&address) {
         Some(Node::Addition(ports)) if ports.len() == 2 => (ports[0].clone(), ports[1].clone()),
@@ -1207,7 +1225,7 @@ pub fn simplify_binary_addition_node(diagram: &mut StringDiagram, address: Addre
 // W = A * B * ...
 // We can fuse them into
 // X = Y * Z * ... * A * B * ...
-pub fn fuse_multiplication_nodes_basic(
+pub fn fuse_multiplication_nodes(
     diagram: &mut StringDiagram,
     prime_node_address: Address,
     port_index: PortIndex,
@@ -1268,7 +1286,7 @@ pub fn fuse_multiplication_nodes_basic(
 // If we have X = Y expressed through a multiplication node
 // In other words, the product of all the inputs when there's only one input
 // The multiplication node can be removed.
-pub fn simplify_binary_multiplication_node(diagram: &mut StringDiagram, address: Address) {
+pub fn remove_binary_multiplication_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_port_target, second_port_target) = match diagram.nodes.get(&address) {
         Some(Node::Multiplication(ports)) if ports.len() == 2 => {
@@ -1287,7 +1305,7 @@ pub fn simplify_binary_multiplication_node(diagram: &mut StringDiagram, address:
 
 // If two constants are connected, they are either trivially true (of their values are equal)
 // or imply a contradiction (if their values are false).
-pub fn constant_constant_simplification(diagram: &mut StringDiagram, address: Address) {
+pub fn constant_constant_removal(diagram: &mut StringDiagram, address: Address) {
     if let Some(Node::Constant(value, target_port)) = diagram.nodes.get(&address) {
         let target_value;
         let target_address = target_port.0;
@@ -1313,7 +1331,7 @@ pub fn constant_constant_simplification(diagram: &mut StringDiagram, address: Ad
 
 // If an unrestructed node connects to a constant or another unrestricted node,
 // this will produce no constraints.
-pub fn unrestricted_unary_simplification(diagram: &mut StringDiagram, address: Address) {
+pub fn unrestricted_unary_removal(diagram: &mut StringDiagram, address: Address) {
     if let Some(Node::Unrestricted(target_port)) = diagram.nodes.get(&address) {
         let target_address = target_port.0;
 
@@ -1412,7 +1430,7 @@ pub fn add_constant_constant_tail(
 
 // X = 0 + Y can be simplified into
 // X = Y by simply deleting the addition node
-pub fn simplify_add_constant_with_zero(diagram: &mut StringDiagram, address: Address) {
+pub fn add_constant_zero(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_port_target, second_port_target, is_zero) = match diagram.nodes.get(&address) {
         Some(Node::AddConstant(value, first_target_port, second_target_port))
@@ -1439,7 +1457,7 @@ pub fn simplify_add_constant_with_zero(diagram: &mut StringDiagram, address: Add
 // Y = n + X
 // These can be fused into
 // Z = (m + n) + X
-pub fn fuse_addition_by_constant_nodes_hd_tl(
+pub fn fuse_addition_by_constant_hd_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1487,7 +1505,7 @@ pub fn fuse_addition_by_constant_nodes_hd_tl(
 // Y = m + X
 // These can be fused into
 // X = (n - m) + Z
-pub fn fuse_addition_by_constant_nodes_hd_hd(
+pub fn fuse_addition_by_constant_hd_hd(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1535,7 +1553,7 @@ pub fn fuse_addition_by_constant_nodes_hd_hd(
 // X = m + Y
 // These can be fused into
 // Z = (n - m) + X
-pub fn fuse_addition_by_constant_nodes_tl_tl(
+pub fn fuse_addition_by_constant_tl_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1584,7 +1602,7 @@ pub fn fuse_addition_by_constant_nodes_tl_tl(
 // Y = n * X
 // These can be combined into
 // X = m / n
-// This is wrong if n = 0, but that case is handled by simplify_mul_constant_with_zero.
+// This is wrong if n = 0, but that case is handled by mul_constant_zero.
 pub fn mul_constant_constant_head(
     diagram: &mut StringDiagram,
     address: Address,
@@ -1668,7 +1686,7 @@ pub fn mul_constant_constant_tail(
 // If X = 0 * Y, then we can split this into
 // X = 0
 // No restriction on Y.
-pub fn simplify_mul_constant_with_zero(diagram: &mut StringDiagram, address: Address) {
+pub fn mul_constant_zero(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (port1, port2, is_zero) = match diagram.nodes.get(&address) {
         Some(Node::MultiplyConstant(value, port1, port2)) if *value == BigInt::from(0) => {
@@ -1694,7 +1712,7 @@ pub fn simplify_mul_constant_with_zero(diagram: &mut StringDiagram, address: Add
 
 // X = 1 * Y can be simplified into
 // X = Y by simply deleting the multiplication node
-pub fn simplify_mul_constant_with_one(diagram: &mut StringDiagram, address: Address) {
+pub fn mul_constant_one(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_port_target, second_port_target, is_one) = match diagram.nodes.get(&address) {
         Some(Node::MultiplyConstant(value, first_target_port, second_target_port))
@@ -1721,7 +1739,7 @@ pub fn simplify_mul_constant_with_one(diagram: &mut StringDiagram, address: Addr
 // Y = n * X
 // These can be fused into
 // Z = (m * n) * X
-pub fn fuse_multiplication_by_constant_nodes_hd_tl(
+pub fn fuse_multiplication_by_constant_hd_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1771,7 +1789,7 @@ pub fn fuse_multiplication_by_constant_nodes_hd_tl(
 // Z = (m / n) * X
 // This order is important so n = 0 isn't possible
 // If we used X = (n / m) * Z, m might be 0, but we know n = 0 will have been delt with already.
-pub fn fuse_multiplication_by_constant_nodes_hd_hd(
+pub fn fuse_multiplication_by_constant_hd_hd(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1835,7 +1853,7 @@ pub fn fuse_multiplication_by_constant_nodes_hd_hd(
 // X = (m / n) * Z
 // This order is important so n = 0 isn't possible
 // If we used Z = (n / m) * X, m might be 0, but we know n = 0 will have been delt with already.
-pub fn fuse_multiplication_by_constant_nodes_tl_tl(
+pub fn fuse_multiplication_by_constant_tl_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1937,7 +1955,7 @@ pub fn exp_constant_constant_tail(
 
 // X = Y ^ 1 can be simplified into
 // X = Y by simply deleting the exponeniation node
-pub fn simplify_exp_constant_with_one(diagram: &mut StringDiagram, address: Address) {
+pub fn exp_constant_one(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_port_target, second_port_target, is_one) = match diagram.nodes.get(&address) {
         Some(Node::ExponentiateConstant(value, first_target_port, second_target_port))
@@ -1965,7 +1983,7 @@ pub fn simplify_exp_constant_with_one(diagram: &mut StringDiagram, address: Addr
 // These can be fused into
 // Z = X ^ (m * n)
 // So long as m and n are positive. In a finite field, this is just being nonzero.
-pub fn fuse_exponentiation_by_constant_nodes_hd_tl(
+pub fn fuse_exponentiation_by_constant_hd_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -2016,11 +2034,7 @@ pub fn fuse_exponentiation_by_constant_nodes_hd_tl(
 }
 
 // An unrestricted node connected to an equality port can simply be removed.
-pub fn simplify_equality_with_unrestricted(
-    diagram: &mut StringDiagram,
-    address: Address,
-    port_index: PortIndex,
-) {
+pub fn equality_unrestricted(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract information about the node at the given address
     let target_address = match diagram.nodes.get(&address) {
         Some(Node::Equality(_, ports)) => {
@@ -2061,7 +2075,7 @@ pub fn simplify_equality_with_unrestricted(
 }
 
 // If we have X = Y expressed with an unmarked equality node, that node can be removed.
-pub fn simplify_binary_equality_node(diagram: &mut StringDiagram, address: Address) {
+pub fn remove_binary_equality_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_port_target, second_port_target) = match diagram.nodes.get(&address) {
         Some(Node::Equality(vars, ports)) if ports.len() == 2 => {
@@ -2084,7 +2098,7 @@ pub fn simplify_binary_equality_node(diagram: &mut StringDiagram, address: Addre
 
 // Turn X = A + B + ... + (c + D) + ... for constant c
 // Into X = c + (A + B + ... + D + ...)
-fn simplify_addition_const_addition(
+fn addition_const_addition(
     diagram: &mut StringDiagram,
     address: Address,
     port_index: PortIndex,
@@ -2137,7 +2151,7 @@ fn simplify_addition_const_addition(
 
 // Turn X = A * B * ... * (c * D) * ... for constant c
 // Into X = c * (A * B * ... * D * ...)
-fn simplify_multiplication_const_multiplication(
+fn multiplication_const_multiplication(
     diagram: &mut StringDiagram,
     address: Address,
     port_index: PortIndex,
@@ -2190,7 +2204,7 @@ fn simplify_multiplication_const_multiplication(
 
 // Turn X = A + B + ... + c + ... for constant c
 // Into X = c + (A + B + ...)
-fn simplify_addition_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
+fn addition_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract the necessary information from the diagram.
     let (old_head_port, target_address) = {
         let ports = match diagram.nodes.get(&address) {
@@ -2238,11 +2252,7 @@ fn simplify_addition_const(diagram: &mut StringDiagram, address: Address, port_i
 
 // Turn X = A * B * ... * c * ... for constant c
 // Into X = c * (A * B * ...)
-fn simplify_multiplication_const(
-    diagram: &mut StringDiagram,
-    address: Address,
-    port_index: PortIndex,
-) {
+fn multiplication_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract the necessary information from the diagram.
     let (old_head_port, target_address) = {
         let ports = match diagram.nodes.get(&address) {
@@ -2289,7 +2299,7 @@ fn simplify_multiplication_const(
 }
 
 // If X = c and Y = X and A = X etc. then Y = c and A = c, etc
-fn simplify_equality_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
+fn equality_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract the necessary information
     let (has_variables, target_port, const_value) =
         if let Some(Node::Equality(variables, ports)) = diagram.nodes.get(&address) {
@@ -2338,11 +2348,7 @@ fn simplify_equality_const(diagram: &mut StringDiagram, address: Address, port_i
 }
 
 // If something unrestructed is used in an addition, then everything else is also unrestructed.
-fn simplify_addmul_unrestricted(
-    diagram: &mut StringDiagram,
-    address: Address,
-    port_index: PortIndex,
-) {
+fn addmul_unrestricted(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract the necessary information
     let target_port = if let Some(Node::Addition(ports) | Node::Multiplication(ports)) =
         diagram.nodes.get(&address)
@@ -2382,7 +2388,7 @@ fn simplify_addmul_unrestricted(
     diagram.nodes.remove(&target_port.0);
 }
 
-fn delete_const_op_connected_to_unrestricted(
+fn delete_const_op_unrestricted(
     diagram: &mut StringDiagram,
     address: Address,
     port_index: PortIndex,
@@ -2555,19 +2561,21 @@ pub fn simplify_string_diagram_step(
                     }
                 }
                 if vars.is_empty() && ports.len() == 2 {
-                    simplify_binary_equality_node(diagram, address);
+                    remove_binary_equality_node(diagram, address);
 
                     return vec![ports[0].0, ports[1].0];
                 }
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-                        simplify_equality_with_unrestricted(diagram, address, port_index);
+                        equality_unrestricted(diagram, address, port_index);
                         return vec![address];
                     }
                     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
-                        simplify_equality_const(diagram, address, port_index);
+                        if ports.len() == 1 && !vars.is_empty() {
+                            equality_const(diagram, address, port_index);
 
-                        return ports.iter().map(|p| p.0).collect();
+                            return ports.iter().map(|p| p.0).collect();
+                        }
                     }
 
                     if let Some(Node::Equality(_, _)) = diagram.nodes.get(&target_port.0) {
@@ -2581,34 +2589,32 @@ pub fn simplify_string_diagram_step(
             }
             Node::Addition(ports) => {
                 if ports.len() == 2 {
-                    simplify_binary_addition_node(diagram, address);
+                    remove_binary_addition_node(diagram, address);
                     return vec![ports[0].0, ports[1].0];
                 }
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
                         // Propagate unrestricted
-                        simplify_addmul_unrestricted(diagram, address, port_index);
+                        addmul_unrestricted(diagram, address, port_index);
                         return ports.iter().map(|p| p.0).collect();
                     }
                     if port_index > 0 {
                         if let Some(Node::Addition(_)) = diagram.nodes.get(&target_port.0) {
                             if target_port.1 == 0 {
                                 // Fuse addition nodes
-                                fuse_addition_nodes_basic(diagram, address, port_index);
+                                fuse_addition_nodes(diagram, address, port_index);
                                 return vec![address];
                             }
                         }
                         if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&target_port.0)
                         {
                             // Propagate constant
-                            simplify_addition_const_addition(
-                                diagram, address, port_index, field_ops,
-                            );
+                            addition_const_addition(diagram, address, port_index, field_ops);
                             return vec![address, target_port.0];
                         }
                         if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
                             // Propagate constant
-                            simplify_addition_const(diagram, address, port_index);
+                            addition_const(diagram, address, port_index);
                             return vec![address, target_port.0];
                         }
                     }
@@ -2617,14 +2623,14 @@ pub fn simplify_string_diagram_step(
             }
             Node::Multiplication(ports) => {
                 if ports.len() == 2 {
-                    simplify_binary_multiplication_node(diagram, address);
+                    remove_binary_multiplication_node(diagram, address);
                     return vec![ports[0].0, ports[1].0];
                 }
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if port_index == 0 {
                         if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
                             // Propagate unrestricted
-                            simplify_addmul_unrestricted(diagram, address, port_index);
+                            addmul_unrestricted(diagram, address, port_index);
                             return ports.iter().map(|p| p.0).collect();
                         }
                     }
@@ -2632,7 +2638,7 @@ pub fn simplify_string_diagram_step(
                         if let Some(Node::Multiplication(_)) = diagram.nodes.get(&target_port.0) {
                             if target_port.1 == 0 {
                                 // Fuse multiplication nodes
-                                fuse_multiplication_nodes_basic(diagram, address, port_index);
+                                fuse_multiplication_nodes(diagram, address, port_index);
                                 return vec![address];
                             }
                         }
@@ -2642,7 +2648,7 @@ pub fn simplify_string_diagram_step(
                         {
                             if val != &BigInt::from(0) {
                                 // Propagate constant
-                                simplify_multiplication_const_multiplication(
+                                multiplication_const_multiplication(
                                     diagram, address, port_index, field_ops,
                                 );
                                 return vec![address, target_port.0];
@@ -2650,7 +2656,7 @@ pub fn simplify_string_diagram_step(
                         }
                         if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
                             // Propagate constant
-                            simplify_multiplication_const(diagram, address, port_index);
+                            multiplication_const(diagram, address, port_index);
                             return vec![address, target_port.0];
                         }
                     }
@@ -2659,7 +2665,7 @@ pub fn simplify_string_diagram_step(
             }
             Node::AddConstant(value, port1, port2) => {
                 if value == BigInt::from(0) {
-                    simplify_add_constant_with_zero(diagram, address);
+                    add_constant_zero(diagram, address);
                     return vec![port1.0, port2.0];
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
@@ -2671,25 +2677,25 @@ pub fn simplify_string_diagram_step(
                     return vec![address];
                 }
                 if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-                    delete_const_op_connected_to_unrestricted(diagram, address, port1.1);
+                    delete_const_op_unrestricted(diagram, address, port1.1);
                     return vec![address];
                 }
                 if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
-                    delete_const_op_connected_to_unrestricted(diagram, address, port2.1);
+                    delete_const_op_unrestricted(diagram, address, port2.1);
                     return vec![address];
                 }
                 if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
                     if port1.1 == 0 {
-                        fuse_addition_by_constant_nodes_hd_hd(diagram, address, field_ops);
+                        fuse_addition_by_constant_hd_hd(diagram, address, field_ops);
                         return vec![address];
                     }
                 }
                 if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
                     if port2.1 == 0 {
-                        fuse_addition_by_constant_nodes_hd_tl(diagram, address, field_ops);
+                        fuse_addition_by_constant_hd_tl(diagram, address, field_ops);
                     }
                     if port2.1 == 1 {
-                        fuse_addition_by_constant_nodes_tl_tl(diagram, address, field_ops);
+                        fuse_addition_by_constant_tl_tl(diagram, address, field_ops);
                     }
                     return vec![address];
                 }
@@ -2709,11 +2715,11 @@ pub fn simplify_string_diagram_step(
             }
             Node::MultiplyConstant(value, port1, port2) => {
                 if value == BigInt::from(0) {
-                    simplify_mul_constant_with_zero(diagram, address);
+                    mul_constant_zero(diagram, address);
                     return vec![port1.0, port2.0];
                 }
                 if value == BigInt::from(1) {
-                    simplify_mul_constant_with_one(diagram, address);
+                    mul_constant_one(diagram, address);
                     return vec![port1.0, port2.0];
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
@@ -2725,27 +2731,27 @@ pub fn simplify_string_diagram_step(
                     return vec![address];
                 }
                 if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-                    delete_const_op_connected_to_unrestricted(diagram, address, port1.1);
+                    delete_const_op_unrestricted(diagram, address, port1.1);
                     return vec![address];
                 }
                 if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
                     if value != BigInt::from(0) {
-                        delete_const_op_connected_to_unrestricted(diagram, address, port2.1);
+                        delete_const_op_unrestricted(diagram, address, port2.1);
                         return vec![address];
                     }
                 }
                 if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
                     if port2.1 == 0 {
-                        fuse_multiplication_by_constant_nodes_hd_hd(diagram, address, field_ops);
+                        fuse_multiplication_by_constant_hd_hd(diagram, address, field_ops);
                         return vec![address];
                     }
                 }
                 if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
                     if port2.1 == 0 {
-                        fuse_multiplication_by_constant_nodes_hd_tl(diagram, address, field_ops);
+                        fuse_multiplication_by_constant_hd_tl(diagram, address, field_ops);
                     }
                     if port2.1 == 1 {
-                        fuse_multiplication_by_constant_nodes_tl_tl(diagram, address, field_ops);
+                        fuse_multiplication_by_constant_tl_tl(diagram, address, field_ops);
                     }
                     return vec![address];
                 }
@@ -2753,7 +2759,7 @@ pub fn simplify_string_diagram_step(
             }
             Node::ExponentiateConstant(value, port1, port2) => {
                 if value == BigInt::from(1) {
-                    simplify_exp_constant_with_one(diagram, address);
+                    exp_constant_one(diagram, address);
                     return vec![port1.0, port2.0];
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
@@ -2763,7 +2769,7 @@ pub fn simplify_string_diagram_step(
 
                 if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
                     if value != BigInt::from(0) {
-                        delete_const_op_connected_to_unrestricted(diagram, address, port1.1);
+                        delete_const_op_unrestricted(diagram, address, port1.1);
                         return vec![address];
                     }
                 }
@@ -2771,7 +2777,7 @@ pub fn simplify_string_diagram_step(
                 // ??? if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) ????
                 if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
                     if port2.1 == 0 {
-                        fuse_exponentiation_by_constant_nodes_hd_tl(diagram, address, field_ops);
+                        fuse_exponentiation_by_constant_hd_tl(diagram, address, field_ops);
                         return vec![address];
                     }
                 }
@@ -2779,7 +2785,7 @@ pub fn simplify_string_diagram_step(
             }
             Node::Constant(_, port) => {
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
-                    constant_constant_simplification(diagram, address);
+                    constant_constant_removal(diagram, address);
                 }
                 vec![]
             }
@@ -2787,7 +2793,7 @@ pub fn simplify_string_diagram_step(
                 if let Some(Node::Constant(_, _) | Node::Unrestricted(_)) =
                     diagram.nodes.get(&port.0)
                 {
-                    unrestricted_unary_simplification(diagram, address);
+                    unrestricted_unary_removal(diagram, address);
                 }
                 vec![]
             }
@@ -2824,7 +2830,9 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
     }
 }
 
-pub fn simplify_cvv_addmul(diagram: &mut StringDiagram, address: Address) {
+// If we have c = v1 + v2 or c = v1 * v2, we can avoid making a new variable
+// by obsorbing the conatant into a bespoke node.
+pub fn cvv_addmul(diagram: &mut StringDiagram, address: Address) {
     // Clone the node
     let node = if let Some(node) = diagram.nodes.get(&address) {
         node.clone()
@@ -2890,7 +2898,7 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) {
                         }
                         if ports.len() == 3 {
                             if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
-                                simplify_cvv_addmul(diagram, prime_node_address);
+                                cvv_addmul(diagram, prime_node_address);
                                 changed = true;
                             }
                         }
@@ -2903,7 +2911,7 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) {
                         }
                         if ports.len() == 3 {
                             if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
-                                simplify_cvv_addmul(diagram, prime_node_address);
+                                cvv_addmul(diagram, prime_node_address);
                                 changed = true;
                             }
                         }
@@ -3102,7 +3110,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fuse_addition_nodes_basic() {
+    fn test_fuse_addition_nodes() {
         // Create a simple diagram with two equality nodes and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0)));
@@ -3124,7 +3132,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        fuse_addition_nodes_basic(&mut diagram, addr1, 1);
+        fuse_addition_nodes(&mut diagram, addr1, 1);
 
         assert!(
             diagram.is_well_formed(),
@@ -3149,7 +3157,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fuse_multiplication_nodes_basic() {
+    fn test_fuse_multiplication_nodes() {
         // Create a simple diagram with two equality nodes and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0)));
@@ -3175,7 +3183,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        fuse_multiplication_nodes_basic(&mut diagram, addr1, 1);
+        fuse_multiplication_nodes(&mut diagram, addr1, 1);
 
         assert!(
             diagram.is_well_formed(),
@@ -3339,7 +3347,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        constant_constant_simplification(&mut diagram, i3);
+        constant_constant_removal(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -3378,7 +3386,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        constant_constant_simplification(&mut diagram, i3);
+        constant_constant_removal(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -3418,7 +3426,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        unrestricted_unary_simplification(&mut diagram, i3);
+        unrestricted_unary_removal(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -3457,7 +3465,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        unrestricted_unary_simplification(&mut diagram, i3);
+        unrestricted_unary_removal(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -3733,7 +3741,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_mul_constant_with_zero() {
+    fn test_mul_constant_zero() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1)));
@@ -3751,7 +3759,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_mul_constant_with_zero(&mut diagram, i3);
+        mul_constant_zero(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -3791,7 +3799,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_add_constant_with_zero() {
+    fn test_add_constant_zero() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0)));
@@ -3807,7 +3815,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_add_constant_with_zero(&mut diagram, i3);
+        add_constant_zero(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -3827,7 +3835,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_mul_constant_with_one() {
+    fn test_mul_constant_one() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0)));
@@ -3847,7 +3855,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_mul_constant_with_one(&mut diagram, i3);
+        mul_constant_one(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -3864,7 +3872,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_exp_constant_with_one() {
+    fn test_exp_constant_one() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0)));
@@ -3884,7 +3892,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_exp_constant_with_one(&mut diagram, i3);
+        exp_constant_one(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -3901,7 +3909,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_binary_addition_node() {
+    fn test_remove_binary_addition_node() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0)));
@@ -3917,7 +3925,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_binary_addition_node(&mut diagram, i3);
+        remove_binary_addition_node(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -3937,7 +3945,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_binary_multiplication_node() {
+    fn test_remove_binary_multiplication_node() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0)));
@@ -3953,7 +3961,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_binary_multiplication_node(&mut diagram, i3);
+        remove_binary_multiplication_node(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -3970,7 +3978,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fuse_addition_by_constant_nodes_hd_tl() {
+    fn test_fuse_addition_by_constant_hd_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0)));
@@ -3985,7 +3993,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_addition_by_constant_nodes_hd_tl(&mut diagram, i3, &());
+        fuse_addition_by_constant_hd_tl(&mut diagram, i3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4017,7 +4025,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fuse_addition_by_constant_nodes_hd_hd() {
+    fn test_fuse_addition_by_constant_hd_hd() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1)));
@@ -4032,7 +4040,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_addition_by_constant_nodes_hd_hd(&mut diagram, i3, &());
+        fuse_addition_by_constant_hd_hd(&mut diagram, i3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4064,7 +4072,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fuse_addition_by_constant_nodes_tl_tl() {
+    fn test_fuse_addition_by_constant_tl_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0)));
@@ -4079,7 +4087,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_addition_by_constant_nodes_tl_tl(&mut diagram, i3, &());
+        fuse_addition_by_constant_tl_tl(&mut diagram, i3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4111,7 +4119,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fuse_multiplication_by_constant_nodes_hd_tl() {
+    fn test_fuse_multiplication_by_constant_hd_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0)));
@@ -4134,7 +4142,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_multiplication_by_constant_nodes_hd_tl(&mut diagram, i3, &());
+        fuse_multiplication_by_constant_hd_tl(&mut diagram, i3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4163,7 +4171,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fuse_multiplication_by_constant_nodes_hd_hd() {
+    fn test_fuse_multiplication_by_constant_hd_hd() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1)));
@@ -4186,7 +4194,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_multiplication_by_constant_nodes_hd_hd(&mut diagram, i3, &());
+        fuse_multiplication_by_constant_hd_hd(&mut diagram, i3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4215,7 +4223,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fuse_multiplication_by_constant_nodes_tl_tl() {
+    fn test_fuse_multiplication_by_constant_tl_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0)));
@@ -4238,7 +4246,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_multiplication_by_constant_nodes_tl_tl(&mut diagram, i3, &());
+        fuse_multiplication_by_constant_tl_tl(&mut diagram, i3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4267,7 +4275,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fuse_exponentiation_by_constant_nodes_hd_tl() {
+    fn test_fuse_exponentiation_by_constant_hd_tl() {
         // Create a simple diagram with a single constant exponentiation node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0)));
@@ -4290,7 +4298,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        fuse_exponentiation_by_constant_nodes_hd_tl(&mut diagram, i3, &());
+        fuse_exponentiation_by_constant_hd_tl(&mut diagram, i3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4319,7 +4327,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_equality_with_unrestricted() {
+    fn test_equality_unrestricted() {
         // Create a simple diagram with one equality node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0)));
@@ -4337,7 +4345,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_equality_with_unrestricted(&mut diagram, addr1, 1);
+        equality_unrestricted(&mut diagram, addr1, 1);
 
         assert!(
             diagram.is_well_formed(),
@@ -4366,7 +4374,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_binary_equation_node() {
+    fn test_binary_equation_node() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0)));
@@ -4382,7 +4390,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_binary_equality_node(&mut diagram, i3);
+        remove_binary_equality_node(&mut diagram, i3);
 
         assert!(
             diagram.is_well_formed(),
@@ -4402,7 +4410,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_addition_const_addition_hd() {
+    fn test_addition_const_addition_hd() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0)));
@@ -4432,7 +4440,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_addition_const_addition(&mut diagram, ia, 3, &());
+        addition_const_addition(&mut diagram, ia, 3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4472,7 +4480,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_addition_const_addition_tl() {
+    fn test_addition_const_addition_tl() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0)));
@@ -4502,7 +4510,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_addition_const_addition(&mut diagram, ia, 3, &());
+        addition_const_addition(&mut diagram, ia, 3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4542,7 +4550,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_multiplication_const_multiplication_hd() {
+    fn test_multiplication_const_multiplication_hd() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0)));
@@ -4572,7 +4580,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_multiplication_const_multiplication(&mut diagram, ia, 3, &());
+        multiplication_const_multiplication(&mut diagram, ia, 3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4612,7 +4620,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_multiplication_const_multiplication_tl() {
+    fn test_multiplication_const_multiplication_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0)));
@@ -4642,7 +4650,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_multiplication_const_multiplication(&mut diagram, ia, 3, &());
+        multiplication_const_multiplication(&mut diagram, ia, 3, &());
 
         assert!(
             diagram.is_well_formed(),
@@ -4682,7 +4690,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_addition_const() {
+    fn test_addition_const() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0)));
@@ -4707,7 +4715,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_addition_const(&mut diagram, ia, 3);
+        addition_const(&mut diagram, ia, 3);
 
         assert!(
             diagram.is_well_formed(),
@@ -4747,7 +4755,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_multiplication_const() {
+    fn test_multiplication_const() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0)));
@@ -4772,7 +4780,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_multiplication_const(&mut diagram, ia, 3);
+        multiplication_const(&mut diagram, ia, 3);
 
         assert!(
             diagram.is_well_formed(),
@@ -4812,7 +4820,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_equality_const_nvar() {
+    fn test_equality_const_nvar() {
         // Create a simple diagram with a single constant Equality interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0)));
@@ -4840,7 +4848,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_equality_const(&mut diagram, ia, 3);
+        equality_const(&mut diagram, ia, 3);
 
         assert!(
             diagram.is_well_formed(),
@@ -4865,7 +4873,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_equality_const_var() {
+    fn test_equality_const_var() {
         // Create a simple diagram with a single constant Equality interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0)));
@@ -4893,7 +4901,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_equality_const(&mut diagram, ia, 3);
+        equality_const(&mut diagram, ia, 3);
 
         assert!(
             diagram.is_well_formed(),
@@ -4920,7 +4928,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_addmul_unrestricted() {
+    fn test_addmul_unrestricted() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0)));
@@ -4945,7 +4953,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        simplify_addmul_unrestricted(&mut diagram, ia, 3);
+        addmul_unrestricted(&mut diagram, ia, 3);
 
         assert!(
             diagram.is_well_formed(),
@@ -4970,7 +4978,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_addition_const_unrestricted_1() {
+    fn test_addition_const_unrestricted_1() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(2, 0)));
@@ -4986,7 +4994,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        delete_const_op_connected_to_unrestricted(&mut diagram, ia, 0);
+        delete_const_op_unrestricted(&mut diagram, ia, 0);
 
         assert!(
             diagram.is_well_formed(),
@@ -5006,7 +5014,7 @@ mod tests {
     }
 
     #[test]
-    fn test_simplify_addition_const_unrestricted_2() {
+    fn test_addition_const_unrestricted_2() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(2, 0)));
@@ -5022,7 +5030,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        delete_const_op_connected_to_unrestricted(&mut diagram, ia, 1);
+        delete_const_op_unrestricted(&mut diagram, ia, 1);
 
         assert!(
             diagram.is_well_formed(),
