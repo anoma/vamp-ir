@@ -108,7 +108,8 @@ mod tests {
         input_ids.insert(13);
         input_ids.insert(14);
 
-        let str_diag = build_string_diagram(test_expr, &input_ids);
+        let str_diag =
+            build_string_diagram(test_expr, &input_ids, &mut DefinitionRegistry::new(vec![]));
 
         assert!(
             str_diag.is_well_formed(),

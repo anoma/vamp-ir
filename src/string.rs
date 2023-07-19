@@ -46,6 +46,68 @@ pub enum Node {
     CVVMul(BigInt, Port, Port), // First port times the second equals the constant (Only used during 3ac translation)
 }
 
+// Used to assist in synthesizing new definitions.
+pub struct DefinitionRegistry {
+    pub initial_defs: Vec<Definition>,
+    pub port_id_map: HashMap<Port, u32>,
+    pub id_def_map: HashMap<u32, (HashSet<Port>, Box<TExpr>)>,
+    pub next_id: u32,
+}
+
+impl DefinitionRegistry {
+    pub fn port_def_map(&self, port: &Port) -> Option<&Box<TExpr>> {
+        if let Some(id) = self.port_id_map.get(port) {
+            return self.id_def_map.get(id).map(|(_, def)| def);
+        } else {
+            None
+        }
+    }
+
+    pub fn new(defs: Vec<Definition>) -> Self {
+        // Extract the highest variable id from the given definitions
+        let next_id = defs
+            .iter()
+            .filter_map(|def| match def {
+                Definition(LetBinding(
+                    TPat {
+                        v: Pat::Variable(Variable { id, .. }),
+                        ..
+                    },
+                    _,
+                )) => Some(id),
+                _ => None,
+            })
+            .max()
+            .unwrap_or(&0)
+            + 1;
+
+        DefinitionRegistry {
+            initial_defs: defs,
+            port_id_map: HashMap::new(),
+            id_def_map: HashMap::new(),
+            next_id,
+        }
+    }
+
+    // Destructively empty synthesized definitions into original definition vector
+    pub fn compile_definitions(&mut self) -> Vec<Definition> {
+        let mut compiled_defs = std::mem::take(&mut self.initial_defs);
+
+        for (id, (_, expr)) in self.id_def_map.drain() {
+            let pattern = TPat {
+                v: Pat::Variable(Variable { name: None, id }),
+                t: None, // Adjust as needed based on your actual type information
+            };
+            let let_binding = LetBinding(pattern, expr);
+            compiled_defs.push(Definition(let_binding));
+        }
+
+        self.id_def_map.clear();
+
+        compiled_defs
+    }
+}
+
 // Define the String Diagram
 #[derive(Clone, Debug)]
 pub struct StringDiagram {
@@ -202,6 +264,7 @@ fn get_or_create_equality_node(
     diagram: &mut StringDiagram,
     variable_addresses: &mut HashMap<VariableId, Address>,
     input_ids: &HashSet<u32>,
+    defs: &mut DefinitionRegistry,
 ) -> (Address, usize) {
     // Does this variable already have an address? If not, make one.
     let equality_address = *variable_addresses.entry(variable.id).or_insert_with(|| {
@@ -212,23 +275,71 @@ fn get_or_create_equality_node(
             vec![]
         };
 
-        diagram.add_node(Node::Equality(input_vec, Vec::new()))
+        let address = diagram.add_node(Node::Equality(input_vec, Vec::new()));
+
+        // If variable is new, add a default entry to defs.
+        defs.id_def_map.entry(variable.id).or_insert_with(|| {
+            let var_expr = TExpr {
+                v: Expr::Variable(variable.clone()),
+                t: None,
+            };
+            (HashSet::new(), Box::new(var_expr))
+        });
+
+        address
     });
 
     // Find the largest index in that equality node. Place the pointing port there.
     let next_idx;
     if let Node::Equality(_, ports) = diagram.nodes.get_mut(&equality_address).unwrap() {
         next_idx = ports.len();
-        ports.push(pointing_port);
+        ports.push(pointing_port.clone());
     } else {
         panic!("Expected an equality node");
+    }
+
+    // Update port_id_map and id_def_map in defs.
+    defs.port_id_map.insert(pointing_port.clone(), variable.id);
+    if let Some((port_set, _)) = defs.id_def_map.get_mut(&variable.id) {
+        port_set.insert(pointing_port);
     }
 
     (equality_address, next_idx)
 }
 
+// Rename port-associated variables so that original definitions remain untouched
+pub fn preserve_initial_defs(defs: &mut DefinitionRegistry) {
+    // Create a mapping from old IDs to new IDs
+    let mut old_to_new_ids = HashMap::new();
+
+    // Generate new IDs for existing entries and store in old_to_new_ids
+    for &old_id in defs.id_def_map.keys() {
+        let new_id = defs.next_id;
+        old_to_new_ids.insert(old_id, new_id);
+        defs.next_id += 1;
+    }
+
+    // Update port_id_map in place
+    for (_, id) in defs.port_id_map.iter_mut() {
+        if let Some(new_id) = old_to_new_ids.get(id) {
+            *id = *new_id;
+        }
+    }
+
+    // Update id_def_map in place
+    for (old_id, new_id) in old_to_new_ids.iter() {
+        if let Some(value) = defs.id_def_map.remove(old_id) {
+            defs.id_def_map.insert(*new_id, value);
+        }
+    }
+}
+
 // Given a list of 3ac equations, generate a semantically equivalent string diagram.
-pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> StringDiagram {
+pub fn build_string_diagram(
+    equations: Vec<TExpr>,
+    input_ids: &HashSet<u32>,
+    defs: &mut DefinitionRegistry,
+) -> StringDiagram {
     let mut diagram = StringDiagram::new();
     let mut variable_addresses: HashMap<VariableId, Address> = HashMap::new();
 
@@ -253,6 +364,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
+                        defs,
                     );
 
                     diagram.add_node(Node::Constant(
@@ -285,6 +397,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
+                        defs,
                     );
                     let (equality_address2, new_port_index2) = get_or_create_equality_node(
                         var2,
@@ -292,6 +405,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
+                        defs,
                     );
 
                     // Connect these nodes by adding an equality node that points to both.
@@ -329,6 +443,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                             &mut diagram,
                             &mut variable_addresses,
                             input_ids,
+                            defs,
                         );
                         let (equality_address2, new_port_index2) = get_or_create_equality_node(
                             var2,
@@ -336,6 +451,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                             &mut diagram,
                             &mut variable_addresses,
                             input_ids,
+                            defs,
                         );
 
                         diagram.add_node(Node::MultiplyConstant(
@@ -373,6 +489,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
@@ -380,6 +497,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
@@ -387,6 +505,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 ports = vec![
                                     Port(address1, port_index1),
@@ -401,6 +520,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
@@ -408,6 +528,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
@@ -415,6 +536,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 ports = vec![
                                     Port(address0, port_index0),
@@ -439,6 +561,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
@@ -450,6 +573,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 ports = vec![
                                     Port(address1, 0),
@@ -464,6 +588,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
@@ -475,6 +600,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 ports = vec![
                                     Port(address0, port_index0),
@@ -499,6 +625,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
@@ -506,6 +633,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
@@ -524,6 +652,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
@@ -531,6 +660,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
@@ -555,6 +685,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
@@ -577,6 +708,7 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
+                                    defs,
                                 );
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
@@ -611,6 +743,9 @@ pub fn build_string_diagram(equations: Vec<TExpr>, input_ids: &HashSet<u32>) -> 
             }
         }
     }
+
+    // Rename variables to preserve initial definitions
+    preserve_initial_defs(defs);
 
     diagram
 }
@@ -937,6 +1072,7 @@ pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
     expressions
 }
 
+#[derive(Clone, Debug)]
 pub enum RewriteRule {
     DeleteEmptyEquality(Address),
     DeleteIsolatedEquality(Address),
@@ -977,7 +1113,11 @@ pub enum RewriteRule {
     DeleteConstOpUnrestricted(Address, PortIndex),
     SwapAddMulConstantsHdTl(Address),
     SwapAddMulConstantsTlTl(Address),
+    ReduceCVVAddition(Address),
+    ReduceCVVMultiplication(Address),
 }
+
+pub type RewriteTrace = Vec<RewriteRule>;
 
 pub fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
@@ -1023,14 +1163,19 @@ pub fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
 }
 
 // Completely decompose addition node at address so it only has three arguments
-pub fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) {
+pub fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
+    let mut trace: RewriteTrace = vec![];
+
     while let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
         if ports.len() > 3 {
             split_addition_node(diagram, address);
+            trace.push(RewriteRule::SplitAdditionNode(address))
         } else {
             break; // Decomposition is complete
         }
     }
+
+    trace
 }
 
 pub fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) {
@@ -1077,27 +1222,37 @@ pub fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) 
 }
 
 // Completely decompose multiplication node at address so it only has three arguments
-pub fn decompose_multiplication_node(diagram: &mut StringDiagram, address: Address) {
+pub fn decompose_multiplication_node(
+    diagram: &mut StringDiagram,
+    address: Address,
+) -> RewriteTrace {
+    let mut trace: RewriteTrace = vec![];
+
     while let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address) {
         if ports.len() > 3 {
             split_multiplication_node(diagram, address);
+            trace.push(RewriteRule::SplitMultiplicationNode(address))
         } else {
             break; // Decomposition is complete
         }
     }
+
+    trace
 }
 
 // Split X = Y ^ n into X = Y * Y * ... * Y
 // TODO: This is dumb. It needs to be split so that
 //       X = Y ^ 2*n => Y1 = Y ^ n /\ X = Y1 * Y1, etc.
 //       much smaller that way
-pub fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) {
+pub fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
+    let trace: RewriteTrace = vec![];
+
     // Get the data needed from the node at the address
     let (exp, p1, p2) =
         if let Some(Node::ExponentiateConstant(exp, p1, p2)) = diagram.nodes.get(&address) {
             (exp.clone(), p1.clone(), p2.clone())
         } else {
-            return;
+            return trace;
         };
 
     // Convert bigint into usize
@@ -1106,7 +1261,7 @@ pub fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) 
         exp_value
     } else {
         // The exponentiation is too large to handle
-        return;
+        return trace;
     };
 
     // Create a new equality node with as many ports as the size of the exponent plus one.
@@ -1133,6 +1288,8 @@ pub fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) 
 
     // The second link of the original exponent node should now point to the first port of the new equality node.
     diagram.replace_port(&p2, &Port(equality_address, 0));
+
+    trace
 }
 
 pub fn fuse_equality_nodes(
@@ -3048,6 +3205,14 @@ pub fn apply_rewrite_step(
             unrestricted_unary_removal(diagram, address);
             vec![]
         }
+        RewriteRule::ReduceCVVAddition(address) => {
+            cvv_addmul(diagram, address);
+            vec![]
+        }
+        RewriteRule::ReduceCVVMultiplication(address) => {
+            cvv_addmul(diagram, address);
+            vec![]
+        }
     }
 }
 
@@ -3057,24 +3222,32 @@ pub fn simplify_string_diagram_step(
     diagram: &mut StringDiagram,
     field_ops: &dyn FieldOps,
     address: Address,
-) -> Vec<Address> {
-    if let Some(rule) = gen_string_diagram_step(diagram, address) {
-        apply_rewrite_step(diagram, field_ops, rule)
+) -> (Option<RewriteRule>, Vec<Address>) {
+    let step = gen_string_diagram_step(diagram, address);
+
+    if let Some(rule) = &step {
+        let res = apply_rewrite_step(diagram, field_ops, rule.clone());
+        (step, res)
     } else {
-        vec![]
+        (None, vec![])
     }
 }
 
-pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps) {
+pub fn simplify_string_diagram(
+    diagram: &mut StringDiagram,
+    field_ops: &dyn FieldOps,
+) -> RewriteTrace {
     // Initialize the vector with all the addresses in the diagram.
     let mut addresses_to_process: Vec<Address> = diagram.nodes.keys().cloned().collect();
+    let mut trace: RewriteTrace = Vec::new();
 
     while !addresses_to_process.is_empty() {
         let mut new_addresses = HashSet::new();
 
         for address in addresses_to_process {
             // Apply a single simplification step to the address.
-            let modified_addresses = simplify_string_diagram_step(diagram, field_ops, address);
+            let (rule, modified_addresses) =
+                simplify_string_diagram_step(diagram, field_ops, address);
             // Add the modified addresses to the hash set.
             for modified_address in modified_addresses {
                 new_addresses.insert(modified_address);
@@ -3084,11 +3257,17 @@ pub fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn Fiel
                     new_addresses.insert(connected_address);
                 }
             }
+
+            if let Some(rule) = rule {
+                trace.push(rule)
+            }
         }
 
         // Convert the HashSet to a Vec for the next iteration.
         addresses_to_process = new_addresses.into_iter().collect();
     }
+
+    trace
 }
 
 // If we have c = v1 + v2 or c = v1 * v2, we can avoid making a new variable
@@ -3137,8 +3316,9 @@ pub fn cvv_addmul(diagram: &mut StringDiagram, address: Address) {
 
 // Ensure there aren't any additions/multiplications with more than 2 inputs
 // And also that there aren't any exponential nodes.
-pub fn prep_for_3ac(diagram: &mut StringDiagram) {
+pub fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
     let mut changed = true;
+    let mut trace: RewriteTrace = vec![];
 
     while changed {
         changed = false;
@@ -3154,12 +3334,13 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) {
                     Node::Addition(ports) => {
                         // If there are more than three ports in the addition node, decompose it
                         if ports.len() > 3 {
-                            decompose_addition_node(diagram, prime_node_address);
+                            trace.extend(decompose_addition_node(diagram, prime_node_address));
                             changed = true;
                         }
                         if ports.len() == 3 {
                             if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
                                 cvv_addmul(diagram, prime_node_address);
+                                trace.push(RewriteRule::ReduceCVVAddition(prime_node_address));
                                 changed = true;
                             }
                         }
@@ -3167,18 +3348,21 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) {
                     Node::Multiplication(ports) => {
                         // If there are more than three ports in the multiplication node, decompose it
                         if ports.len() > 3 {
-                            decompose_multiplication_node(diagram, prime_node_address);
+                            trace
+                                .extend(decompose_multiplication_node(diagram, prime_node_address));
                             changed = true;
                         }
                         if ports.len() == 3 {
                             if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
                                 cvv_addmul(diagram, prime_node_address);
+                                trace
+                                    .push(RewriteRule::ReduceCVVMultiplication(prime_node_address));
                                 changed = true;
                             }
                         }
                     }
                     Node::ExponentiateConstant(_, _, _) => {
-                        split_exponentiation_node(diagram, prime_node_address);
+                        trace.extend(split_exponentiation_node(diagram, prime_node_address));
                         changed = true;
                     }
                     _ => {}
@@ -3186,16 +3370,159 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) {
             }
         }
     }
+
+    trace
+}
+
+pub fn calculate_defs(_defs: &mut DefinitionRegistry, rule: RewriteRule) {
+    match rule {
+        RewriteRule::DeleteEmptyEquality(_address) => {
+            // Not implemented
+        }
+        RewriteRule::DeleteIsolatedEquality(_address) => {
+            // Not implemented
+        }
+        RewriteRule::SplitAdditionNode(_address) => {
+            // Not implemented
+        }
+        RewriteRule::SplitMultiplicationNode(_address) => {
+            // Not implemented
+        }
+        RewriteRule::SplitExponentiationNode(_address) => {
+            // Not implemented
+        }
+        RewriteRule::FuseEqualityNodes(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::FuseAdditionNodes(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::RemoveBinaryAdditionNode(_address) => {
+            // Not implemented
+        }
+        RewriteRule::FuseMultiplicationNodes(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::RemoveBinaryMultiplicationNode(_address) => {
+            // Not implemented
+        }
+        RewriteRule::AddConstantZero(_address) => {
+            // Not implemented
+        }
+        RewriteRule::AddConstantConstantHead(_address) => {
+            // Not implemented
+        }
+        RewriteRule::AddConstantConstantTail(_address) => {
+            // Not implemented
+        }
+        RewriteRule::FuseAdditionByConstantHdTl(_address) => {
+            // Not implemented
+        }
+        RewriteRule::FuseAdditionByConstantTlTl(_address) => {
+            // Not implemented
+        }
+        RewriteRule::FuseAdditionByConstantHdHd(_address) => {
+            // Not implemented
+        }
+        RewriteRule::EqualityUnrestricted(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::RemoveBinaryEqualityNode(_address) => {
+            // Not implemented
+        }
+        RewriteRule::AdditionConstAddition(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::MultiplicationConstMultiplication(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::AdditionConst(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::MultiplicationConst(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::EqualityConst(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::AddMulUnrestricted(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::DeleteConstOpUnrestricted(_address, _port_index) => {
+            // Not implemented
+        }
+        RewriteRule::SwapAddMulConstantsHdTl(_address) => {
+            // Not implemented
+        }
+        RewriteRule::SwapAddMulConstantsTlTl(_address) => {
+            // Not implemented
+        }
+        RewriteRule::MulConstantZero(_address) => {
+            // Not implemented
+        }
+        RewriteRule::MulConstantOne(_address) => {
+            // Not implemented
+        }
+        RewriteRule::MulConstantConstantHead(_address) => {
+            // Not implemented
+        }
+        RewriteRule::MulConstantConstantTail(_address) => {
+            // Not implemented
+        }
+        RewriteRule::FuseMultiplicationByConstantHdTl(_address) => {
+            // Not implemented
+        }
+        RewriteRule::FuseMultiplicationByConstantTlTl(_address) => {
+            // Not implemented
+        }
+        RewriteRule::FuseMultiplicationByConstantHdHd(_address) => {
+            // Not implemented
+        }
+        RewriteRule::ExpConstantOne(_address) => {
+            // Not implemented
+        }
+        RewriteRule::ExpConstantConstantTail(_address) => {
+            // Not implemented
+        }
+        RewriteRule::FuseExponentiationByConstantHdTl(_address) => {
+            // Not implemented
+        }
+        RewriteRule::ConstantConstantRemoval(_address) => {
+            // Not implemented
+        }
+        RewriteRule::UnrestrictedUnaryRemoval(_address) => {
+            // Not implemented
+        }
+        RewriteRule::ReduceCVVAddition(_address) => {
+            // Not implemented
+        }
+        RewriteRule::ReduceCVVMultiplication(_address) => {
+            // Not implemented
+        }
+    }
+}
+
+pub fn synthesize_defs(defs: &mut DefinitionRegistry, trace: RewriteTrace) -> Vec<Definition> {
+    for rule in trace {
+        calculate_defs(defs, rule)
+    }
+
+    defs.compile_definitions()
 }
 
 pub fn simplify_3ac(
-    equations: Vec<TExpr>,
+    equations: &mut Vec<TExpr>,
     input_ids: &HashSet<u32>,
+    defs: &mut Vec<Definition>,
     field_ops: &dyn FieldOps,
-) -> Vec<TExpr> {
-    let mut diag = build_string_diagram(equations, input_ids);
-    simplify_string_diagram(&mut diag, field_ops);
+) {
+    let mut reg: DefinitionRegistry = DefinitionRegistry::new(defs.to_vec());
+    defs.clear();
+    let mut diag = build_string_diagram(equations.to_vec(), input_ids, &mut reg);
+    equations.clear();
+    let mut trace = simplify_string_diagram(&mut diag, field_ops);
     println!("Converting back into 3AC...");
-    prep_for_3ac(&mut diag);
-    convert_to_3ac(&diag)
+    trace.extend(prep_for_3ac(&mut diag));
+    equations.extend(convert_to_3ac(&diag));
+    defs.extend(synthesize_defs(&mut reg, trace));
 }
