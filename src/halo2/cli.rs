@@ -5,19 +5,20 @@ use crate::qprintln;
 use crate::transform::compile;
 use crate::util::{prompt_inputs, read_inputs_from_file, Config};
 
+use crate::string::simplify_3ac;
 use halo2_proofs::pasta::{EqAffine, Fp};
 use halo2_proofs::plonk::keygen_vk;
 use halo2_proofs::poly::commitment::Params;
 
+use crate::halo2::synth::PrimeFieldOps as Halo2PrimeFieldOps;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_serialize::{Read, SerializationError};
-use std::io::Write;
-
 use clap::{Args, Subcommand};
+use std::io::Write;
 
 use bincode::error::{DecodeError, EncodeError};
 use ff::PrimeField;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::fs::File;
 use std::path::PathBuf;
@@ -75,7 +76,22 @@ fn compile_halo2_cmd(
     qprintln!(config, "* Compiling constraints...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module, &PrimeFieldOps::<Fp>::default(), config);
+    let mut module_3ac = compile(module, &PrimeFieldOps::<Fp>::default(), config);
+
+    qprintln!(config, "* Simplifying circuit...");
+    let mut input_variables2 = HashMap::new();
+    input_variables2.extend(module_3ac.pubs.iter().map(|var| (var.id, var.clone())));
+    let mut input_ids = HashSet::new();
+    for (id, _) in input_variables2 {
+        input_ids.insert(id);
+    }
+
+    simplify_3ac(
+        &mut module_3ac.exprs,
+        &input_ids,
+        &mut module_3ac.defs,
+        &Halo2PrimeFieldOps::<Fp>::default(),
+    );
 
     qprintln!(config, "* Synthesizing arithmetic circuit...");
     let module_rc = Rc::new(module_3ac);

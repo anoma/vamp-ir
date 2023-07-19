@@ -1,11 +1,13 @@
 use crate::ast::{Expr, InfixOp, Module, Pat, Variable};
 use crate::error::Error;
-use crate::string::simplify_3ac;
+
 use crate::transform::{collect_module_variables, compile, FieldOps};
 
 use serde_json::Map;
 use std::collections::{HashMap, HashSet};
 
+use crate::halo2::synth::PrimeFieldOps as Halo2PrimeFieldOps;
+use halo2_proofs::pasta::Fp;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
@@ -15,10 +17,8 @@ use std::path::PathBuf;
 
 use num_bigint::BigInt;
 
-use crate::halo2::synth::PrimeFieldOps as Halo2PrimeFieldOps;
-use halo2_proofs::pasta::Fp;
-
 use crate::qprintln;
+use crate::string::simplify_3ac;
 use crate::util::Config;
 
 #[derive(Subcommand)]
@@ -175,30 +175,28 @@ fn atom_to_string(expr: &Expr) -> String {
 }
 
 pub fn dump_equations_three_addr(
-    module_3ac: &Module,
+    module_3ac: &mut Module,
     path: &PathBuf,
-    config: &Config,
+    _config: &Config,
 ) -> std::io::Result<()> {
     let file = OpenOptions::new().write(true).create(true).open(path)?;
     let mut writer = BufWriter::new(file);
 
-    // Collect only public variables for demo
     let mut input_variables2 = HashMap::new();
-    input_variables2.reserve(module_3ac.pubs.len());
     input_variables2.extend(module_3ac.pubs.iter().map(|var| (var.id, var.clone())));
     let mut input_ids = HashSet::new();
     for (id, _) in input_variables2 {
         input_ids.insert(id);
     }
 
-    qprintln!(config, "** Performing simplification...");
-    let simp_expr = simplify_3ac(
-        module_3ac.exprs.clone(),
+    simplify_3ac(
+        &mut module_3ac.exprs,
         &input_ids,
+        &mut module_3ac.defs,
         &Halo2PrimeFieldOps::<Fp>::default(),
     );
 
-    for expr in simp_expr {
+    for expr in module_3ac.exprs.iter() {
         if let Expr::Infix(InfixOp::Equal, left, right) = &expr.v {
             match (&left.v, &right.v) {
                 // a = c, for constant c and variables a
@@ -222,7 +220,7 @@ pub fn dump_equations_three_addr(
                 }
 
                 // a = - c, for variables a and c
-                (Expr::Variable(_), Expr::Negate(var)) => {
+                (Expr::Variable(_) | Expr::Constant(_), Expr::Negate(var)) => {
                     if let Expr::Variable(_) = var.v {
                         write!(
                             writer,
@@ -234,7 +232,7 @@ pub fn dump_equations_three_addr(
                 }
 
                 // a = b op c, for variable a
-                (Expr::Variable(_), Expr::Infix(op, t1, t2)) => {
+                (Expr::Variable(_) | Expr::Constant(_), Expr::Infix(op, t1, t2)) => {
                     writeln!(
                         writer,
                         "{} = {} {} {},",
@@ -245,7 +243,9 @@ pub fn dump_equations_three_addr(
                     )?;
                 }
 
-                _ => {}
+                exp => {
+                    println!("Unhandled 3AC Case: {exp:?}")
+                }
             }
         }
     }
@@ -262,10 +262,10 @@ pub fn three_addr_file_cmd(
     qprintln!(config, "** Reading file...");
     let unparsed_file = fs::read_to_string(source).expect("cannot read file");
     let module = Module::parse(&unparsed_file).unwrap();
-    let module_3ac = compile(module, &(), config);
+    let mut module_3ac = compile(module, &(), config);
 
     qprintln!(config, "** Writing equations to file...");
-    dump_equations_three_addr(&module_3ac, output, config)
+    dump_equations_three_addr(&mut module_3ac, output, config)
         .map_err(|err| qprintln!(config, "{:?}", err))
         .ok();
     qprintln!(config, "** Three address file generation success!");
