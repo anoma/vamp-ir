@@ -203,7 +203,7 @@ mod tests {
     #[ignore] // This test panics in type checking
     fn test_compile_type_error() {
         let config = Config { quiet: true };
-        assert!(compile("1/0 = 1;", &config).is_err());
+        assert!(compile("(1, 2) = 1;", &config).is_err());
     }
 
     #[test]
