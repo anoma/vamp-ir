@@ -1,6 +1,8 @@
 // TODO:
 // Definition resynthesis
 // Addition-constmul reorientation
+// Unary-addition elimination
+// Unary-multiplication elimination
 // Enum-driven reverse rewriting
 // Distributivity-based greedy searching
 // Constant op-equality distributivity
@@ -44,68 +46,6 @@ pub enum Node {
 
     CVVAdd(BigInt, Port, Port), // First port plus the second equals the constant (Only used during 3ac translation)
     CVVMul(BigInt, Port, Port), // First port times the second equals the constant (Only used during 3ac translation)
-}
-
-// Used to assist in synthesizing new definitions.
-pub struct DefinitionRegistry {
-    pub initial_defs: Vec<Definition>,
-    pub port_id_map: HashMap<Port, u32>,
-    pub id_def_map: HashMap<u32, (HashSet<Port>, Box<TExpr>)>,
-    pub next_id: u32,
-}
-
-impl DefinitionRegistry {
-    pub fn port_def_map(&self, port: &Port) -> Option<&Box<TExpr>> {
-        if let Some(id) = self.port_id_map.get(port) {
-            return self.id_def_map.get(id).map(|(_, def)| def);
-        } else {
-            None
-        }
-    }
-
-    pub fn new(defs: Vec<Definition>) -> Self {
-        // Extract the highest variable id from the given definitions
-        let next_id = defs
-            .iter()
-            .filter_map(|def| match def {
-                Definition(LetBinding(
-                    TPat {
-                        v: Pat::Variable(Variable { id, .. }),
-                        ..
-                    },
-                    _,
-                )) => Some(id),
-                _ => None,
-            })
-            .max()
-            .unwrap_or(&0)
-            + 1;
-
-        DefinitionRegistry {
-            initial_defs: defs,
-            port_id_map: HashMap::new(),
-            id_def_map: HashMap::new(),
-            next_id,
-        }
-    }
-
-    // Destructively empty synthesized definitions into original definition vector
-    pub fn compile_definitions(&mut self) -> Vec<Definition> {
-        let mut compiled_defs = std::mem::take(&mut self.initial_defs);
-
-        for (id, (_, expr)) in self.id_def_map.drain() {
-            let pattern = TPat {
-                v: Pat::Variable(Variable { name: None, id }),
-                t: None, // Adjust as needed based on your actual type information
-            };
-            let let_binding = LetBinding(pattern, expr);
-            compiled_defs.push(Definition(let_binding));
-        }
-
-        self.id_def_map.clear();
-
-        compiled_defs
-    }
 }
 
 // Define the String Diagram
@@ -258,6 +198,147 @@ impl StringDiagram {
     }
 }
 
+// Used to assist in synthesizing new definitions.
+pub struct DefinitionRegistry {
+    pub initial_defs: Vec<Definition>,
+    pub port_id_map: HashMap<Port, u32>,
+    pub id_def_map: HashMap<u32, (HashSet<Port>, Box<TExpr>)>,
+    //pub init_ids: HashSet<u32>, // Not sure if needed/useful
+    pub next_id: u32,
+}
+
+impl DefinitionRegistry {
+    pub fn port_def_map(&self, port: &Port) -> Option<&Box<TExpr>> {
+        if let Some(id) = self.port_id_map.get(port) {
+            return self.id_def_map.get(id).map(|(_, def)| def);
+        } else {
+            None
+        }
+    }
+
+    pub fn new(defs: Vec<Definition>) -> Self {
+        //let mut init_ids = HashSet::new();
+
+        // Extract the highest variable id from the given definitions and store encountered ids into init_ids
+        let next_id = defs
+            .iter()
+            .filter_map(|def| match def {
+                Definition(LetBinding(
+                    TPat {
+                        v: Pat::Variable(Variable { id, .. }),
+                        ..
+                    },
+                    _,
+                )) => {
+                    //init_ids.insert(*id);
+                    Some(id)
+                }
+                _ => None,
+            })
+            .max()
+            .unwrap_or(&0)
+            + 1;
+
+        DefinitionRegistry {
+            initial_defs: defs,
+            port_id_map: HashMap::new(),
+            id_def_map: HashMap::new(),
+            //init_ids,
+            next_id,
+        }
+    }
+
+    // Destructively empty synthesized definitions into original definition vector
+    pub fn compile_definitions(&mut self) -> Vec<Definition> {
+        let mut compiled_defs = std::mem::take(&mut self.initial_defs);
+
+        for (id, (_, expr)) in self.id_def_map.drain() {
+            let pattern = TPat {
+                v: Pat::Variable(Variable { name: None, id }),
+                t: None, // Adjust as needed based on your actual type information
+            };
+            let let_binding = LetBinding(pattern, expr);
+            compiled_defs.push(Definition(let_binding));
+        }
+
+        self.id_def_map.clear();
+
+        compiled_defs
+    }
+    pub fn register_definition(&mut self, ports: (Port, Port), definition: Expr) {
+        // Insert the ports into the port_id_map
+        self.port_id_map.insert(ports.0.clone(), self.next_id);
+        self.port_id_map.insert(ports.1.clone(), self.next_id);
+
+        // Insert the definition into the id_def_map
+        let ports_set = vec![ports.0.clone(), ports.1.clone()]
+            .into_iter()
+            .collect::<HashSet<_>>();
+        let boxed_def = Box::new(TExpr {
+            v: definition,
+            t: None,
+        });
+        self.id_def_map.insert(self.next_id, (ports_set, boxed_def));
+
+        // Increment the next_id
+        self.next_id += 1;
+    }
+
+    pub fn replace_definition_of_port(&mut self, target_port: &Port, input_expr: Expr) -> Option<u32> {
+        // Fetch the id associated with the port
+        if let Some(&id) = self.port_id_map.get(target_port) {
+            
+            // Wrap the input expression inside a TExpr
+            let texpr = TExpr {
+                v: input_expr,
+                t: None,  // no type information
+            };
+
+            // Update the definition associated with the id
+            if let Some((_, def)) = self.id_def_map.get_mut(&id) {
+                *def = Box::new(texpr);
+            }
+            
+            return Some(id);
+        }
+        
+        None  // Return None if the port wasn't found in the map
+    }
+
+    pub fn remove_ports(&mut self, ports: (Port, Port)) {
+        // Check if the first port exists in the port_id_map
+        if let Some(var_id) = self.port_id_map.get(&ports.0) {
+            // Clone the variable ID since we might need it after removing the port from port_id_map
+            let var_id = *var_id;
+
+            // Remove the ports from the port_id_map
+            self.port_id_map.remove(&ports.0);
+            self.port_id_map.remove(&ports.1);
+
+            // Check if the id_def_map entry for the variable ID only contains the two ports
+            if let Some((port_set, _)) = self.id_def_map.get(&var_id) {
+                if port_set.len() == 2 && port_set.contains(&ports.0) && port_set.contains(&ports.1) {
+                    // If it does, remove the variable ID and its associated definition
+                    self.id_def_map.remove(&var_id);
+                }
+            }
+        }
+    }
+}
+
+pub fn all_ports_registered(diagram: &StringDiagram, registry: &DefinitionRegistry) -> bool {
+    for address in diagram.nodes.keys() {
+        for port in diagram.port_list(&address) {
+            if !registry.port_id_map.contains_key(&port) {
+                println!("{:?}", diagram.nodes.get(address));
+                //println!("{:?}", diagram.nodes.get(diagram.nodes.get(address).unwrap().ports[0].0));
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn get_or_create_equality_node(
     variable: &Variable,
     pointing_port: Port,
@@ -300,8 +381,11 @@ fn get_or_create_equality_node(
 
     // Update port_id_map and id_def_map in defs.
     defs.port_id_map.insert(pointing_port.clone(), variable.id);
+    defs.port_id_map
+        .insert(Port(equality_address, next_idx), variable.id);
     if let Some((port_set, _)) = defs.id_def_map.get_mut(&variable.id) {
         port_set.insert(pointing_port);
+        port_set.insert(Port(equality_address, next_idx));
     }
 
     (equality_address, next_idx)
@@ -367,10 +451,15 @@ pub fn build_string_diagram(
                         defs,
                     );
 
-                    diagram.add_node(Node::Constant(
+                    let const_addr = diagram.add_node(Node::Constant(
                         c.clone(),
                         Port(equality_address, new_port_index),
                     ));
+
+                    defs.register_definition(
+                        (Port(const_addr, 0), Port(equality_address, new_port_index)),
+                        Expr::Constant(c.clone()),
+                    );
                 }
                 (Expr::Variable(var1), Expr::Variable(var2)) => {
                     let eq_address1 = variable_addresses.get(&var1.id).cloned();
@@ -567,6 +656,10 @@ pub fn build_string_diagram(
                                     const1.clone(),
                                     Port(target_address, 0),
                                 ));
+                                defs.register_definition(
+                                    (Port(address1, 0), Port(target_address, 0)),
+                                    Expr::Constant(const1.clone()),
+                                );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
                                     Port(target_address, 2),
@@ -594,6 +687,10 @@ pub fn build_string_diagram(
                                     const1.clone(),
                                     Port(target_address, 1),
                                 ));
+                                defs.register_definition(
+                                    (Port(address1, 0), Port(target_address, 1)),
+                                    Expr::Constant(const1.clone()),
+                                );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
                                     Port(target_address, 2),
@@ -639,6 +736,10 @@ pub fn build_string_diagram(
                                     const2.clone(),
                                     Port(target_address, 2),
                                 ));
+                                defs.register_definition(
+                                    (Port(address2, 0), Port(target_address, 2)),
+                                    Expr::Constant(const2.clone()),
+                                );
                                 ports = vec![
                                     Port(address1, port_index1),
                                     Port(address0, port_index0),
@@ -666,6 +767,10 @@ pub fn build_string_diagram(
                                     const2.clone(),
                                     Port(target_address, 2),
                                 ));
+                                defs.register_definition(
+                                    (Port(address2, 0), Port(target_address, 2)),
+                                    Expr::Constant(const2.clone()),
+                                );
                                 ports = vec![
                                     Port(address0, port_index0),
                                     Port(address1, port_index1),
@@ -691,10 +796,18 @@ pub fn build_string_diagram(
                                     const1.clone(),
                                     Port(target_address, 0),
                                 ));
+                                defs.register_definition(
+                                    (Port(address1, 0), Port(target_address, 0)),
+                                    Expr::Constant(const1.clone()),
+                                );
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
                                     Port(target_address, 2),
                                 ));
+                                defs.register_definition(
+                                    (Port(address2, 0), Port(target_address, 2)),
+                                    Expr::Constant(const2.clone()),
+                                );
                                 ports = vec![
                                     Port(address1, 0),
                                     Port(address0, port_index0),
@@ -714,10 +827,18 @@ pub fn build_string_diagram(
                                     const1.clone(),
                                     Port(target_address, 1),
                                 ));
+                                defs.register_definition(
+                                    (Port(address1, 0), Port(target_address, 1)),
+                                    Expr::Constant(const1.clone()),
+                                );
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
                                     Port(target_address, 2),
                                 ));
+                                defs.register_definition(
+                                    (Port(address2, 0), Port(target_address, 2)),
+                                    Expr::Constant(const2.clone()),
+                                );
                                 ports = vec![
                                     Port(address0, port_index0),
                                     Port(address1, 0),
@@ -765,11 +886,14 @@ fn get_variable_ids_in_equality_nodes(diagram: &StringDiagram) -> HashSet<u32> {
 }
 
 // Assign variables to all the ports
-fn construct_port_vars(diagram: &StringDiagram) -> HashMap<Port, Variable> {
+fn construct_port_vars(
+    diagram: &StringDiagram,
+    reg: &DefinitionRegistry,
+) -> HashMap<Port, Variable> {
     let named_var_ids = get_variable_ids_in_equality_nodes(diagram);
 
     let mut port_vars: HashMap<Port, Variable> = HashMap::new();
-    let mut variable_id_counter = 0;
+    let mut variable_id_counter = reg.next_id;
     while named_var_ids.contains(&variable_id_counter) {
         variable_id_counter += 1;
     }
@@ -778,6 +902,18 @@ fn construct_port_vars(diagram: &StringDiagram) -> HashMap<Port, Variable> {
     for (address, node) in &diagram.nodes {
         if let Node::Equality(vars, ports) = node {
             if let Some(var) = vars.first() {
+                for (index, target_port) in ports.iter().enumerate() {
+                    let current_port = Port(*address, index);
+
+                    port_vars.insert(current_port, var.clone());
+                    port_vars.insert(target_port.clone(), var.clone());
+                }
+            } else if let Some(id) = reg.port_id_map.get(&Port(*address, 0)) {
+                let var = Variable {
+                    name: None,
+                    id: id.clone(),
+                };
+
                 for (index, target_port) in ports.iter().enumerate() {
                     let current_port = Port(*address, index);
 
@@ -811,16 +947,25 @@ fn construct_port_vars(diagram: &StringDiagram) -> HashMap<Port, Variable> {
         for (index, target_port) in ports.iter().enumerate() {
             let current_port = Port(*address, index);
             if !port_vars.contains_key(&current_port) {
-                let variable = Variable {
-                    name: None,
-                    id: variable_id_counter,
-                };
-                port_vars.insert(current_port, variable.clone());
-                port_vars.insert(target_port.clone(), variable);
+                if let Some(id) = reg.port_id_map.get(&current_port) {
+                    let variable = Variable {
+                        name: None,
+                        id: id.clone(),
+                    };
+                    port_vars.insert(current_port, variable.clone());
+                    port_vars.insert(target_port.clone(), variable);
+                } else {
+                    let variable = Variable {
+                        name: None,
+                        id: variable_id_counter,
+                    };
+                    port_vars.insert(current_port, variable.clone());
+                    port_vars.insert(target_port.clone(), variable);
 
-                variable_id_counter += 1;
-                while named_var_ids.contains(&variable_id_counter) {
                     variable_id_counter += 1;
+                    while named_var_ids.contains(&variable_id_counter) {
+                        variable_id_counter += 1;
+                    }
                 }
             }
         }
@@ -830,8 +975,8 @@ fn construct_port_vars(diagram: &StringDiagram) -> HashMap<Port, Variable> {
 }
 
 // Converts a string diagram which has already been prepared into a list of 3AC constraints.
-pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
-    let port_vars = construct_port_vars(diagram);
+pub fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExpr> {
+    let port_vars = construct_port_vars(diagram, reg);
     let mut expressions = Vec::new();
 
     for node in diagram.nodes.values() {
@@ -1075,7 +1220,9 @@ pub fn convert_to_3ac(diagram: &StringDiagram) -> Vec<TExpr> {
 #[derive(Clone, Debug)]
 pub enum RewriteRule {
     DeleteEmptyEquality(Address),
-    DeleteIsolatedEquality(Address),
+    RemoveUnaryEquality(Address),
+    RemoveUnaryAddition(Address),
+    RemoveUnaryMultiplication(Address),
     SplitAdditionNode(Address),
     SplitMultiplicationNode(Address),
     SplitExponentiationNode(Address),
@@ -1113,8 +1260,8 @@ pub enum RewriteRule {
     DeleteConstOpUnrestricted(Address, PortIndex),
     SwapAddMulConstantsHdTl(Address),
     SwapAddMulConstantsTlTl(Address),
-    ReduceCVVAddition(Address),
-    ReduceCVVMultiplication(Address),
+    ReduceCVVAddition(Address, Port),
+    ReduceCVVMultiplication(Address, Port),
 }
 
 pub type RewriteTrace = Vec<RewriteRule>;
@@ -2757,11 +2904,7 @@ pub fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Opt
                     return Some(RewriteRule::DeleteEmptyEquality(address));
                 }
                 if vars.is_empty() && ports.len() == 1 {
-                    if let Some(Node::Unrestricted(_) | Node::Constant(_, _)) =
-                        diagram.nodes.get(&ports[0].0)
-                    {
-                        return Some(RewriteRule::DeleteIsolatedEquality(address));
-                    }
+                    return Some(RewriteRule::RemoveUnaryEquality(address));
                 }
                 if vars.is_empty() && ports.len() == 2 {
                     return Some(RewriteRule::RemoveBinaryEqualityNode(address));
@@ -2783,6 +2926,9 @@ pub fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Opt
                 None
             }
             Node::Addition(ports) => {
+                if ports.len() == 1 {
+                    return Some(RewriteRule::RemoveUnaryAddition(address));
+                }
                 if ports.len() == 2 {
                     return Some(RewriteRule::RemoveBinaryAdditionNode(address));
                 }
@@ -2808,6 +2954,9 @@ pub fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Opt
                 None
             }
             Node::Multiplication(ports) => {
+                if ports.len() == 1 {
+                    return Some(RewriteRule::RemoveUnaryMultiplication(address));
+                }
                 if ports.len() == 2 {
                     return Some(RewriteRule::RemoveBinaryMultiplicationNode(address));
                 }
@@ -2973,10 +3122,29 @@ pub fn apply_rewrite_step(
             diagram.nodes.remove(&address);
             vec![]
         }
-        RewriteRule::DeleteIsolatedEquality(address) => {
+        RewriteRule::RemoveUnaryEquality(address) => {
             if let Some(Node::Equality(_, ports)) = diagram.nodes.get(&address).cloned() {
-                diagram.nodes.remove(&address);
-                diagram.nodes.remove(&ports[0].0);
+                diagram
+                    .nodes
+                    .insert(address, Node::Unrestricted(ports.get(0).unwrap().clone()));
+            }
+            vec![]
+        }
+        RewriteRule::RemoveUnaryAddition(address) => {
+            if let Some(Node::Addition(ports)) = diagram.nodes.get(&address).cloned() {
+                diagram.nodes.insert(
+                    address,
+                    Node::Constant(BigInt::from(0), ports.get(0).unwrap().clone()),
+                );
+            }
+            vec![]
+        }
+        RewriteRule::RemoveUnaryMultiplication(address) => {
+            if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address).cloned() {
+                diagram.nodes.insert(
+                    address,
+                    Node::Constant(BigInt::from(1), ports.get(0).unwrap().clone()),
+                );
             }
             vec![]
         }
@@ -3205,11 +3373,11 @@ pub fn apply_rewrite_step(
             unrestricted_unary_removal(diagram, address);
             vec![]
         }
-        RewriteRule::ReduceCVVAddition(address) => {
+        RewriteRule::ReduceCVVAddition(address, _) => {
             cvv_addmul(diagram, address);
             vec![]
         }
-        RewriteRule::ReduceCVVMultiplication(address) => {
+        RewriteRule::ReduceCVVMultiplication(address, _) => {
             cvv_addmul(diagram, address);
             vec![]
         }
@@ -3340,7 +3508,7 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
                         if ports.len() == 3 {
                             if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
                                 cvv_addmul(diagram, prime_node_address);
-                                trace.push(RewriteRule::ReduceCVVAddition(prime_node_address));
+                                trace.push(RewriteRule::ReduceCVVAddition(prime_node_address, ports[0].clone()));
                                 changed = true;
                             }
                         }
@@ -3356,7 +3524,7 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
                             if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
                                 cvv_addmul(diagram, prime_node_address);
                                 trace
-                                    .push(RewriteRule::ReduceCVVMultiplication(prime_node_address));
+                                    .push(RewriteRule::ReduceCVVMultiplication(prime_node_address, ports[0].clone()));
                                 changed = true;
                             }
                         }
@@ -3374,13 +3542,21 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
     trace
 }
 
-pub fn calculate_defs(_defs: &mut DefinitionRegistry, rule: RewriteRule) {
+pub fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
     match rule {
         RewriteRule::DeleteEmptyEquality(_address) => {
-            // Not implemented
+            // Nothing to do; no defs need to be modified
         }
-        RewriteRule::DeleteIsolatedEquality(_address) => {
-            // Not implemented
+        RewriteRule::RemoveUnaryEquality(_address) => {
+            // Nothing to do; no defs need to be modified
+        }
+        RewriteRule::RemoveUnaryAddition(address) => {
+            // Overwrite old definition with constant expression
+            defs.replace_definition_of_port(&Port(address, 0), Expr::Constant(BigInt::from(0)));
+        }
+        RewriteRule::RemoveUnaryMultiplication(address) => {
+            // Overwrite old definition with constant expression
+            defs.replace_definition_of_port(&Port(address, 0), Expr::Constant(BigInt::from(1)));
         }
         RewriteRule::SplitAdditionNode(_address) => {
             // Not implemented
@@ -3493,11 +3669,11 @@ pub fn calculate_defs(_defs: &mut DefinitionRegistry, rule: RewriteRule) {
         RewriteRule::UnrestrictedUnaryRemoval(_address) => {
             // Not implemented
         }
-        RewriteRule::ReduceCVVAddition(_address) => {
-            // Not implemented
+        RewriteRule::ReduceCVVAddition(add_address, const_port) => {
+            defs.remove_ports((Port(add_address, 0), const_port));
         }
-        RewriteRule::ReduceCVVMultiplication(_address) => {
-            // Not implemented
+        RewriteRule::ReduceCVVMultiplication(mul_address, const_port) => {
+            defs.remove_ports((Port(mul_address, 0), const_port));
         }
     }
 }
@@ -3518,11 +3694,12 @@ pub fn simplify_3ac(
 ) {
     let mut reg: DefinitionRegistry = DefinitionRegistry::new(defs.to_vec());
     defs.clear();
-    let mut diag = build_string_diagram(equations.to_vec(), input_ids, &mut reg);
+    let mut diag: StringDiagram = build_string_diagram(equations.to_vec(), input_ids, &mut reg);
+
     equations.clear();
     let mut trace = simplify_string_diagram(&mut diag, field_ops);
     println!("Converting back into 3AC...");
     trace.extend(prep_for_3ac(&mut diag));
-    equations.extend(convert_to_3ac(&diag));
+    equations.extend(convert_to_3ac(&diag, &reg));
     defs.extend(synthesize_defs(&mut reg, trace));
 }
