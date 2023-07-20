@@ -1,8 +1,6 @@
 // TODO:
 // Definition resynthesis
 // Addition-constmul reorientation
-// Unary-addition elimination
-// Unary-multiplication elimination
 // Enum-driven reverse rewriting
 // Distributivity-based greedy searching
 // Constant op-equality distributivity
@@ -284,11 +282,7 @@ impl DefinitionRegistry {
         self.next_id += 1;
     }
 
-    fn replace_definition_of_port(
-        &mut self,
-        target_port: &Port,
-        input_expr: Expr,
-    ) -> Option<u32> {
+    fn replace_definition_of_port(&mut self, target_port: &Port, input_expr: Expr) -> Option<u32> {
         // Fetch the id associated with the port
         if let Some(&id) = self.port_id_map.get(target_port) {
             // Wrap the input expression inside a TExpr
@@ -308,21 +302,24 @@ impl DefinitionRegistry {
         None // Return None if the port wasn't found in the map
     }
 
-    fn remove_ports(&mut self, ports: (Port, Port)) {
+    pub fn remove_ports(&mut self, ports: (&Port, &Port)) {
         // Check if the first port exists in the port_id_map
-        if let Some(var_id) = self.port_id_map.get(&ports.0) {
+        if let Some(var_id) = self.port_id_map.get(ports.0) {
             // Clone the variable ID since we might need it after removing the port from port_id_map
             let var_id = *var_id;
 
             // Remove the ports from the port_id_map
-            self.port_id_map.remove(&ports.0);
-            self.port_id_map.remove(&ports.1);
+            self.port_id_map.remove(ports.0);
+            self.port_id_map.remove(ports.1);
 
-            // Check if the id_def_map entry for the variable ID only contains the two ports
-            if let Some((port_set, _)) = self.id_def_map.get(&var_id) {
-                if port_set.len() == 2 && port_set.contains(&ports.0) && port_set.contains(&ports.1)
-                {
-                    // If it does, remove the variable ID and its associated definition
+            // Access the port set in id_def_map for the variable ID
+            if let Some((port_set, _)) = self.id_def_map.get_mut(&var_id) {
+                // Remove the ports
+                port_set.remove(ports.0);
+                port_set.remove(ports.1);
+
+                // If the port set is now empty, remove the variable ID and its associated definition
+                if port_set.is_empty() {
                     self.id_def_map.remove(&var_id);
                 }
             }
@@ -1232,29 +1229,29 @@ pub enum RewriteRule {
     SplitExponentiationNode(Address),
     FuseEqualityNodes(Address, PortIndex),
     FuseAdditionNodes(Address, PortIndex),
-    RemoveBinaryAdditionNode(Address),
-    FuseMultiplicationNodes(Address, PortIndex),
-    RemoveBinaryMultiplicationNode(Address),
-    ConstantConstantRemoval(Address),
-    UnrestrictedUnaryRemoval(Address),
+    RemoveBinaryAddition(Address, (Port, Port)),
+    FuseMultiplication(Address, PortIndex),
+    RemoveBinaryMultiplicationNode(Address, (Port, Port)),
+    ConstantConstantRemoval(Address, Address),
+    UnrestrictedUnaryRemoval(Address, Address),
     AddConstantConstantHead(Address),
     AddConstantConstantTail(Address),
-    AddConstantZero(Address),
+    AddConstantZero(Address, (Port, Port)),
     FuseAdditionByConstantHdTl(Address),
     FuseAdditionByConstantTlTl(Address),
     FuseAdditionByConstantHdHd(Address),
     MulConstantConstantHead(Address),
     MulConstantConstantTail(Address),
-    MulConstantZero(Address),
-    MulConstantOne(Address),
+    MulConstantZero(Address, (Port, Port), Address),
+    MulConstantOne(Address, (Port, Port)),
     FuseMultiplicationByConstantHdTl(Address),
     FuseMultiplicationByConstantTlTl(Address),
     FuseMultiplicationByConstantHdHd(Address),
     ExpConstantConstantTail(Address),
-    ExpConstantOne(Address),
+    ExpConstantOne(Address, (Port, Port)),
     FuseExponentiationByConstantHdTl(Address),
     EqualityUnrestricted(Address, PortIndex),
-    RemoveBinaryEqualityNode(Address),
+    RemoveBinaryEquality(Address, (Port, Port)),
     AdditionConstAddition(Address, PortIndex),
     MultiplicationConstMultiplication(Address, PortIndex),
     AdditionConst(Address, PortIndex),
@@ -1373,10 +1370,7 @@ fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) {
 }
 
 // Completely decompose multiplication node at address so it only has three arguments
-fn decompose_multiplication_node(
-    diagram: &mut StringDiagram,
-    address: Address,
-) -> RewriteTrace {
+fn decompose_multiplication_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
     let mut trace: RewriteTrace = vec![];
 
     while let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address) {
@@ -1577,7 +1571,8 @@ fn remove_binary_node(diagram: &mut StringDiagram, address: Address) {
             ) if ports.len() == 2 => (ports[0].clone(), ports[1].clone()),
             Some(
                 Node::AddConstant(_, first_target_port, second_target_port)
-                | Node::MultiplyConstant(_, first_target_port, second_target_port),
+                | Node::MultiplyConstant(_, first_target_port, second_target_port)
+                | Node::ExponentiateConstant(_, first_target_port, second_target_port),
             ) => (first_target_port.clone(), second_target_port.clone()),
             _ => return, // return if not applicable
         };
@@ -1675,23 +1670,6 @@ fn constant_constant_removal(diagram: &mut StringDiagram, address: Address) {
             // and replace the first with Contradiction
             diagram.nodes.remove(&target_address);
             diagram.nodes.insert(address, Node::Contradiction);
-        }
-    }
-}
-
-// If an unrestructed node connects to a constant or another unrestricted node,
-// this will produce no constraints.
-fn unrestricted_unary_removal(diagram: &mut StringDiagram, address: Address) {
-    if let Some(Node::Unrestricted(target_port)) = diagram.nodes.get(&address) {
-        let target_address = target_port.0;
-
-        // Check if the target port is an unrestricted or constant node
-        if let Some(Node::Unrestricted(_) | Node::Constant(_, _)) =
-            diagram.nodes.get(&target_address)
-        {
-            // Remove both nodes
-            diagram.nodes.remove(&address);
-            diagram.nodes.remove(&target_address);
         }
     }
 }
@@ -2255,30 +2233,6 @@ fn exp_constant_constant_tail(
     diagram.nodes.remove(&second_port.0);
 }
 
-// X = Y ^ 1 can be simplified into
-// X = Y by simply deleting the exponeniation node
-fn exp_constant_one(diagram: &mut StringDiagram, address: Address) {
-    // Extract information about the node at the given address
-    let (first_port_target, second_port_target, is_one) = match diagram.nodes.get(&address) {
-        Some(Node::ExponentiateConstant(value, first_target_port, second_target_port))
-            if *value == BigInt::from(1) =>
-        {
-            (first_target_port.clone(), second_target_port.clone(), true)
-        }
-        _ => return, // Exit if the target node is not an ExponentiateConstant node
-    };
-
-    // If it is an ExponentiateConstant node with value 0
-    if is_one {
-        // Remove the ExponentiateConstant node from the diagram
-        diagram.nodes.remove(&address);
-
-        // Update the target links of both ports to point at each other
-        diagram.replace_port(&first_port_target, &second_port_target);
-        diagram.replace_port(&second_port_target, &first_port_target);
-    }
-}
-
 // If we have two MultiplyConstant in series, this creates the equations
 // Z = Y ^ m
 // Y = X ^ n
@@ -2828,7 +2782,10 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                     return Some(RewriteRule::RemoveUnaryEquality(address));
                 }
                 if vars.is_empty() && ports.len() == 2 {
-                    return Some(RewriteRule::RemoveBinaryEqualityNode(address));
+                    return Some(RewriteRule::RemoveBinaryEquality(
+                        address,
+                        (ports[0].clone(), ports[1].clone()),
+                    ));
                 }
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
@@ -2851,7 +2808,10 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                     return Some(RewriteRule::RemoveUnaryAddition(address));
                 }
                 if ports.len() == 2 {
-                    return Some(RewriteRule::RemoveBinaryAdditionNode(address));
+                    return Some(RewriteRule::RemoveBinaryAddition(
+                        address,
+                        (ports[0].clone(), ports[1].clone()),
+                    ));
                 }
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
@@ -2879,7 +2839,10 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                     return Some(RewriteRule::RemoveUnaryMultiplication(address));
                 }
                 if ports.len() == 2 {
-                    return Some(RewriteRule::RemoveBinaryMultiplicationNode(address));
+                    return Some(RewriteRule::RemoveBinaryMultiplicationNode(
+                        address,
+                        (ports[0].clone(), ports[1].clone()),
+                    ));
                 }
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if port_index == 0 {
@@ -2890,9 +2853,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                     if port_index > 0 {
                         if let Some(Node::Multiplication(_)) = diagram.nodes.get(&target_port.0) {
                             if target_port.1 == 0 {
-                                return Some(RewriteRule::FuseMultiplicationNodes(
-                                    address, port_index,
-                                ));
+                                return Some(RewriteRule::FuseMultiplication(address, port_index));
                             }
                         }
 
@@ -2914,7 +2875,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
             }
             Node::AddConstant(value, port1, port2) => {
                 if value == BigInt::from(0) {
-                    return Some(RewriteRule::AddConstantZero(address));
+                    return Some(RewriteRule::AddConstantZero(address, (port1, port2)));
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
                     return Some(RewriteRule::AddConstantConstantHead(address));
@@ -2955,10 +2916,14 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
             }
             Node::MultiplyConstant(value, port1, port2) => {
                 if value == BigInt::from(0) {
-                    return Some(RewriteRule::MulConstantZero(address));
+                    return Some(RewriteRule::MulConstantZero(
+                        address,
+                        (port1, port2),
+                        diagram.next_address,
+                    ));
                 }
                 if value == BigInt::from(1) {
-                    return Some(RewriteRule::MulConstantOne(address));
+                    return Some(RewriteRule::MulConstantOne(address, (port1, port2)));
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
                     return Some(RewriteRule::MulConstantConstantHead(address));
@@ -2991,7 +2956,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
             }
             Node::ExponentiateConstant(value, port1, port2) => {
                 if value == BigInt::from(1) {
-                    return Some(RewriteRule::ExpConstantOne(address));
+                    return Some(RewriteRule::ExpConstantOne(address, (port1, port2)));
                 }
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
                     return Some(RewriteRule::ExpConstantConstantTail(address));
@@ -3013,7 +2978,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
             }
             Node::Constant(_, port) => {
                 if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
-                    return Some(RewriteRule::ConstantConstantRemoval(address));
+                    return Some(RewriteRule::ConstantConstantRemoval(address, port.0));
                 }
                 None
             }
@@ -3021,7 +2986,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                 if let Some(Node::Constant(_, _) | Node::Unrestricted(_)) =
                     diagram.nodes.get(&port.0)
                 {
-                    return Some(RewriteRule::UnrestrictedUnaryRemoval(address));
+                    return Some(RewriteRule::UnrestrictedUnaryRemoval(address, port.0));
                 }
                 None
             }
@@ -3090,7 +3055,7 @@ pub fn apply_rewrite_step(
             fuse_addition_nodes(diagram, address, port_index);
             vec![address]
         }
-        RewriteRule::RemoveBinaryAdditionNode(address) => {
+        RewriteRule::RemoveBinaryAddition(address, _) => {
             if let Some(Node::Addition(ports)) = diagram.nodes.get(&address).cloned() {
                 remove_binary_node(diagram, address);
 
@@ -3099,11 +3064,11 @@ pub fn apply_rewrite_step(
                 vec![]
             }
         }
-        RewriteRule::FuseMultiplicationNodes(address, port_index) => {
+        RewriteRule::FuseMultiplication(address, port_index) => {
             fuse_multiplication_nodes(diagram, address, port_index);
             vec![address]
         }
-        RewriteRule::RemoveBinaryMultiplicationNode(address) => {
+        RewriteRule::RemoveBinaryMultiplicationNode(address, _) => {
             if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address).cloned() {
                 remove_binary_node(diagram, address);
 
@@ -3112,7 +3077,7 @@ pub fn apply_rewrite_step(
                 vec![]
             }
         }
-        RewriteRule::AddConstantZero(address) => {
+        RewriteRule::AddConstantZero(address, _) => {
             if let Some(Node::AddConstant(_, port1, port2)) = diagram.nodes.get(&address).cloned() {
                 remove_binary_node(diagram, address);
                 vec![port1.0, port2.0]
@@ -3144,7 +3109,7 @@ pub fn apply_rewrite_step(
             equality_unrestricted(diagram, address, port_index);
             vec![address]
         }
-        RewriteRule::RemoveBinaryEqualityNode(address) => {
+        RewriteRule::RemoveBinaryEquality(address, _) => {
             if let Some(Node::Equality(_, ports)) = diagram.nodes.get(&address).cloned() {
                 remove_binary_node(diagram, address);
 
@@ -3228,7 +3193,7 @@ pub fn apply_rewrite_step(
                 vec![]
             }
         }
-        RewriteRule::MulConstantZero(address) => {
+        RewriteRule::MulConstantZero(address, _, _) => {
             if let Some(Node::MultiplyConstant(_, port1, port2)) =
                 diagram.nodes.get(&address).cloned()
             {
@@ -3238,7 +3203,7 @@ pub fn apply_rewrite_step(
                 vec![]
             }
         }
-        RewriteRule::MulConstantOne(address) => {
+        RewriteRule::MulConstantOne(address, _) => {
             if let Some(Node::MultiplyConstant(_, port1, port2)) =
                 diagram.nodes.get(&address).cloned()
             {
@@ -3268,11 +3233,11 @@ pub fn apply_rewrite_step(
             fuse_multiplication_by_constant_hd_hd(diagram, address, field_ops);
             vec![address]
         }
-        RewriteRule::ExpConstantOne(address) => {
+        RewriteRule::ExpConstantOne(address, _) => {
             if let Some(Node::ExponentiateConstant(_, port1, port2)) =
                 diagram.nodes.get(&address).cloned()
             {
-                exp_constant_one(diagram, address);
+                remove_binary_node(diagram, address);
                 vec![port1.0, port2.0]
             } else {
                 vec![]
@@ -3286,12 +3251,13 @@ pub fn apply_rewrite_step(
             fuse_exponentiation_by_constant_hd_tl(diagram, address, field_ops);
             vec![address]
         }
-        RewriteRule::ConstantConstantRemoval(address) => {
+        RewriteRule::ConstantConstantRemoval(address, _) => {
             constant_constant_removal(diagram, address);
             vec![]
         }
-        RewriteRule::UnrestrictedUnaryRemoval(address) => {
-            unrestricted_unary_removal(diagram, address);
+        RewriteRule::UnrestrictedUnaryRemoval(address1, address2) => {
+            diagram.nodes.remove(&address1);
+            diagram.nodes.remove(&address2);
             vec![]
         }
         RewriteRule::ReduceCVVAddition(address, _) => {
@@ -3322,10 +3288,7 @@ fn simplify_string_diagram_step(
     }
 }
 
-fn simplify_string_diagram(
-    diagram: &mut StringDiagram,
-    field_ops: &dyn FieldOps,
-) -> RewriteTrace {
+fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps) -> RewriteTrace {
     // Initialize the vector with all the addresses in the diagram.
     let mut addresses_to_process: Vec<Address> = diagram.nodes.keys().cloned().collect();
     let mut trace: RewriteTrace = Vec::new();
@@ -3468,6 +3431,30 @@ fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
     trace
 }
 
+// Update definitions after binary node is removed
+fn binary_removal_update(
+    defs: &mut DefinitionRegistry,
+    address: &Address,
+    port1: &Port,
+    port2: &Port,
+) {
+    // Get the id of the definition both remaining ports will be assinged to
+    let main_id = *defs.port_id_map.get(port1).unwrap();
+
+    // Remove the ansciliary connection (second port will be added back later)
+    defs.remove_ports((&Port(*address, 1), port2));
+
+    // Remove principal port, and add second port to definition
+    defs.port_id_map.remove(&Port(*address, 0));
+    if let Some((ports, _)) = defs.id_def_map.get_mut(&main_id) {
+        ports.remove(&Port(*address, 0));
+        ports.insert(port2.clone());
+    }
+
+    // Map second port to its new definition
+    defs.port_id_map.insert(port2.clone(), main_id);
+}
+
 fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
     match rule {
         RewriteRule::DeleteEmptyEquality(_address) => {
@@ -3499,17 +3486,17 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
         RewriteRule::FuseAdditionNodes(_address, _port_index) => {
             // Not implemented
         }
-        RewriteRule::RemoveBinaryAdditionNode(_address) => {
+        RewriteRule::RemoveBinaryAddition(address, (port1, port2)) => {
+            binary_removal_update(defs, &address, &port1, &port2);
+        }
+        RewriteRule::FuseMultiplication(_address, _port_index) => {
             // Not implemented
         }
-        RewriteRule::FuseMultiplicationNodes(_address, _port_index) => {
-            // Not implemented
+        RewriteRule::RemoveBinaryMultiplicationNode(address, (port1, port2)) => {
+            binary_removal_update(defs, &address, &port1, &port2);
         }
-        RewriteRule::RemoveBinaryMultiplicationNode(_address) => {
-            // Not implemented
-        }
-        RewriteRule::AddConstantZero(_address) => {
-            // Not implemented
+        RewriteRule::AddConstantZero(address, (port1, port2)) => {
+            binary_removal_update(defs, &address, &port1, &port2);
         }
         RewriteRule::AddConstantConstantHead(_address) => {
             // Not implemented
@@ -3529,8 +3516,8 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
         RewriteRule::EqualityUnrestricted(_address, _port_index) => {
             // Not implemented
         }
-        RewriteRule::RemoveBinaryEqualityNode(_address) => {
-            // Not implemented
+        RewriteRule::RemoveBinaryEquality(address, (port1, port2)) => {
+            binary_removal_update(defs, &address, &port1, &port2);
         }
         RewriteRule::AdditionConstAddition(_address, _port_index) => {
             // Not implemented
@@ -3559,11 +3546,11 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
         RewriteRule::SwapAddMulConstantsTlTl(_address) => {
             // Not implemented
         }
-        RewriteRule::MulConstantZero(_address) => {
+        RewriteRule::MulConstantZero(_address, (_port1, _port2), _unr_addr) => {
             // Not implemented
         }
-        RewriteRule::MulConstantOne(_address) => {
-            // Not implemented
+        RewriteRule::MulConstantOne(address, (port1, port2)) => {
+            binary_removal_update(defs, &address, &port1, &port2);
         }
         RewriteRule::MulConstantConstantHead(_address) => {
             // Not implemented
@@ -3580,8 +3567,8 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
         RewriteRule::FuseMultiplicationByConstantHdHd(_address) => {
             // Not implemented
         }
-        RewriteRule::ExpConstantOne(_address) => {
-            // Not implemented
+        RewriteRule::ExpConstantOne(address, (port1, port2)) => {
+            binary_removal_update(defs, &address, &port1, &port2);
         }
         RewriteRule::ExpConstantConstantTail(_address) => {
             // Not implemented
@@ -3589,17 +3576,17 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
         RewriteRule::FuseExponentiationByConstantHdTl(_address) => {
             // Not implemented
         }
-        RewriteRule::ConstantConstantRemoval(_address) => {
-            // Not implemented
+        RewriteRule::ConstantConstantRemoval(address1, address2) => {
+            defs.remove_ports((&Port(address1, 0), &Port(address2, 0)));
         }
-        RewriteRule::UnrestrictedUnaryRemoval(_address) => {
-            // Not implemented
+        RewriteRule::UnrestrictedUnaryRemoval(address1, address2) => {
+            defs.remove_ports((&Port(address1, 0), &Port(address2, 0)));
         }
         RewriteRule::ReduceCVVAddition(add_address, const_port) => {
-            defs.remove_ports((Port(add_address, 0), const_port));
+            defs.remove_ports((&Port(add_address, 0), &const_port));
         }
         RewriteRule::ReduceCVVMultiplication(mul_address, const_port) => {
-            defs.remove_ports((Port(mul_address, 0), const_port));
+            defs.remove_ports((&Port(mul_address, 0), &const_port));
         }
     }
 }
