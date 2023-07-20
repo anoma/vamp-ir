@@ -271,7 +271,7 @@ impl DefinitionRegistry {
         self.port_id_map.insert(ports.1.clone(), self.next_id);
 
         // Insert the definition into the id_def_map
-        let ports_set = vec![ports.0.clone(), ports.1.clone()]
+        let ports_set = vec![ports.0.clone(), ports.1]
             .into_iter()
             .collect::<HashSet<_>>();
         let boxed_def = Box::new(TExpr {
@@ -332,7 +332,7 @@ impl DefinitionRegistry {
 
 pub fn all_ports_registered(diagram: &StringDiagram, registry: &DefinitionRegistry) -> bool {
     for address in diagram.nodes.keys() {
-        for port in diagram.port_list(&address) {
+        for port in diagram.port_list(address) {
             if !registry.port_id_map.contains_key(&port) {
                 println!("{:?}", diagram.nodes.get(address));
                 //println!("{:?}", diagram.nodes.get(diagram.nodes.get(address).unwrap().ports[0].0));
@@ -915,7 +915,7 @@ fn construct_port_vars(
             } else if let Some(id) = reg.port_id_map.get(&Port(*address, 0)) {
                 let var = Variable {
                     name: None,
-                    id: id.clone(),
+                    id: *id,
                 };
 
                 for (index, target_port) in ports.iter().enumerate() {
@@ -954,7 +954,7 @@ fn construct_port_vars(
                 if let Some(id) = reg.port_id_map.get(&current_port) {
                     let variable = Variable {
                         name: None,
-                        id: id.clone(),
+                        id: *id,
                     };
                     port_vars.insert(current_port, variable.clone());
                     port_vars.insert(target_port.clone(), variable);
@@ -1575,6 +1575,10 @@ pub fn remove_binary_node(diagram: &mut StringDiagram, address: Address) {
             Some(
                 Node::Addition(ports) | Node::Multiplication(ports) | Node::Equality(_, ports),
             ) if ports.len() == 2 => (ports[0].clone(), ports[1].clone()),
+            Some(
+                Node::AddConstant(_, first_target_port, second_target_port)
+                | Node::MultiplyConstant(_, first_target_port, second_target_port),
+            ) => (first_target_port.clone(), second_target_port.clone()),
             _ => return, // return if not applicable
         };
 
@@ -1772,30 +1776,6 @@ pub fn add_constant_constant_tail(
 
     // Remove the original constant node connected to the first port
     diagram.nodes.remove(&second_port.0);
-}
-
-// X = 0 + Y can be simplified into
-// X = Y by simply deleting the addition node
-pub fn add_constant_zero(diagram: &mut StringDiagram, address: Address) {
-    // Extract information about the node at the given address
-    let (first_port_target, second_port_target, is_zero) = match diagram.nodes.get(&address) {
-        Some(Node::AddConstant(value, first_target_port, second_target_port))
-            if *value == BigInt::from(0) =>
-        {
-            (first_target_port.clone(), second_target_port.clone(), true)
-        }
-        _ => return, // Exit if the target node is not an AddConstant node
-    };
-
-    // If it is an AddConstant node with value 0
-    if is_zero {
-        // Remove the AddConstant node from the diagram
-        diagram.nodes.remove(&address);
-
-        // Update the target links of both ports to point at each other
-        diagram.replace_port(&first_port_target, &second_port_target);
-        diagram.replace_port(&second_port_target, &first_port_target);
-    }
 }
 
 // If we have two AddConstant in series, this creates the equations
@@ -2053,30 +2033,6 @@ pub fn mul_constant_zero(diagram: &mut StringDiagram, address: Address) {
 
         // Update the target link of the second port to point to the new Unrestricted node
         diagram.replace_port(&port2, &Port(unrestricted_address, 0));
-    }
-}
-
-// X = 1 * Y can be simplified into
-// X = Y by simply deleting the multiplication node
-pub fn mul_constant_one(diagram: &mut StringDiagram, address: Address) {
-    // Extract information about the node at the given address
-    let (first_port_target, second_port_target, is_one) = match diagram.nodes.get(&address) {
-        Some(Node::MultiplyConstant(value, first_target_port, second_target_port))
-            if *value == BigInt::from(1) =>
-        {
-            (first_target_port.clone(), second_target_port.clone(), true)
-        }
-        _ => return, // Exit if the target node is not an MultiplyConstant node
-    };
-
-    // If it is an MultiplyConstant node with value 0
-    if is_one {
-        // Remove the MultiplyConstant node from the diagram
-        diagram.nodes.remove(&address);
-
-        // Update the target links of both ports to point at each other
-        diagram.replace_port(&first_port_target, &second_port_target);
-        diagram.replace_port(&second_port_target, &first_port_target);
     }
 }
 
@@ -3158,7 +3114,7 @@ pub fn apply_rewrite_step(
         }
         RewriteRule::AddConstantZero(address) => {
             if let Some(Node::AddConstant(_, port1, port2)) = diagram.nodes.get(&address).cloned() {
-                add_constant_zero(diagram, address);
+                remove_binary_node(diagram, address);
                 vec![port1.0, port2.0]
             } else {
                 vec![]
@@ -3286,7 +3242,7 @@ pub fn apply_rewrite_step(
             if let Some(Node::MultiplyConstant(_, port1, port2)) =
                 diagram.nodes.get(&address).cloned()
             {
-                mul_constant_one(diagram, address);
+                remove_binary_node(diagram, address);
                 vec![port1.0, port2.0]
             } else {
                 vec![]
