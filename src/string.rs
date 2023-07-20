@@ -284,25 +284,28 @@ impl DefinitionRegistry {
         self.next_id += 1;
     }
 
-    pub fn replace_definition_of_port(&mut self, target_port: &Port, input_expr: Expr) -> Option<u32> {
+    pub fn replace_definition_of_port(
+        &mut self,
+        target_port: &Port,
+        input_expr: Expr,
+    ) -> Option<u32> {
         // Fetch the id associated with the port
         if let Some(&id) = self.port_id_map.get(target_port) {
-            
             // Wrap the input expression inside a TExpr
             let texpr = TExpr {
                 v: input_expr,
-                t: None,  // no type information
+                t: None, // no type information
             };
 
             // Update the definition associated with the id
             if let Some((_, def)) = self.id_def_map.get_mut(&id) {
                 *def = Box::new(texpr);
             }
-            
+
             return Some(id);
         }
-        
-        None  // Return None if the port wasn't found in the map
+
+        None // Return None if the port wasn't found in the map
     }
 
     pub fn remove_ports(&mut self, ports: (Port, Port)) {
@@ -317,7 +320,8 @@ impl DefinitionRegistry {
 
             // Check if the id_def_map entry for the variable ID only contains the two ports
             if let Some((port_set, _)) = self.id_def_map.get(&var_id) {
-                if port_set.len() == 2 && port_set.contains(&ports.0) && port_set.contains(&ports.1) {
+                if port_set.len() == 2 && port_set.contains(&ports.0) && port_set.contains(&ports.1)
+                {
                     // If it does, remove the variable ID and its associated definition
                     self.id_def_map.remove(&var_id);
                 }
@@ -1561,15 +1565,18 @@ pub fn fuse_addition_nodes(
     }
 }
 
-// If we have X = Y expressed through an addition node
-// In other words, the sum of all the inputs when there's only one input
-// The addition node can be removed.
-pub fn remove_binary_addition_node(diagram: &mut StringDiagram, address: Address) {
+// If we have X = Y expressed through an addition/multiplication node
+// In other words, the sum/product of all the inputs when there's only one input
+// The node can be removed.
+pub fn remove_binary_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
-    let (first_port_target, second_port_target) = match diagram.nodes.get(&address) {
-        Some(Node::Addition(ports)) if ports.len() == 2 => (ports[0].clone(), ports[1].clone()),
-        _ => return, // return if not applicable
-    };
+    let (first_port_target, second_port_target) =
+        match diagram.nodes.get(&address) {
+            Some(
+                Node::Addition(ports) | Node::Multiplication(ports) | Node::Equality(_, ports),
+            ) if ports.len() == 2 => (ports[0].clone(), ports[1].clone()),
+            _ => return, // return if not applicable
+        };
 
     // Remove the Addition node from the diagram
     diagram.nodes.remove(&address);
@@ -1640,26 +1647,6 @@ pub fn fuse_multiplication_nodes(
     for (index, port) in new_ports.iter().enumerate() {
         diagram.replace_port(port, &Port(prime_node_address, index));
     }
-}
-
-// If we have X = Y expressed through a multiplication node
-// In other words, the product of all the inputs when there's only one input
-// The multiplication node can be removed.
-pub fn remove_binary_multiplication_node(diagram: &mut StringDiagram, address: Address) {
-    // Extract information about the node at the given address
-    let (first_port_target, second_port_target) = match diagram.nodes.get(&address) {
-        Some(Node::Multiplication(ports)) if ports.len() == 2 => {
-            (ports[0].clone(), ports[1].clone())
-        }
-        _ => return, // return if not applicable
-    };
-
-    // Remove the Multiplication node from the diagram
-    diagram.nodes.remove(&address);
-
-    // Update the target links of both ports to point at each other
-    diagram.replace_port(&first_port_target, &second_port_target);
-    diagram.replace_port(&second_port_target, &first_port_target);
 }
 
 // If two constants are connected, they are either trivially true (of their values are equal)
@@ -2433,28 +2420,6 @@ pub fn equality_unrestricted(diagram: &mut StringDiagram, address: Address, port
     }
 }
 
-// If we have X = Y expressed with an unmarked equality node, that node can be removed.
-pub fn remove_binary_equality_node(diagram: &mut StringDiagram, address: Address) {
-    // Extract information about the node at the given address
-    let (first_port_target, second_port_target) = match diagram.nodes.get(&address) {
-        Some(Node::Equality(vars, ports)) if ports.len() == 2 => {
-            if vars.is_empty() {
-                (ports[0].clone(), ports[1].clone())
-            } else {
-                return; // return if inputs exist (can't remove them)
-            }
-        }
-        _ => return, // return if not applicable
-    };
-
-    // Remove the Addition node from the diagram
-    diagram.nodes.remove(&address);
-
-    // Update the target links of both ports to point at each other
-    diagram.replace_port(&first_port_target, &second_port_target);
-    diagram.replace_port(&second_port_target, &first_port_target);
-}
-
 // Turn X = A + B + ... + (c + D) + ... for constant c
 // Into X = c + (A + B + ... + D + ...)
 pub fn addition_const_addition(
@@ -3171,7 +3136,7 @@ pub fn apply_rewrite_step(
         }
         RewriteRule::RemoveBinaryAdditionNode(address) => {
             if let Some(Node::Addition(ports)) = diagram.nodes.get(&address).cloned() {
-                remove_binary_addition_node(diagram, address);
+                remove_binary_node(diagram, address);
 
                 vec![ports[0].0, ports[1].0]
             } else {
@@ -3184,7 +3149,7 @@ pub fn apply_rewrite_step(
         }
         RewriteRule::RemoveBinaryMultiplicationNode(address) => {
             if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address).cloned() {
-                remove_binary_multiplication_node(diagram, address);
+                remove_binary_node(diagram, address);
 
                 vec![ports[0].0, ports[1].0]
             } else {
@@ -3225,7 +3190,7 @@ pub fn apply_rewrite_step(
         }
         RewriteRule::RemoveBinaryEqualityNode(address) => {
             if let Some(Node::Equality(_, ports)) = diagram.nodes.get(&address).cloned() {
-                remove_binary_equality_node(diagram, address);
+                remove_binary_node(diagram, address);
 
                 vec![ports[0].0, ports[1].0]
             } else {
@@ -3508,7 +3473,10 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
                         if ports.len() == 3 {
                             if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
                                 cvv_addmul(diagram, prime_node_address);
-                                trace.push(RewriteRule::ReduceCVVAddition(prime_node_address, ports[0].clone()));
+                                trace.push(RewriteRule::ReduceCVVAddition(
+                                    prime_node_address,
+                                    ports[0].clone(),
+                                ));
                                 changed = true;
                             }
                         }
@@ -3523,8 +3491,10 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
                         if ports.len() == 3 {
                             if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
                                 cvv_addmul(diagram, prime_node_address);
-                                trace
-                                    .push(RewriteRule::ReduceCVVMultiplication(prime_node_address, ports[0].clone()));
+                                trace.push(RewriteRule::ReduceCVVMultiplication(
+                                    prime_node_address,
+                                    ports[0].clone(),
+                                ));
                                 changed = true;
                             }
                         }
