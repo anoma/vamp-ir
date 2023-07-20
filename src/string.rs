@@ -139,7 +139,7 @@ impl StringDiagram {
     }
 
     // Replace the port *at* target_port *with* new_port.
-    pub fn replace_port(&mut self, target_port: &Port, new_port: &Port) {
+    fn replace_port(&mut self, target_port: &Port, new_port: &Port) {
         let Port(target_address, target_index) = target_port;
 
         if let Some(node) = self.nodes.get_mut(target_address) {
@@ -171,7 +171,7 @@ impl StringDiagram {
     }
 
     // Get all the ports of an address.
-    pub fn port_list(&self, target_address: &Address) -> Vec<Port> {
+    fn port_list(&self, target_address: &Address) -> Vec<Port> {
         if let Some(node) = self.nodes.get(target_address) {
             match node {
                 Node::Equality(_, ports) | Node::Addition(ports) | Node::Multiplication(ports) => {
@@ -193,7 +193,7 @@ impl StringDiagram {
     }
 
     // Get all the addresses linked to an address.
-    pub fn address_list(&self, target_address: &Address) -> Vec<Address> {
+    fn address_list(&self, target_address: &Address) -> Vec<Address> {
         return self.port_list(target_address).iter().map(|p| p.0).collect();
     }
 }
@@ -208,7 +208,7 @@ pub struct DefinitionRegistry {
 }
 
 impl DefinitionRegistry {
-    pub fn port_def_map(&self, port: &Port) -> Option<&Box<TExpr>> {
+    fn port_def_map(&self, port: &Port) -> Option<&Box<TExpr>> {
         if let Some(id) = self.port_id_map.get(port) {
             return self.id_def_map.get(id).map(|(_, def)| def);
         } else {
@@ -249,7 +249,7 @@ impl DefinitionRegistry {
     }
 
     // Destructively empty synthesized definitions into original definition vector
-    pub fn compile_definitions(&mut self) -> Vec<Definition> {
+    fn compile_definitions(&mut self) -> Vec<Definition> {
         let mut compiled_defs = std::mem::take(&mut self.initial_defs);
 
         for (id, (_, expr)) in self.id_def_map.drain() {
@@ -265,7 +265,7 @@ impl DefinitionRegistry {
 
         compiled_defs
     }
-    pub fn register_definition(&mut self, ports: (Port, Port), definition: Expr) {
+    fn register_definition(&mut self, ports: (Port, Port), definition: Expr) {
         // Insert the ports into the port_id_map
         self.port_id_map.insert(ports.0.clone(), self.next_id);
         self.port_id_map.insert(ports.1.clone(), self.next_id);
@@ -284,7 +284,7 @@ impl DefinitionRegistry {
         self.next_id += 1;
     }
 
-    pub fn replace_definition_of_port(
+    fn replace_definition_of_port(
         &mut self,
         target_port: &Port,
         input_expr: Expr,
@@ -308,7 +308,7 @@ impl DefinitionRegistry {
         None // Return None if the port wasn't found in the map
     }
 
-    pub fn remove_ports(&mut self, ports: (Port, Port)) {
+    fn remove_ports(&mut self, ports: (Port, Port)) {
         // Check if the first port exists in the port_id_map
         if let Some(var_id) = self.port_id_map.get(&ports.0) {
             // Clone the variable ID since we might need it after removing the port from port_id_map
@@ -330,7 +330,7 @@ impl DefinitionRegistry {
     }
 }
 
-pub fn all_ports_registered(diagram: &StringDiagram, registry: &DefinitionRegistry) -> bool {
+fn all_ports_registered(diagram: &StringDiagram, registry: &DefinitionRegistry) -> bool {
     for address in diagram.nodes.keys() {
         for port in diagram.port_list(address) {
             if !registry.port_id_map.contains_key(&port) {
@@ -396,7 +396,7 @@ fn get_or_create_equality_node(
 }
 
 // Rename port-associated variables so that original definitions remain untouched
-pub fn preserve_initial_defs(defs: &mut DefinitionRegistry) {
+fn preserve_initial_defs(defs: &mut DefinitionRegistry) {
     // Create a mapping from old IDs to new IDs
     let mut old_to_new_ids = HashMap::new();
 
@@ -979,7 +979,7 @@ fn construct_port_vars(
 }
 
 // Converts a string diagram which has already been prepared into a list of 3AC constraints.
-pub fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExpr> {
+fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExpr> {
     let port_vars = construct_port_vars(diagram, reg);
     let mut expressions = Vec::new();
 
@@ -1270,7 +1270,7 @@ pub enum RewriteRule {
 
 pub type RewriteTrace = Vec<RewriteRule>;
 
-pub fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
+fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_two_ports, mut remaining_ports) =
         if let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
@@ -1314,7 +1314,7 @@ pub fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
 }
 
 // Completely decompose addition node at address so it only has three arguments
-pub fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
+fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
     let mut trace: RewriteTrace = vec![];
 
     while let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
@@ -1329,7 +1329,7 @@ pub fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) ->
     trace
 }
 
-pub fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) {
+fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_two_ports, mut remaining_ports) =
         if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address) {
@@ -1373,7 +1373,7 @@ pub fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) 
 }
 
 // Completely decompose multiplication node at address so it only has three arguments
-pub fn decompose_multiplication_node(
+fn decompose_multiplication_node(
     diagram: &mut StringDiagram,
     address: Address,
 ) -> RewriteTrace {
@@ -1395,7 +1395,7 @@ pub fn decompose_multiplication_node(
 // TODO: This is dumb. It needs to be split so that
 //       X = Y ^ 2*n => Y1 = Y ^ n /\ X = Y1 * Y1, etc.
 //       much smaller that way
-pub fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
+fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
     let trace: RewriteTrace = vec![];
 
     // Get the data needed from the node at the address
@@ -1443,7 +1443,7 @@ pub fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) 
     trace
 }
 
-pub fn fuse_equality_nodes(
+fn fuse_equality_nodes(
     diagram: &mut StringDiagram,
     prime_node_address: Address,
     port_index: PortIndex,
@@ -1507,7 +1507,7 @@ pub fn fuse_equality_nodes(
 // W = A + B + ...
 // We can fuse them into
 // X = Y + Z + ... + A + B + ...
-pub fn fuse_addition_nodes(
+fn fuse_addition_nodes(
     diagram: &mut StringDiagram,
     prime_node_address: Address,
     port_index: PortIndex,
@@ -1568,7 +1568,7 @@ pub fn fuse_addition_nodes(
 // If we have X = Y expressed through an addition/multiplication node
 // In other words, the sum/product of all the inputs when there's only one input
 // The node can be removed.
-pub fn remove_binary_node(diagram: &mut StringDiagram, address: Address) {
+fn remove_binary_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_port_target, second_port_target) =
         match diagram.nodes.get(&address) {
@@ -1595,7 +1595,7 @@ pub fn remove_binary_node(diagram: &mut StringDiagram, address: Address) {
 // W = A * B * ...
 // We can fuse them into
 // X = Y * Z * ... * A * B * ...
-pub fn fuse_multiplication_nodes(
+fn fuse_multiplication_nodes(
     diagram: &mut StringDiagram,
     prime_node_address: Address,
     port_index: PortIndex,
@@ -1655,7 +1655,7 @@ pub fn fuse_multiplication_nodes(
 
 // If two constants are connected, they are either trivially true (of their values are equal)
 // or imply a contradiction (if their values are false).
-pub fn constant_constant_removal(diagram: &mut StringDiagram, address: Address) {
+fn constant_constant_removal(diagram: &mut StringDiagram, address: Address) {
     if let Some(Node::Constant(value, target_port)) = diagram.nodes.get(&address) {
         let target_value;
         let target_address = target_port.0;
@@ -1681,7 +1681,7 @@ pub fn constant_constant_removal(diagram: &mut StringDiagram, address: Address) 
 
 // If an unrestructed node connects to a constant or another unrestricted node,
 // this will produce no constraints.
-pub fn unrestricted_unary_removal(diagram: &mut StringDiagram, address: Address) {
+fn unrestricted_unary_removal(diagram: &mut StringDiagram, address: Address) {
     if let Some(Node::Unrestricted(target_port)) = diagram.nodes.get(&address) {
         let target_address = target_port.0;
 
@@ -1702,7 +1702,7 @@ pub fn unrestricted_unary_removal(diagram: &mut StringDiagram, address: Address)
 // Y = n + X
 // These can be combined into
 // X = m - n
-pub fn add_constant_constant_head(
+fn add_constant_constant_head(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1743,7 +1743,7 @@ pub fn add_constant_constant_head(
 // X = m
 // These can be combined into
 // Y = n + m
-pub fn add_constant_constant_tail(
+fn add_constant_constant_tail(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1783,7 +1783,7 @@ pub fn add_constant_constant_tail(
 // Y = n + X
 // These can be fused into
 // Z = (m + n) + X
-pub fn fuse_addition_by_constant_hd_tl(
+fn fuse_addition_by_constant_hd_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1831,7 +1831,7 @@ pub fn fuse_addition_by_constant_hd_tl(
 // Y = m + X
 // These can be fused into
 // X = (n - m) + Z
-pub fn fuse_addition_by_constant_hd_hd(
+fn fuse_addition_by_constant_hd_hd(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1879,7 +1879,7 @@ pub fn fuse_addition_by_constant_hd_hd(
 // X = m + Y
 // These can be fused into
 // Z = (n - m) + X
-pub fn fuse_addition_by_constant_tl_tl(
+fn fuse_addition_by_constant_tl_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1929,7 +1929,7 @@ pub fn fuse_addition_by_constant_tl_tl(
 // These can be combined into
 // X = m / n
 // This is wrong if n = 0, but that case is handled by mul_constant_zero.
-pub fn mul_constant_constant_head(
+fn mul_constant_constant_head(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -1972,7 +1972,7 @@ pub fn mul_constant_constant_head(
 // X = m
 // These can be combined into
 // Y = n * m
-pub fn mul_constant_constant_tail(
+fn mul_constant_constant_tail(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -2012,7 +2012,7 @@ pub fn mul_constant_constant_tail(
 // If X = 0 * Y, then we can split this into
 // X = 0
 // No restriction on Y.
-pub fn mul_constant_zero(diagram: &mut StringDiagram, address: Address) {
+fn mul_constant_zero(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (port1, port2, is_zero) = match diagram.nodes.get(&address) {
         Some(Node::MultiplyConstant(value, port1, port2)) if *value == BigInt::from(0) => {
@@ -2041,7 +2041,7 @@ pub fn mul_constant_zero(diagram: &mut StringDiagram, address: Address) {
 // Y = n * X
 // These can be fused into
 // Z = (m * n) * X
-pub fn fuse_multiplication_by_constant_hd_tl(
+fn fuse_multiplication_by_constant_hd_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -2091,7 +2091,7 @@ pub fn fuse_multiplication_by_constant_hd_tl(
 // Z = (m / n) * X
 // This order is important so n = 0 isn't possible
 // If we used X = (n / m) * Z, m might be 0, but we know n = 0 will have been delt with already.
-pub fn fuse_multiplication_by_constant_hd_hd(
+fn fuse_multiplication_by_constant_hd_hd(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -2155,7 +2155,7 @@ pub fn fuse_multiplication_by_constant_hd_hd(
 // X = (m / n) * Z
 // This order is important so n = 0 isn't possible
 // If we used Z = (n / m) * X, m might be 0, but we know n = 0 will have been delt with already.
-pub fn fuse_multiplication_by_constant_tl_tl(
+fn fuse_multiplication_by_constant_tl_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -2218,7 +2218,7 @@ pub fn fuse_multiplication_by_constant_tl_tl(
 // X = m
 // These can be combined into
 // Y = m ^ n
-pub fn exp_constant_constant_tail(
+fn exp_constant_constant_tail(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -2257,7 +2257,7 @@ pub fn exp_constant_constant_tail(
 
 // X = Y ^ 1 can be simplified into
 // X = Y by simply deleting the exponeniation node
-pub fn exp_constant_one(diagram: &mut StringDiagram, address: Address) {
+fn exp_constant_one(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
     let (first_port_target, second_port_target, is_one) = match diagram.nodes.get(&address) {
         Some(Node::ExponentiateConstant(value, first_target_port, second_target_port))
@@ -2285,7 +2285,7 @@ pub fn exp_constant_one(diagram: &mut StringDiagram, address: Address) {
 // These can be fused into
 // Z = X ^ (m * n)
 // So long as m and n are positive. In a finite field, this is just being nonzero.
-pub fn fuse_exponentiation_by_constant_hd_tl(
+fn fuse_exponentiation_by_constant_hd_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -2336,7 +2336,7 @@ pub fn fuse_exponentiation_by_constant_hd_tl(
 }
 
 // An unrestricted node connected to an equality port can simply be removed.
-pub fn equality_unrestricted(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
+fn equality_unrestricted(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract information about the node at the given address
     let target_address = match diagram.nodes.get(&address) {
         Some(Node::Equality(_, ports)) => {
@@ -2378,7 +2378,7 @@ pub fn equality_unrestricted(diagram: &mut StringDiagram, address: Address, port
 
 // Turn X = A + B + ... + (c + D) + ... for constant c
 // Into X = c + (A + B + ... + D + ...)
-pub fn addition_const_addition(
+fn addition_const_addition(
     diagram: &mut StringDiagram,
     address: Address,
     port_index: PortIndex,
@@ -2431,7 +2431,7 @@ pub fn addition_const_addition(
 
 // Turn X = A * B * ... * (c * D) * ... for constant c
 // Into X = c * (A * B * ... * D * ...)
-pub fn multiplication_const_multiplication(
+fn multiplication_const_multiplication(
     diagram: &mut StringDiagram,
     address: Address,
     port_index: PortIndex,
@@ -2484,7 +2484,7 @@ pub fn multiplication_const_multiplication(
 
 // Turn X = A + B + ... + c + ... for constant c
 // Into X = c + (A + B + ...)
-pub fn addition_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
+fn addition_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract the necessary information from the diagram.
     let (old_head_port, target_address) = {
         let ports = match diagram.nodes.get(&address) {
@@ -2532,7 +2532,7 @@ pub fn addition_const(diagram: &mut StringDiagram, address: Address, port_index:
 
 // Turn X = A * B * ... * c * ... for constant c
 // Into X = c * (A * B * ...)
-pub fn multiplication_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
+fn multiplication_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract the necessary information from the diagram.
     let (old_head_port, target_address) = {
         let ports = match diagram.nodes.get(&address) {
@@ -2579,7 +2579,7 @@ pub fn multiplication_const(diagram: &mut StringDiagram, address: Address, port_
 }
 
 // If X = c and Y = X and A = X etc. then Y = c and A = c, etc
-pub fn equality_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
+fn equality_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract the necessary information
     let (has_variables, target_port, const_value) =
         if let Some(Node::Equality(variables, ports)) = diagram.nodes.get(&address) {
@@ -2628,7 +2628,7 @@ pub fn equality_const(diagram: &mut StringDiagram, address: Address, port_index:
 }
 
 // If something unrestructed is used in an addition, then everything else is also unrestructed.
-pub fn addmul_unrestricted(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
+fn addmul_unrestricted(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract the necessary information
     let target_port = if let Some(Node::Addition(ports) | Node::Multiplication(ports)) =
         diagram.nodes.get(&address)
@@ -2668,7 +2668,7 @@ pub fn addmul_unrestricted(diagram: &mut StringDiagram, address: Address, port_i
     diagram.nodes.remove(&target_port.0);
 }
 
-pub fn delete_const_op_unrestricted(
+fn delete_const_op_unrestricted(
     diagram: &mut StringDiagram,
     address: Address,
     port_index: PortIndex,
@@ -2717,7 +2717,7 @@ pub fn delete_const_op_unrestricted(
 // becomes
 // X = (m * n) + Y
 // Y = m * Z
-pub fn swap_add_and_multiply_constants_hd_tl(
+fn swap_add_and_multiply_constants_hd_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -2767,7 +2767,7 @@ pub fn swap_add_and_multiply_constants_hd_tl(
 // becomes
 // X = (- m * n) + Y
 // Y = m * Z
-pub fn swap_add_and_multiply_constants_tl_tl(
+fn swap_add_and_multiply_constants_tl_tl(
     diagram: &mut StringDiagram,
     address: Address,
     field_ops: &dyn FieldOps,
@@ -2816,7 +2816,7 @@ pub fn swap_add_and_multiply_constants_tl_tl(
 }
 
 // Try finding an appropriate rewrite for a given address
-pub fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<RewriteRule> {
+fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<RewriteRule> {
     if let Some(node) = diagram.nodes.get(&address).cloned() {
         match node {
             Node::Equality(vars, ports) => {
@@ -3307,7 +3307,7 @@ pub fn apply_rewrite_step(
 
 // Try applying a single simplification step to an address.
 // Return a list of *still existing* addresses of nodes that have been modified.
-pub fn simplify_string_diagram_step(
+fn simplify_string_diagram_step(
     diagram: &mut StringDiagram,
     field_ops: &dyn FieldOps,
     address: Address,
@@ -3322,7 +3322,7 @@ pub fn simplify_string_diagram_step(
     }
 }
 
-pub fn simplify_string_diagram(
+fn simplify_string_diagram(
     diagram: &mut StringDiagram,
     field_ops: &dyn FieldOps,
 ) -> RewriteTrace {
@@ -3361,7 +3361,7 @@ pub fn simplify_string_diagram(
 
 // If we have c = v1 + v2 or c = v1 * v2, we can avoid making a new variable
 // by obsorbing the conatant into a bespoke node.
-pub fn cvv_addmul(diagram: &mut StringDiagram, address: Address) {
+fn cvv_addmul(diagram: &mut StringDiagram, address: Address) {
     // Clone the node
     let node = if let Some(node) = diagram.nodes.get(&address) {
         node.clone()
@@ -3405,7 +3405,7 @@ pub fn cvv_addmul(diagram: &mut StringDiagram, address: Address) {
 
 // Ensure there aren't any additions/multiplications with more than 2 inputs
 // And also that there aren't any exponential nodes.
-pub fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
+fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
     let mut changed = true;
     let mut trace: RewriteTrace = vec![];
 
@@ -3468,7 +3468,7 @@ pub fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
     trace
 }
 
-pub fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
+fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
     match rule {
         RewriteRule::DeleteEmptyEquality(_address) => {
             // Nothing to do; no defs need to be modified
@@ -3604,7 +3604,7 @@ pub fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
     }
 }
 
-pub fn synthesize_defs(defs: &mut DefinitionRegistry, trace: RewriteTrace) -> Vec<Definition> {
+fn synthesize_defs(defs: &mut DefinitionRegistry, trace: RewriteTrace) -> Vec<Definition> {
     for rule in trace {
         calculate_defs(defs, rule)
     }

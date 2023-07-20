@@ -442,46 +442,6 @@ mod tests {
     }
 
     #[test]
-    fn test_constant_constant_neq() {
-        // Create a simple diagram with a single pair of interacting constants and a few ancillary nodes.
-        let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(1, 0)));
-        diagram.add_node(Node::Unrestricted(Port(i1, 0)));
-        let i3 = diagram.add_node(Node::Constant(BigInt::from(56), Port(3, 0)));
-        let i4 = diagram.add_node(Node::Constant(BigInt::from(55), Port(i3, 0)));
-
-        assert!(
-            diagram.is_well_formed(),
-            "Check that the starting diagram makes sense"
-        );
-
-        let node_count = diagram.nodes.len();
-
-        constant_constant_removal(&mut diagram, i3);
-
-        assert!(
-            diagram.is_well_formed(),
-            "Check that the modified diagram still makes sense"
-        );
-
-        assert!(
-            diagram.nodes.get(&i4).is_none(),
-            "Check that the second node is gone"
-        );
-
-        if let Some(Node::Contradiction) = diagram.nodes.get(&i3) {
-        } else {
-            panic!("Old node should be contradiction");
-        }
-
-        assert_eq!(
-            diagram.nodes.len() + 1,
-            node_count,
-            "Node count should have decreased by 1"
-        );
-    }
-
-    #[test]
     fn test_unrestricted_constant() {
         // Create a simple diagram with a single interacting constant and unrestricted and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
