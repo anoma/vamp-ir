@@ -12,48 +12,10 @@ use num_traits::Num;
 use crate::ast::Variable;
 use crate::error::Error;
 use crate::error::Error::{InvalidVariableAssignmentValue, MissingVariableAssignment};
-use crate::transform::collect_public_module_variables;
 use crate::{
     ast::{Module, Pat, VariableId},
     transform::collect_module_variables,
 };
-
-/// Find a value for each expected variable from among the named assignments.
-fn translate_named_assignments<T>(
-    expected_variables: &HashMap<VariableId, Variable>,
-    named_assignments: &HashMap<String, T>,
-) -> Result<HashMap<VariableId, T>, Error>
-where
-    T: Clone,
-{
-    expected_variables
-        .iter()
-        .filter_map(|(id, expected_var)| {
-            expected_var.name.as_deref().map(|var_name| {
-                named_assignments
-                    .get(var_name)
-                    .cloned()
-                    .ok_or_else(|| MissingVariableAssignment {
-                        var_name: var_name.to_string(),
-                    })
-                    .map(|assignment| (*id, assignment))
-            })
-        })
-        .collect()
-}
-
-/// Convert named circuit assignments for public variables to assignments of vamp-ir variableIds.
-pub(crate) fn get_public_circuit_assignments<T>(
-    module: &Module,
-    named_assignments: &HashMap<String, T>,
-) -> Result<HashMap<VariableId, T>, Error>
-where
-    T: Clone,
-{
-    let mut input_variables = HashMap::new();
-    collect_public_module_variables(module, &mut input_variables);
-    translate_named_assignments(&input_variables, named_assignments)
-}
 
 /// Convert named circuit assignments to assignments of vamp-ir variableIds.
 /// Useful for calling vamp-ir Halo2Module::populate_variable_assignments.
@@ -72,7 +34,21 @@ where
             input_variables.remove(&var.id);
         }
     }
-    translate_named_assignments(&input_variables, named_assignments)
+
+    input_variables
+        .iter()
+        .filter_map(|(id, expected_var)| {
+            expected_var.name.as_deref().map(|var_name| {
+                named_assignments
+                    .get(var_name)
+                    .cloned()
+                    .ok_or_else(|| MissingVariableAssignment {
+                        var_name: var_name.to_string(),
+                    })
+                    .map(|assignment| (*id, assignment))
+            })
+        })
+        .collect()
 }
 
 /* Read satisfying inputs to the given program from a file. */

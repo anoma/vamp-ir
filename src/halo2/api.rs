@@ -1,16 +1,18 @@
 use crate::ast::{Module, VariableId};
 use crate::error::Error;
-use crate::error::Error::{BackendError, ParseError, ProofVerificationFailure};
+use crate::error::Error::{
+    BackendError, MissingVariableAssignment, ParseError, ProofVerificationFailure,
+};
 use crate::halo2::synth::{keygen, prover, Halo2Module, PrimeFieldOps};
 use crate::halo2::synth::{make_constant, verifier};
 use crate::qprintln;
-use crate::util::{get_circuit_assignments, get_public_circuit_assignments, Config};
+use crate::util::{get_circuit_assignments, Config};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_serialize::{Read, SerializationError};
 use bincode::error::{DecodeError, EncodeError};
 use ff::PrimeField;
 use halo2_proofs::pasta::{EqAffine, Fp};
-use halo2_proofs::plonk::keygen_vk;
+use halo2_proofs::plonk::{keygen_vk, VerifyingKey};
 use halo2_proofs::poly::commitment::Params;
 use num_bigint::BigInt;
 use std::collections::HashMap;
@@ -39,27 +41,43 @@ pub fn prove(
         .map(|(key, value)| (key.as_ref().to_string(), *value))
         .collect();
     let assignments = get_circuit_assignments(module, &named_string_assignments)?;
-    let proof_data = prove_from_variable_assignments(circuit_data, &assignments, config)?;
-    Ok(ProofDataHalo2::from_proof_data_cli_halo2(proof_data))
+    let proof_data_cli = prove_from_variable_assignments(circuit_data, &assignments, config)?;
+    let public_fields: Vec<String> = module
+        .pubs
+        .clone()
+        .into_iter()
+        .filter_map(|v| v.name)
+        .collect();
+    let verifying_key = keygen_vk(&circuit_data.params, &circuit_data.circuit)?;
+    Ok(ProofDataHalo2 {
+        proof: proof_data_cli.proof,
+        verifying_key,
+        public_fields,
+        params: circuit_data.params.clone(),
+    })
 }
 
 pub fn verify(
-    circuit_data: &HaloCircuitData,
     proof_data: &ProofDataHalo2,
     named_public_assignments: &HashMap<impl AsRef<str>, Fp>,
     _config: &Config,
 ) -> Result<(), Error> {
-    let circuit = &circuit_data.circuit;
-    let params = &circuit_data.params;
-    let module = circuit.module.as_ref();
+    let params = &proof_data.params;
     let named_public_string_assignments: HashMap<String, Fp> = named_public_assignments
         .iter()
         .map(|(key, value)| (key.as_ref().to_string(), *value))
         .collect();
-    let public_input = public_inputs_from_assignments(module, &named_public_string_assignments)?;
-    let vk = keygen_vk(params, circuit)?;
-    verifier(params, &vk, &proof_data.proof, public_input.as_slice())
-        .map_err(|_| ProofVerificationFailure)
+    let public_input = public_inputs_from_assignments(
+        &proof_data.public_fields,
+        &named_public_string_assignments,
+    )?;
+    verifier(
+        params,
+        &proof_data.verifying_key,
+        &proof_data.proof,
+        public_input.as_slice(),
+    )
+    .map_err(|_| ProofVerificationFailure)
 }
 
 fn public_inputs_from_variable_assignments(
@@ -74,14 +92,20 @@ fn public_inputs_from_variable_assignments(
 }
 
 fn public_inputs_from_assignments(
-    module: &Module,
+    public_fields: &[String],
     assignments: &HashMap<String, Fp>,
 ) -> Result<Vec<Fp>, Error> {
-    let var_assignments = get_public_circuit_assignments(module, assignments)?;
-    Ok(public_inputs_from_variable_assignments(
-        module,
-        &var_assignments,
-    ))
+    public_fields
+        .iter()
+        .map(|s| {
+            assignments
+                .get(s)
+                .cloned()
+                .ok_or_else(|| MissingVariableAssignment {
+                    var_name: s.to_string(),
+                })
+        })
+        .collect()
 }
 
 pub(crate) fn prove_from_int_variable_assignments(
@@ -140,16 +164,16 @@ pub struct HaloCircuitData {
     pub circuit: Halo2Module<Fp>,
 }
 
-pub struct ProofDataHalo2 {
-    pub proof: Vec<u8>,
+pub struct VerifyingKeyDataHalo2 {
+    pub verifying_key: VerifyingKey<EqAffine>,
+    pub params: Params<EqAffine>,
 }
 
-impl ProofDataHalo2 {
-    fn from_proof_data_cli_halo2(proof_data: ProofDataCliHalo2) -> ProofDataHalo2 {
-        ProofDataHalo2 {
-            proof: proof_data.proof,
-        }
-    }
+pub struct ProofDataHalo2 {
+    pub proof: Vec<u8>,
+    pub verifying_key: VerifyingKey<EqAffine>,
+    pub public_fields: Vec<String>,
+    pub params: Params<EqAffine>,
 }
 
 #[derive(CanonicalSerialize, CanonicalDeserialize)]
@@ -236,7 +260,7 @@ mod tests {
         let circuit = compile("x = 1;", &config).unwrap();
         let assignments = HashMap::from([("x", Fp::one())]);
         let proof_data = prove(&circuit, &assignments, &config).unwrap();
-        assert!(verify(&circuit, &proof_data, &assignments, &config).is_ok());
+        assert!(verify(&proof_data, &assignments, &config).is_ok());
     }
 
     #[test]
@@ -246,7 +270,7 @@ mod tests {
         let assignments = HashMap::from([("x", Fp::one()), ("y", Fp::zero()), ("z", Fp::zero())]);
         let public_assignments = HashMap::from([("x", Fp::one()), ("y", Fp::zero())]);
         let proof_data = prove(&circuit, &assignments, &config).unwrap();
-        assert!(verify(&circuit, &proof_data, &public_assignments, &config).is_ok());
+        assert!(verify(&proof_data, &public_assignments, &config).is_ok());
     }
 
     #[test]
@@ -256,7 +280,7 @@ mod tests {
         let assignments = HashMap::from([("x", Fp::zero())]);
         let public_assignments: HashMap<String, Fp> = HashMap::new();
         let proof_data = prove(&circuit, &assignments, &config).unwrap();
-        assert!(verify(&circuit, &proof_data, &public_assignments, &config).is_err());
+        assert!(verify(&proof_data, &public_assignments, &config).is_err());
     }
 
     #[test]
@@ -266,7 +290,7 @@ mod tests {
         let assignments = HashMap::from([("x", Fp::one())]);
         let public_assignments = HashMap::from([("x", Fp::zero())]);
         let proof_data = prove(&circuit, &assignments, &config).unwrap();
-        assert!(verify(&circuit, &proof_data, &public_assignments, &config).is_err());
+        assert!(verify(&proof_data, &public_assignments, &config).is_err());
     }
 
     #[test]
@@ -276,6 +300,17 @@ mod tests {
         let assignments = HashMap::from([("x", Fp::one())]);
         let public_assignments: HashMap<String, Fp> = HashMap::new();
         let proof_data = prove(&circuit, &assignments, &config).unwrap();
-        assert!(verify(&circuit, &proof_data, &public_assignments, &config).is_err());
+        assert!(verify(&proof_data, &public_assignments, &config).is_err());
+    }
+
+    #[test]
+    fn test_verify_valid_with_public_and_corrupt_proof_data() {
+        let config = Config { quiet: true };
+        let circuit = compile("pub x; pub y; x + y + z = 1;", &config).unwrap();
+        let assignments = HashMap::from([("x", Fp::one()), ("y", Fp::zero()), ("z", Fp::zero())]);
+        let public_assignments = HashMap::from([("x", Fp::one()), ("y", Fp::zero())]);
+        let mut proof_data = prove(&circuit, &assignments, &config).unwrap();
+        proof_data.public_fields = vec![];
+        assert!(verify(&proof_data, &public_assignments, &config).is_err());
     }
 }
