@@ -142,7 +142,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseEqualityNodes(addr1, 1));
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseEquality(addr1, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -195,7 +195,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseAdditionNodes(addr1, 1));
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseAddition(addr1, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -246,11 +246,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(
-            &mut diagram,
-            &(),
-            RewriteRule::FuseMultiplicationNodes(addr1, 1),
-        );
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseMultiplication(addr1, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -297,7 +293,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::SplitAdditionNode(addr1));
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::SplitAddition(addr1));
 
         assert!(
             diagram.is_well_formed(),
@@ -359,11 +355,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(
-            &mut diagram,
-            &(),
-            RewriteRule::SplitMultiplicationNode(addr1),
-        );
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::SplitMultiplication(addr1));
 
         assert!(
             diagram.is_well_formed(),
@@ -418,7 +410,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::ConstantConstantRemoval(i3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::ConstantConstantRemoval(i3, i4),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -457,7 +453,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::UnrestrictedUnaryRemoval(i3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::UnrestrictedUnaryRemoval(i3, i4),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -496,7 +496,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::UnrestrictedUnaryRemoval(i3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::UnrestrictedUnaryRemoval(i3, i4),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -790,7 +794,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::MulConstantZero(i3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::MulConstantZero(i3, (Port(i1, 0), Port(i2, 0)), i3 + 1),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -846,7 +854,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::AddConstantZero(i3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::AddConstantZero(i3, (Port(i1, 0), Port(i2, 0))),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -886,7 +898,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::MulConstantOne(i3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::MulConstantOne(i3, (Port(i1, 0), Port(i2, 0))),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -923,7 +939,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::ExpConstantOne(i3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::ExpConstantOne(i3, (Port(i1, 0), Port(i2, 0))),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -956,7 +976,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::RemoveBinaryAdditionNode(i3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::RemoveBinaryAddition(i3, (Port(i1, 0), Port(i2, 0))),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -995,7 +1019,7 @@ mod tests {
         apply_rewrite_step(
             &mut diagram,
             &(),
-            RewriteRule::RemoveBinaryMultiplicationNode(i3),
+            RewriteRule::RemoveBinaryMultiplication(i3, (Port(i1, 0), Port(i2, 0))),
         );
 
         assert!(
@@ -1457,7 +1481,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::RemoveBinaryEqualityNode(i3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::RemoveBinaryEquality(i3, (Port(i1, 0), Port(i2, 0))),
+        );
 
         assert!(
             diagram.is_well_formed(),

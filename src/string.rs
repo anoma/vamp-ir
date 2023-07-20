@@ -1224,14 +1224,14 @@ pub enum RewriteRule {
     RemoveUnaryEquality(Address),
     RemoveUnaryAddition(Address),
     RemoveUnaryMultiplication(Address),
-    SplitAdditionNode(Address),
-    SplitMultiplicationNode(Address),
-    SplitExponentiationNode(Address),
-    FuseEqualityNodes(Address, PortIndex),
-    FuseAdditionNodes(Address, PortIndex),
+    SplitAddition(Address),
+    SplitMultiplication(Address),
+    SplitExponentiation(Address),
+    FuseEquality(Address, PortIndex),
+    FuseAddition(Address, PortIndex),
     RemoveBinaryAddition(Address, (Port, Port)),
     FuseMultiplication(Address, PortIndex),
-    RemoveBinaryMultiplicationNode(Address, (Port, Port)),
+    RemoveBinaryMultiplication(Address, (Port, Port)),
     ConstantConstantRemoval(Address, Address),
     UnrestrictedUnaryRemoval(Address, Address),
     AddConstantConstantHead(Address),
@@ -1317,7 +1317,7 @@ fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) -> Rew
     while let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
         if ports.len() > 3 {
             split_addition_node(diagram, address);
-            trace.push(RewriteRule::SplitAdditionNode(address))
+            trace.push(RewriteRule::SplitAddition(address))
         } else {
             break; // Decomposition is complete
         }
@@ -1376,7 +1376,7 @@ fn decompose_multiplication_node(diagram: &mut StringDiagram, address: Address) 
     while let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address) {
         if ports.len() > 3 {
             split_multiplication_node(diagram, address);
-            trace.push(RewriteRule::SplitMultiplicationNode(address))
+            trace.push(RewriteRule::SplitMultiplication(address))
         } else {
             break; // Decomposition is complete
         }
@@ -2798,7 +2798,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                     }
 
                     if let Some(Node::Equality(_, _)) = diagram.nodes.get(&target_port.0) {
-                        return Some(RewriteRule::FuseEqualityNodes(address, port_index));
+                        return Some(RewriteRule::FuseEquality(address, port_index));
                     }
                 }
                 None
@@ -2820,7 +2820,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                     if port_index > 0 {
                         if let Some(Node::Addition(_)) = diagram.nodes.get(&target_port.0) {
                             if target_port.1 == 0 {
-                                return Some(RewriteRule::FuseAdditionNodes(address, port_index));
+                                return Some(RewriteRule::FuseAddition(address, port_index));
                             }
                         }
                         if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&target_port.0)
@@ -2839,7 +2839,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                     return Some(RewriteRule::RemoveUnaryMultiplication(address));
                 }
                 if ports.len() == 2 {
-                    return Some(RewriteRule::RemoveBinaryMultiplicationNode(
+                    return Some(RewriteRule::RemoveBinaryMultiplication(
                         address,
                         (ports[0].clone(), ports[1].clone()),
                     ));
@@ -3034,24 +3034,24 @@ pub fn apply_rewrite_step(
             }
             vec![]
         }
-        RewriteRule::SplitAdditionNode(address) => {
+        RewriteRule::SplitAddition(address) => {
             split_addition_node(diagram, address);
             vec![address]
         }
-        RewriteRule::SplitMultiplicationNode(address) => {
+        RewriteRule::SplitMultiplication(address) => {
             split_multiplication_node(diagram, address);
             vec![address]
         }
-        RewriteRule::SplitExponentiationNode(address) => {
+        RewriteRule::SplitExponentiation(address) => {
             split_exponentiation_node(diagram, address);
             vec![address]
         }
-        RewriteRule::FuseEqualityNodes(address, port_index) => {
+        RewriteRule::FuseEquality(address, port_index) => {
             fuse_equality_nodes(diagram, address, port_index);
 
             vec![address]
         }
-        RewriteRule::FuseAdditionNodes(address, port_index) => {
+        RewriteRule::FuseAddition(address, port_index) => {
             fuse_addition_nodes(diagram, address, port_index);
             vec![address]
         }
@@ -3068,7 +3068,7 @@ pub fn apply_rewrite_step(
             fuse_multiplication_nodes(diagram, address, port_index);
             vec![address]
         }
-        RewriteRule::RemoveBinaryMultiplicationNode(address, _) => {
+        RewriteRule::RemoveBinaryMultiplication(address, _) => {
             if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address).cloned() {
                 remove_binary_node(diagram, address);
 
@@ -3471,19 +3471,19 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
             // Overwrite old definition with constant expression
             defs.replace_definition_of_port(&Port(address, 0), Expr::Constant(BigInt::from(1)));
         }
-        RewriteRule::SplitAdditionNode(_address) => {
+        RewriteRule::SplitAddition(_address) => {
             // Not implemented
         }
-        RewriteRule::SplitMultiplicationNode(_address) => {
+        RewriteRule::SplitMultiplication(_address) => {
             // Not implemented
         }
-        RewriteRule::SplitExponentiationNode(_address) => {
+        RewriteRule::SplitExponentiation(_address) => {
             // Not implemented
         }
-        RewriteRule::FuseEqualityNodes(_address, _port_index) => {
+        RewriteRule::FuseEquality(_address, _port_index) => {
             // Not implemented
         }
-        RewriteRule::FuseAdditionNodes(_address, _port_index) => {
+        RewriteRule::FuseAddition(_address, _port_index) => {
             // Not implemented
         }
         RewriteRule::RemoveBinaryAddition(address, (port1, port2)) => {
@@ -3492,7 +3492,7 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
         RewriteRule::FuseMultiplication(_address, _port_index) => {
             // Not implemented
         }
-        RewriteRule::RemoveBinaryMultiplicationNode(address, (port1, port2)) => {
+        RewriteRule::RemoveBinaryMultiplication(address, (port1, port2)) => {
             binary_removal_update(defs, &address, &port1, &port2);
         }
         RewriteRule::AddConstantZero(address, (port1, port2)) => {
