@@ -142,7 +142,11 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseEquality(addr1, 1));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::FuseEquality(addr1, 1, vec![], addr2, vec![]),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -195,7 +199,11 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseAddition(addr1, 1));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::FuseAddition(addr1, 1, vec![], addr2, vec![]),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -246,7 +254,11 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseMultiplication(addr1, 1));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::FuseMultiplication(addr1, 1, vec![], addr2, vec![]),
+        );
 
         assert!(
             diagram.is_well_formed(),
