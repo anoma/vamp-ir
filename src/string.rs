@@ -1369,10 +1369,12 @@ pub enum RewriteRule {
 
 pub type RewriteTrace = Vec<RewriteRule>;
 
-fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
+fn split_node(diagram: &mut StringDiagram, address: Address) {
     // Extract information about the node at the given address
-    let (first_two_ports, mut remaining_ports) =
-        if let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
+    let (first_two_ports, remaining_ports) =
+        if let Some(Node::Addition(ports) | Node::Multiplication(ports)) =
+            diagram.nodes.get(&address)
+        {
             if ports.len() > 3 {
                 (
                     vec![ports[0].clone(), ports[1].clone()],
@@ -1385,35 +1387,37 @@ fn split_addition_node(diagram: &mut StringDiagram, address: Address) {
             return;
         };
 
-    // Create a new addition node with the first two ports of the original node
-    let new_node_ports = vec![
-        first_two_ports[0].clone(),
-        first_two_ports[1].clone(),
-        Port(address, 0),
-    ];
-    let new_address = diagram.add_node(Node::Addition(new_node_ports));
-
-    // Replace the first two ports from the original node with a port pointing to the second arg of the new node.
-    remaining_ports.insert(0, Port(new_address, 2));
+    // Create a new node with the rightmost argument of the original
+    let new_node_ports = vec![Port(address, 2)]
+        .into_iter()
+        .chain(remaining_ports.iter().cloned())
+        .collect();
+    let new_address = if let Some(Node::Addition(_)) = diagram.nodes.get_mut(&address) {
+        diagram.add_node(Node::Addition(new_node_ports))
+    } else if let Some(Node::Multiplication(_)) = diagram.nodes.get_mut(&address) {
+        diagram.add_node(Node::Multiplication(new_node_ports))
+    } else {
+        panic!("Node magically changed type!")
+    };
 
     // Replace the node in the diagram with the updated node
-    if let Some(Node::Addition(ports)) = diagram.nodes.get_mut(&address) {
-        ports.clear();
-        ports.extend_from_slice(&remaining_ports);
+    if let Some(Node::Addition(ports) | Node::Multiplication(ports)) =
+        diagram.nodes.get_mut(&address)
+    {
+        *ports = first_two_ports
+            .into_iter()
+            .chain(std::iter::once(Port(new_address, 0)))
+            .collect();
     }
-
-    // Update the output and first inpuit link to point at the new node
-    diagram.replace_port(&first_two_ports[0], &Port(new_address, 0));
-    diagram.replace_port(&first_two_ports[1], &Port(new_address, 1));
 
     // Update the port links for the remaining ports in the original node
     for (idx, port) in remaining_ports.iter().enumerate() {
-        diagram.replace_port(port, &Port(address, idx));
+        diagram.replace_port(port, &Port(new_address, idx + 1));
     }
 }
 
-// Completely decompose addition node at address so it only has three arguments
-fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
+// Completely decompose addition/multiplication node at address so it only has three arguments
+fn decompose_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
     let mut trace: RewriteTrace = vec![];
 
     while let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
@@ -1424,71 +1428,7 @@ fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) -> Rew
                 diagram.next_address,
                 right_ports,
             ));
-            split_addition_node(diagram, address);
-        } else {
-            break; // Decomposition is complete
-        }
-    }
-
-    trace
-}
-
-fn split_multiplication_node(diagram: &mut StringDiagram, address: Address) {
-    // Extract information about the node at the given address
-    let (first_two_ports, mut remaining_ports) =
-        if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address) {
-            if ports.len() > 3 {
-                (
-                    vec![ports[0].clone(), ports[1].clone()],
-                    ports[2..].to_vec(),
-                )
-            } else {
-                return;
-            }
-        } else {
-            return;
-        };
-
-    // Create a new multiplication node with the first two ports of the original node
-    let new_node_ports = vec![
-        first_two_ports[0].clone(),
-        first_two_ports[1].clone(),
-        Port(address, 0),
-    ];
-    let new_address = diagram.add_node(Node::Multiplication(new_node_ports));
-
-    // Replace the first two ports from the original node with a port pointing to the second arg of the new node.
-    remaining_ports.insert(0, Port(new_address, 2));
-
-    // Replace the node in the diagram with the updated node
-    if let Some(Node::Multiplication(ports)) = diagram.nodes.get_mut(&address) {
-        ports.clear();
-        ports.extend_from_slice(&remaining_ports);
-    }
-
-    // Update the output and first inpuit link to point at the new node
-    diagram.replace_port(&first_two_ports[0], &Port(new_address, 0));
-    diagram.replace_port(&first_two_ports[1], &Port(new_address, 1));
-
-    // Update the port links for the remaining ports in the original node
-    for (idx, port) in remaining_ports.iter().enumerate() {
-        diagram.replace_port(port, &Port(address, idx));
-    }
-}
-
-// Completely decompose multiplication node at address so it only has three arguments
-fn decompose_multiplication_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
-    let mut trace: RewriteTrace = vec![];
-
-    while let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address) {
-        if ports.len() > 3 {
-            let right_ports = ports[2..].to_vec();
-            trace.push(RewriteRule::SplitMultiplication(
-                address,
-                diagram.next_address,
-                right_ports,
-            ));
-            split_multiplication_node(diagram, address);
+            split_node(diagram, address);
         } else {
             break; // Decomposition is complete
         }
@@ -3166,11 +3106,11 @@ pub fn apply_rewrite_step(
             vec![]
         }
         RewriteRule::SplitAddition(address, _, _) => {
-            split_addition_node(diagram, address);
+            split_node(diagram, address);
             vec![address]
         }
         RewriteRule::SplitMultiplication(address, _, _) => {
-            split_multiplication_node(diagram, address);
+            split_node(diagram, address);
             vec![address]
         }
         RewriteRule::SplitExponentiation(address) => {
@@ -3480,7 +3420,7 @@ fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
                     Node::Addition(ports) => {
                         // If there are more than three ports in the addition node, decompose it
                         if ports.len() > 3 {
-                            trace.extend(decompose_addition_node(diagram, prime_node_address));
+                            trace.extend(decompose_node(diagram, prime_node_address));
                             changed = true;
                         }
                         if ports.len() == 3 {
@@ -3497,8 +3437,7 @@ fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
                     Node::Multiplication(ports) => {
                         // If there are more than three ports in the multiplication node, decompose it
                         if ports.len() > 3 {
-                            trace
-                                .extend(decompose_multiplication_node(diagram, prime_node_address));
+                            trace.extend(decompose_node(diagram, prime_node_address));
                             changed = true;
                         }
                         if ports.len() == 3 {

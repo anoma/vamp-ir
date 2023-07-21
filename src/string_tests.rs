@@ -304,7 +304,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        // Fuse the nodes together
+        // Split the node
         apply_rewrite_step(
             &mut diagram,
             &(),
@@ -322,8 +322,14 @@ mod tests {
             assert_eq!(ports.len(), 3, "Modified node should only have three ports");
             assert_eq!(
                 ports[0],
-                Port(new_address, 2),
-                "Modified node head should point to the new node"
+                Port(i1, 0),
+                "Modified node should have same head as original node"
+            );
+            assert_eq!(ports[1], Port(i2, 0), "Left arg should be unchanged");
+            assert_eq!(
+                ports[2],
+                Port(new_address, 0),
+                "Right arg should point at new node"
             );
         } else {
             panic!("Node not properly modified");
@@ -334,9 +340,15 @@ mod tests {
             assert_eq!(ports.len(), 3, "New node should only have three ports");
             assert_eq!(
                 ports[0],
-                Port(i1, 0),
-                "New node should have same head as original node"
+                Port(addr1, 2),
+                "Modified node should have same head as original node"
             );
+            assert_eq!(
+                ports[1],
+                Port(i3, 0),
+                "Left arg should be second last orig arg"
+            );
+            assert_eq!(ports[2], Port(i4, 0), "Right arg should be last orig arg");
         } else {
             panic!("New node not properly formed");
         }
@@ -370,7 +382,7 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        // Fuse the nodes together
+        // Split the node
         apply_rewrite_step(
             &mut diagram,
             &(),
@@ -388,8 +400,14 @@ mod tests {
             assert_eq!(ports.len(), 3, "Modified node should only have three ports");
             assert_eq!(
                 ports[0],
-                Port(new_address, 2),
-                "Modified node head should point to the new node"
+                Port(i1, 0),
+                "Modified node should have same head as original node"
+            );
+            assert_eq!(ports[1], Port(i2, 0), "Left arg should be unchanged");
+            assert_eq!(
+                ports[2],
+                Port(new_address, 0),
+                "Right arg should point at new node"
             );
         } else {
             panic!("Node not properly modified");
@@ -400,9 +418,15 @@ mod tests {
             assert_eq!(ports.len(), 3, "New node should only have three ports");
             assert_eq!(
                 ports[0],
-                Port(i1, 0),
-                "New node should have same head as original node"
+                Port(addr1, 2),
+                "Modified node should have same head as original node"
             );
+            assert_eq!(
+                ports[1],
+                Port(i3, 0),
+                "Left arg should be second last orig arg"
+            );
+            assert_eq!(ports[2], Port(i4, 0), "Right arg should be last orig arg");
         } else {
             panic!("New node not properly formed");
         }
