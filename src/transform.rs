@@ -1578,7 +1578,10 @@ fn expand_iter_intrinsic(
             } else {
                 return Err(Error::NonConstantIterArgumentError);
             };
-            for _ in 0..val.to_u16().expect("specified iteration count is too large") {
+            for _ in 0..val
+                .to_u16()
+                .expect("specified iteration count is too large")
+            {
                 body = TExpr {
                     v: Expr::Application(Box::new(iter_func.clone()), Box::new(body.clone())),
                     t: body.t,
