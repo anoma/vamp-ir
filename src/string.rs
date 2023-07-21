@@ -263,7 +263,8 @@ impl DefinitionRegistry {
 
         compiled_defs
     }
-    fn register_definition(&mut self, ports: (Port, Port), definition: Expr) {
+
+    fn register_definition(&mut self, ports: (Port, Port), definition: Expr) -> u32 {
         // Insert the ports into the port_id_map
         self.port_id_map.insert(ports.0.clone(), self.next_id);
         self.port_id_map.insert(ports.1.clone(), self.next_id);
@@ -280,6 +281,8 @@ impl DefinitionRegistry {
 
         // Increment the next_id
         self.next_id += 1;
+
+        self.next_id - 1
     }
 
     fn replace_definition_of_port(&mut self, target_port: &Port, input_expr: Expr) -> Option<u32> {
@@ -326,7 +329,7 @@ impl DefinitionRegistry {
         }
     }
 
-    fn add_port_for_id(&mut self, port: Port, var_id: u32) {
+    fn add_port_to_id(&mut self, port: Port, var_id: u32) {
         // Add to port_id_map
         self.port_id_map.insert(port.clone(), var_id);
 
@@ -1257,9 +1260,15 @@ pub enum RewriteRule {
     // Contains addres of multiplication node
     RemoveUnaryMultiplication(Address),
     // A = X + Y + Z   ==>   A = X + V & V = Y + Z
-    SplitAddition(Address),
+    // Stores the address of the node being split,
+    // the new address of the right node
+    // and all the ports connected to the args of the new node
+    SplitAddition(Address, Address, Vec<Port>),
     // A = X * Y * Z   ==>   A = X * V & V = Y * Z
-    SplitMultiplication(Address),
+    // Stores the address of the node being split,
+    // the new address of the right node
+    // and all the ports connected to the args of the new node
+    SplitMultiplication(Address, Address, Vec<Port>),
     // A = B ^ n    =>   A = B * B * ... * B
     SplitExponentiation(Address),
     // Store address of equality node, index pointing to fusable/conserved node,
@@ -1409,8 +1418,13 @@ fn decompose_addition_node(diagram: &mut StringDiagram, address: Address) -> Rew
 
     while let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
         if ports.len() > 3 {
+            let right_ports = ports[2..].to_vec();
+            trace.push(RewriteRule::SplitAddition(
+                address,
+                diagram.next_address,
+                right_ports,
+            ));
             split_addition_node(diagram, address);
-            trace.push(RewriteRule::SplitAddition(address))
         } else {
             break; // Decomposition is complete
         }
@@ -1468,8 +1482,13 @@ fn decompose_multiplication_node(diagram: &mut StringDiagram, address: Address) 
 
     while let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address) {
         if ports.len() > 3 {
+            let right_ports = ports[2..].to_vec();
+            trace.push(RewriteRule::SplitMultiplication(
+                address,
+                diagram.next_address,
+                right_ports,
+            ));
             split_multiplication_node(diagram, address);
-            trace.push(RewriteRule::SplitMultiplication(address))
         } else {
             break; // Decomposition is complete
         }
@@ -3146,11 +3165,11 @@ pub fn apply_rewrite_step(
             }
             vec![]
         }
-        RewriteRule::SplitAddition(address) => {
+        RewriteRule::SplitAddition(address, _, _) => {
             split_addition_node(diagram, address);
             vec![address]
         }
-        RewriteRule::SplitMultiplication(address) => {
+        RewriteRule::SplitMultiplication(address, _, _) => {
             split_multiplication_node(diagram, address);
             vec![address]
         }
@@ -3553,7 +3572,7 @@ fn spider_fusion_update(
     // No definitions need to be changed.
     for (index, port) in ports.iter().enumerate() {
         if let Some(&var_id) = defs.port_id_map.get(port) {
-            defs.add_port_for_id(Port(*conserved_address, index), var_id);
+            defs.add_port_to_id(Port(*conserved_address, index), var_id);
         }
     }
 }
@@ -3592,7 +3611,7 @@ fn constant_eq_update(
     // Assign the variable id of the port in ports to the new constant port
     for (index, port) in ports.iter().enumerate() {
         if let Some(&var_id) = defs.port_id_map.get(port) {
-            defs.add_port_for_id(Port(*lowest_const_addr + index, 0), var_id);
+            defs.add_port_to_id(Port(*lowest_const_addr + index, 0), var_id);
         }
     }
 }
@@ -3616,11 +3635,97 @@ fn unrestricted_op_update(
     // Assign the variable id of the port in ports to the new unrestricted port
     for (index, port) in ports.iter().enumerate() {
         if let Some(&var_id) = defs.port_id_map.get(port) {
-            defs.add_port_for_id(Port(*lowest_unrest_addr + index, 0), var_id);
+            defs.add_port_to_id(Port(*lowest_unrest_addr + index, 0), var_id);
         }
     }
 
     // Note: no definitions need to be altered.
+}
+
+fn split_operation_update(
+    defs: &mut DefinitionRegistry,
+    split_address: &Address,
+    right_address: &Address,
+    right_ports: &Vec<Port>,
+    is_add: bool,
+) {
+    // Determine operation
+    let op = if is_add {
+        InfixOp::Add
+    } else {
+        InfixOp::Multiply
+    };
+
+    // Remove all the old ports no longer connected to the split node
+    for i in 0..right_ports.len() {
+        defs.remove_port(&Port(*split_address, i as PortIndex + 2));
+    }
+
+    // If the operation being split is ternary, then the definition of the right side should be the sum of the right two values
+    //    or, rather, the variables holding those values.
+    // If the operation being split isn't ternary, then `right_two_address` will be `None`, and the right value is (temporarily) set to 0.
+    let new_definition = match right_ports.len() {
+        2 => {
+            let var1 = defs.port_id_map.get(&right_ports[0]).unwrap();
+            let var2 = defs.port_id_map.get(&right_ports[1]).unwrap();
+            Expr::Infix(
+                op,
+                Box::new(TExpr {
+                    v: Expr::Variable(Variable {
+                        id: *var1,
+                        name: None,
+                    }),
+                    t: None,
+                }),
+                Box::new(TExpr {
+                    v: Expr::Variable(Variable {
+                        id: *var2,
+                        name: None,
+                    }),
+                    t: None,
+                }),
+            )
+        }
+        _ => Expr::Constant(0.into()), // default to constant 0
+    };
+
+    // Register this new definition
+    let right_id = defs.register_definition(
+        (Port(*split_address, 2), Port(*right_address, 0)),
+        new_definition,
+    );
+
+    // Update the definition of the id associated with the operation head.
+    let head_id = defs.port_id_map.get(&Port(*split_address, 0)).unwrap();
+    let left_id = defs.port_id_map.get(&Port(*split_address, 1)).unwrap();
+    if let Some((_, expr)) = defs.id_def_map.get_mut(head_id) {
+        *expr = Box::new(TExpr {
+            v: Expr::Infix(
+                op,
+                Box::new(TExpr {
+                    v: Expr::Variable(Variable {
+                        id: *left_id,
+                        name: None,
+                    }),
+                    t: None,
+                }),
+                Box::new(TExpr {
+                    v: Expr::Variable(Variable {
+                        id: right_id,
+                        name: None,
+                    }),
+                    t: None,
+                }),
+            ),
+            t: None,
+        });
+    }
+
+    // Assign the variable ids associated with the right_ports to the ports of right_address
+    for (i, port) in right_ports.iter().enumerate() {
+        let id = defs.port_id_map.get(port).unwrap();
+        defs.add_port_to_id(Port(*right_address, i as PortIndex + 1), *id);
+    }
 }
 
 fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
@@ -3639,11 +3744,11 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
             // Overwrite old definition with constant expression
             defs.replace_definition_of_port(&Port(address, 0), Expr::Constant(BigInt::from(1)));
         }
-        RewriteRule::SplitAddition(_address) => {
-            // Not implemented
+        RewriteRule::SplitAddition(split_address, right_address, right_ports) => {
+            split_operation_update(defs, &split_address, &right_address, &right_ports, true)
         }
-        RewriteRule::SplitMultiplication(_address) => {
-            // Not implemented
+        RewriteRule::SplitMultiplication(split_address, right_address, right_ports) => {
+            split_operation_update(defs, &split_address, &right_address, &right_ports, false)
         }
         RewriteRule::SplitExponentiation(_address) => {
             // Not implemented

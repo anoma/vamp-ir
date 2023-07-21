@@ -305,7 +305,11 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::SplitAddition(addr1));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::SplitAddition(addr1, addr1 + 1, vec![Port(i3, 0), Port(i4, 0)]),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -367,7 +371,11 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::SplitMultiplication(addr1));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::SplitMultiplication(addr1, addr1 + 1, vec![Port(i3, 0), Port(i4, 0)]),
+        );
 
         assert!(
             diagram.is_well_formed(),
