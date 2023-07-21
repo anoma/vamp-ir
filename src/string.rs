@@ -1332,7 +1332,12 @@ pub enum RewriteRule {
     MultiplicationConstMultiplication(Address, PortIndex),
     AdditionConst(Address, PortIndex),
     MultiplicationConst(Address, PortIndex),
-    EqualityConst(Address, PortIndex),
+    // n = X & X = Y & X = Z & ...   ==>    n = Y & n = Z & ,,,
+    // Stores the address of the equality node, the index that points to a constant
+    // the address of that constant, a list of the outlying ports connected to the equality node
+    // and the lowest address of the newly spawned constant nodes.
+    // And the value stored in the constant
+    EqualityConst(Address, PortIndex, Address, Vec<Port>, Address, BigInt),
     AddMulUnrestricted(Address, PortIndex),
     DeleteConstOpUnrestricted(Address, PortIndex),
     SwapAddMulConstantsHdTl(Address),
@@ -2802,9 +2807,22 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
                         return Some(RewriteRule::EqualityUnrestricted(address, port_index));
                     }
-                    if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
+                    if let Some(Node::Constant(val, _)) = diagram.nodes.get(&target_port.0) {
                         if ports.len() == 1 && !vars.is_empty() {
-                            return Some(RewriteRule::EqualityConst(address, port_index));
+                            let outer_ports = ports
+                                .iter()
+                                .filter(|p| p != &target_port)
+                                .cloned()
+                                .collect();
+
+                            return Some(RewriteRule::EqualityConst(
+                                address,
+                                port_index,
+                                target_port.0,
+                                outer_ports,
+                                diagram.next_address,
+                                val.clone(),
+                            ));
                         }
                     }
 
@@ -3199,7 +3217,7 @@ pub fn apply_rewrite_step(
                 vec![]
             }
         }
-        RewriteRule::EqualityConst(address, port_index) => {
+        RewriteRule::EqualityConst(address, port_index, _, _, _, _) => {
             if let Some(Node::Equality(_, ports)) = diagram.nodes.get(&address).cloned() {
                 equality_const(diagram, address, port_index);
 
@@ -3510,6 +3528,50 @@ fn spider_fusion_update(
     }
 }
 
+fn constant_eq_update(
+    defs: &mut DefinitionRegistry,
+    removed_address: &Address,
+    ports: &Vec<Port>,
+    removed_const_address: &Address,
+    lowest_const_addr: &Address,
+    constant_value: BigInt,
+) {
+    // Note: if the equality node had variables, then there will be an isolated link with no assigned variable.
+    // This is fine, as this will get its value from the named variable stored in the equality node.
+
+    // Remove Port(removed_address, 0)
+    defs.remove_port(&Port(*removed_address, 0));
+
+    // Remove every port in removed_address
+    let num_ports = ports.len() + 1;
+    for i in 0..num_ports {
+        let port_to_remove = Port(*removed_const_address, i);
+        defs.remove_port(&port_to_remove);
+    }
+
+    // Replace the definition for all the ids connected to each port in ports with the constant
+    for port in ports.iter() {
+        if let Some((port_set, expr)) = defs.id_def_map.get_mut(defs.port_id_map.get(port).unwrap())
+        {
+            // Replace the definition with the constant
+            *expr = Box::new(TExpr {
+                v: Expr::Constant(constant_value.clone()),
+                t: None,
+            });
+            port_set.clear();
+            port_set.insert(port.clone());
+        }
+    }
+
+    // Assign the variable id of the port in ports to the new constant port
+    for (index, port) in ports.iter().enumerate() {
+        if let Some(&var_id) = defs.port_id_map.get(port) {
+            let new_port = Port(*lowest_const_addr + index, 0);
+            defs.add_port_for_id(new_port, var_id);
+        }
+    }
+}
+
 fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
     match rule {
         RewriteRule::DeleteEmptyEquality(_address) => {
@@ -3640,8 +3702,22 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
         RewriteRule::MultiplicationConst(_address, _port_index) => {
             // Not implemented
         }
-        RewriteRule::EqualityConst(_address, _port_index) => {
-            // Not implemented
+        RewriteRule::EqualityConst(
+            removed_address,
+            _port_index,
+            removed_const_address,
+            ports,
+            lowest_const_addr,
+            constant_value,
+        ) => {
+            constant_eq_update(
+                defs,
+                &removed_address,
+                &ports,
+                &removed_const_address,
+                &lowest_const_addr,
+                constant_value,
+            );
         }
         RewriteRule::AddMulUnrestricted(_address, _port_index) => {
             // Not implemented

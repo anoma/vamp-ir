@@ -1963,7 +1963,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::EqualityConst(ia, 3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::EqualityConst(ia, 3, ic, vec![], ic + 1, BigInt::from(15)),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -2016,7 +2020,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::EqualityConst(ia, 3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::EqualityConst(ia, 3, ic, vec![], ic + 1, BigInt::from(15)),
+        );
 
         assert!(
             diagram.is_well_formed(),
