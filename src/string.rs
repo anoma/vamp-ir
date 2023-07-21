@@ -1338,7 +1338,15 @@ pub enum RewriteRule {
     // and the lowest address of the newly spawned constant nodes.
     // And the value stored in the constant
     EqualityConst(Address, PortIndex, Address, Vec<Port>, Address, BigInt),
-    AddMulUnrestricted(Address, PortIndex),
+    // An unrestricted value deletes ops under some conditions.
+    // X = Y + Z, if Y is unrestricted, is equivalent to "there exists a Y s.t. X = Y + Z", which is trivially true.
+    // The addition can then be deleted, leading to an unrestricted X and Z.
+    // Also applies to multiplication, with some caviats.
+    // This stores the address of the op node, the index connected to the unrestricted node
+    // The remaining ports connected to theo operation
+    // The address of the unrestricted node,
+    // And the smallest address of the new unrestricted nodes
+    AddMulUnrestricted(Address, PortIndex, Vec<Port>, Address, Address),
     DeleteConstOpUnrestricted(Address, PortIndex),
     SwapAddMulConstantsHdTl(Address),
     SwapAddMulConstantsTlTl(Address),
@@ -2861,7 +2869,18 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                 }
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-                        return Some(RewriteRule::AddMulUnrestricted(address, port_index));
+                        let outer_ports = ports
+                            .iter()
+                            .filter(|p| p != &target_port)
+                            .cloned()
+                            .collect();
+                        return Some(RewriteRule::AddMulUnrestricted(
+                            address,
+                            port_index,
+                            outer_ports,
+                            target_port.0,
+                            diagram.next_address,
+                        ));
                     }
                     if port_index > 0 {
                         if let Some(Node::Addition(_ports2)) = diagram.nodes.get(&target_port.0) {
@@ -2910,7 +2929,18 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                 for (port_index, target_port) in ports.iter().enumerate() {
                     if port_index == 0 {
                         if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-                            return Some(RewriteRule::AddMulUnrestricted(address, port_index));
+                            let outer_ports = ports
+                                .iter()
+                                .filter(|p| p != &target_port)
+                                .cloned()
+                                .collect();
+                            return Some(RewriteRule::AddMulUnrestricted(
+                                address,
+                                port_index,
+                                outer_ports,
+                                target_port.0,
+                                diagram.next_address,
+                            ));
                         }
                     }
                     if port_index > 0 {
@@ -3226,7 +3256,7 @@ pub fn apply_rewrite_step(
                 vec![]
             }
         }
-        RewriteRule::AddMulUnrestricted(address, port_index) => {
+        RewriteRule::AddMulUnrestricted(address, port_index, _, _, _) => {
             if let Some(Node::Addition(ports) | Node::Multiplication(ports)) =
                 diagram.nodes.get(&address).cloned()
             {
@@ -3539,46 +3569,67 @@ fn constant_eq_update(
     // Note: if the equality node had variables, then there will be an isolated link with no assigned variable.
     // This is fine, as this will get its value from the named variable stored in the equality node.
 
-    // Remove Port(removed_address, 0)
-    defs.remove_port(&Port(*removed_address, 0));
+    // Remove constant port
+    defs.remove_port(&Port(*removed_const_address, 0));
 
     // Remove every port in removed_address
     let num_ports = ports.len() + 1;
     for i in 0..num_ports {
-        let port_to_remove = Port(*removed_const_address, i);
-        defs.remove_port(&port_to_remove);
+        defs.remove_port(&Port(*removed_address, i));
     }
 
     // Replace the definition for all the ids connected to each port in ports with the constant
     for port in ports.iter() {
-        if let Some((port_set, expr)) = defs.id_def_map.get_mut(defs.port_id_map.get(port).unwrap())
-        {
+        if let Some((_, expr)) = defs.id_def_map.get_mut(defs.port_id_map.get(port).unwrap()) {
             // Replace the definition with the constant
             *expr = Box::new(TExpr {
                 v: Expr::Constant(constant_value.clone()),
                 t: None,
             });
-            port_set.clear();
-            port_set.insert(port.clone());
         }
     }
 
     // Assign the variable id of the port in ports to the new constant port
     for (index, port) in ports.iter().enumerate() {
         if let Some(&var_id) = defs.port_id_map.get(port) {
-            let new_port = Port(*lowest_const_addr + index, 0);
-            defs.add_port_for_id(new_port, var_id);
+            defs.add_port_for_id(Port(*lowest_const_addr + index, 0), var_id);
         }
     }
+}
+
+fn unrestricted_op_update(
+    defs: &mut DefinitionRegistry,
+    removed_address: &Address,
+    ports: &Vec<Port>,
+    removed_unrest_address: &Address,
+    lowest_unrest_addr: &Address,
+) {
+    // Remove unrestricted port
+    defs.remove_port(&Port(*removed_unrest_address, 0));
+
+    // Remove every port in removed_address
+    let num_ports = ports.len() + 1;
+    for i in 0..num_ports {
+        defs.remove_port(&Port(*removed_address, i));
+    }
+
+    // Assign the variable id of the port in ports to the new unrestricted port
+    for (index, port) in ports.iter().enumerate() {
+        if let Some(&var_id) = defs.port_id_map.get(port) {
+            defs.add_port_for_id(Port(*lowest_unrest_addr + index, 0), var_id);
+        }
+    }
+
+    // Note: no definitions need to be altered.
 }
 
 fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
     match rule {
         RewriteRule::DeleteEmptyEquality(_address) => {
-            // Nothing to do; no defs need to be modified
+            // Nothing to do; no ports affected
         }
         RewriteRule::RemoveUnaryEquality(_address) => {
-            // Nothing to do; no defs need to be modified
+            // Nothing to do; no ports affected
         }
         RewriteRule::RemoveUnaryAddition(address) => {
             // Overwrite old definition with constant expression
@@ -3719,8 +3770,20 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
                 constant_value,
             );
         }
-        RewriteRule::AddMulUnrestricted(_address, _port_index) => {
-            // Not implemented
+        RewriteRule::AddMulUnrestricted(
+            removed_address,
+            _port_index,
+            ports,
+            removed_unrest_address,
+            lowest_unrest_addr,
+        ) => {
+            unrestricted_op_update(
+                defs,
+                &removed_address,
+                &ports,
+                &removed_unrest_address,
+                &lowest_unrest_addr,
+            );
         }
         RewriteRule::DeleteConstOpUnrestricted(_address, _port_index) => {
             // Not implemented

@@ -2076,7 +2076,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::AddMulUnrestricted(ia, 3));
+        apply_rewrite_step(
+            &mut diagram,
+            &(),
+            RewriteRule::AddMulUnrestricted(ia, 3, vec![], ic, ic + 1),
+        );
 
         assert!(
             diagram.is_well_formed(),
