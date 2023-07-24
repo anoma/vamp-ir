@@ -22,12 +22,19 @@ use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
 
 // Define the address type
+pub type VarId = u32;
 pub type Address = usize;
 pub type PortIndex = usize;
 
 // Define a port as a pair of node address and a list index
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Port(pub Address, pub PortIndex);
+pub struct Port(pub Address, pub PortIndex, pub VarId);
+
+impl Port {
+    pub fn location(&self) -> (Address, PortIndex) {
+        (self.0, self.1)
+    }
+}
 
 // Define different types of nodes
 #[derive(Clone, Debug)]
@@ -51,14 +58,22 @@ pub enum Node {
 pub struct StringDiagram {
     pub nodes: HashMap<Address, Node>,
     pub next_address: Address,
+    pub next_var_id: VarId,
 }
 
 impl StringDiagram {
-    pub fn new() -> Self {
+    pub fn new(next_var_id: VarId) -> Self {
         StringDiagram {
             nodes: HashMap::new(),
             next_address: 0,
+            next_var_id,
         }
+    }
+
+    pub fn get_next_var_id(&mut self) -> VarId {
+        self.next_var_id += 1;
+
+        self.next_var_id - 1
     }
 
     pub fn add_node(&mut self, node: Node) -> Address {
@@ -103,14 +118,15 @@ impl StringDiagram {
 
     // Helper function to check if the port is connected back to the original (address, port_index).
     fn is_connected_back(&self, port: &Port, original: (Address, PortIndex)) -> bool {
-        let Port(target_address, target_port_index) = port;
+        let Port(target_address, target_port_index, _) = port;
         if target_address == &original.0 && target_port_index == &original.1 {
             return false;
         }
         if let Some(target_node) = self.nodes.get(target_address) {
             match target_node {
                 Node::Addition(ports) | Node::Multiplication(ports) | Node::Equality(_, ports) => {
-                    if let Some(Port(back_address, back_port_index)) = ports.get(*target_port_index)
+                    if let Some(Port(back_address, back_port_index, _)) =
+                        ports.get(*target_port_index)
                     {
                         return *back_address == original.0 && *back_port_index == original.1;
                     }
@@ -138,7 +154,7 @@ impl StringDiagram {
 
     // Replace the port *at* target_port *with* new_port.
     fn replace_port(&mut self, target_port: &Port, new_port: &Port) {
-        let Port(target_address, target_index) = target_port;
+        let Port(target_address, target_index, _) = target_port;
 
         if let Some(node) = self.nodes.get_mut(target_address) {
             match node {
@@ -199,19 +215,16 @@ impl StringDiagram {
 // Used to assist in synthesizing new definitions.
 pub struct DefinitionRegistry {
     pub initial_defs: Vec<Definition>,
-    pub port_id_map: HashMap<Port, u32>,
-    pub id_def_map: HashMap<u32, (HashSet<Port>, Box<TExpr>)>,
-    //pub init_ids: HashSet<u32>, // Not sure if needed/useful
-    pub next_id: u32,
+    //pub port_id_map: HashMap<Port, VarId>,
+    // pub id_def_map: HashMap<VarId, (HashSet<Port>, Box<TExpr>)>,
+    pub id_def_map: HashMap<VarId, (i32, Box<TExpr>)>,
+    //pub init_ids: HashSet<VarId>, // Not sure if needed/useful
+    pub next_id: VarId,
 }
 
 impl DefinitionRegistry {
     fn port_def_map(&self, port: &Port) -> Option<&Box<TExpr>> {
-        if let Some(id) = self.port_id_map.get(port) {
-            return self.id_def_map.get(id).map(|(_, def)| def);
-        } else {
-            None
-        }
+        return self.id_def_map.get(&port.2).map(|(_, def)| def);
     }
 
     pub fn new(defs: Vec<Definition>) -> Self {
@@ -239,7 +252,7 @@ impl DefinitionRegistry {
 
         DefinitionRegistry {
             initial_defs: defs,
-            port_id_map: HashMap::new(),
+            //port_id_map: HashMap::new(),
             id_def_map: HashMap::new(),
             //init_ids,
             next_id,
@@ -264,20 +277,13 @@ impl DefinitionRegistry {
         compiled_defs
     }
 
-    fn register_definition(&mut self, ports: (Port, Port), definition: Expr) -> u32 {
-        // Insert the ports into the port_id_map
-        self.port_id_map.insert(ports.0.clone(), self.next_id);
-        self.port_id_map.insert(ports.1.clone(), self.next_id);
-
+    fn register_definition(&mut self, definition: Expr) -> VarId {
         // Insert the definition into the id_def_map
-        let ports_set = vec![ports.0.clone(), ports.1]
-            .into_iter()
-            .collect::<HashSet<_>>();
         let boxed_def = Box::new(TExpr {
             v: definition,
             t: None,
         });
-        self.id_def_map.insert(self.next_id, (ports_set, boxed_def));
+        self.id_def_map.insert(self.next_id, (2, boxed_def));
 
         // Increment the next_id
         self.next_id += 1;
@@ -285,89 +291,59 @@ impl DefinitionRegistry {
         self.next_id - 1
     }
 
-    fn replace_definition_of_port(&mut self, target_port: &Port, input_expr: Expr) -> Option<u32> {
+    fn replace_definition_of_port(&mut self, target_port: &Port, input_expr: Expr) -> VarId {
         // Fetch the id associated with the port
-        if let Some(&id) = self.port_id_map.get(target_port) {
-            // Wrap the input expression inside a TExpr
-            let texpr = TExpr {
-                v: input_expr,
-                t: None, // no type information
-            };
+        let id = target_port.2;
 
-            // Update the definition associated with the id
-            if let Some((_, def)) = self.id_def_map.get_mut(&id) {
-                *def = Box::new(texpr);
-            }
+        // Wrap the input expression inside a TExpr
+        let texpr = TExpr {
+            v: input_expr,
+            t: None, // no type information
+        };
 
-            return Some(id);
+        // Update the definition associated with the id
+        if let Some((_, def)) = self.id_def_map.get_mut(&id) {
+            *def = Box::new(texpr);
         }
 
-        None // Return None if the port wasn't found in the map
+        id
     }
 
     pub fn remove_ports(&mut self, ports: (&Port, &Port)) {
-        // Check if the first port exists in the port_id_map
-        if let Some(var_id) = self.port_id_map.get(ports.0) {
-            // Clone the variable ID since we might need it after removing the port from port_id_map
-            let var_id = *var_id;
+        let var_id = ports.0 .2;
 
-            // Remove the ports from the port_id_map
-            self.port_id_map.remove(ports.0);
-            self.port_id_map.remove(ports.1);
+        // Access the port set in id_def_map for the variable ID
+        if let Some((ref_count, _)) = self.id_def_map.get_mut(&var_id) {
+            // Remove the ports
+            *ref_count -= 2;
 
-            // Access the port set in id_def_map for the variable ID
-            if let Some((port_set, _)) = self.id_def_map.get_mut(&var_id) {
-                // Remove the ports
-                port_set.remove(ports.0);
-                port_set.remove(ports.1);
-
-                // If the port set is now empty, remove the variable ID and its associated definition
-                if port_set.is_empty() {
-                    self.id_def_map.remove(&var_id);
-                }
+            // If the port set is now empty, remove the variable ID and its associated definition
+            if *ref_count <= 0 {
+                self.id_def_map.remove(&var_id);
             }
         }
     }
 
-    fn add_port_to_id(&mut self, port: Port, var_id: u32) {
-        // Add to port_id_map
-        self.port_id_map.insert(port.clone(), var_id);
-
+    fn add_port_to_id(&mut self, _port: Port, var_id: VarId) {
         // Add to the set of ports in id_def_map
-        if let Some((port_set, _)) = self.id_def_map.get_mut(&var_id) {
-            port_set.insert(port);
+        if let Some((ref_count, _)) = self.id_def_map.get_mut(&var_id) {
+            *ref_count += 1;
         } else {
             panic!("Variable ID not found in id_def_map");
         }
     }
 
     fn remove_port(&mut self, port: &Port) {
-        if let Some(&var_id) = self.port_id_map.get(port) {
-            // Remove from port_id_map
-            self.port_id_map.remove(port);
+        let var_id = port.2;
 
-            // Remove from the set of ports in id_def_map
-            if let Some((port_set, _)) = self.id_def_map.get_mut(&var_id) {
-                port_set.remove(port);
-                if port_set.is_empty() {
-                    self.id_def_map.remove(&var_id);
-                }
+        // Remove from the set of ports in id_def_map
+        if let Some((ref_count, _)) = self.id_def_map.get_mut(&var_id) {
+            *ref_count -= 1;
+            if *ref_count <= 0 {
+                self.id_def_map.remove(&var_id);
             }
         }
     }
-}
-
-fn all_ports_registered(diagram: &StringDiagram, registry: &DefinitionRegistry) -> bool {
-    for address in diagram.nodes.keys() {
-        for port in diagram.port_list(address) {
-            if !registry.port_id_map.contains_key(&port) {
-                println!("{:?}", diagram.nodes.get(address));
-                //println!("{:?}", diagram.nodes.get(diagram.nodes.get(address).unwrap().ports[0].0));
-                return false;
-            }
-        }
-    }
-    true
 }
 
 fn get_or_create_equality_node(
@@ -375,11 +351,13 @@ fn get_or_create_equality_node(
     pointing_port: Port,
     diagram: &mut StringDiagram,
     variable_addresses: &mut HashMap<VariableId, Address>,
-    input_ids: &HashSet<u32>,
+    input_ids: &HashSet<VarId>,
     defs: &mut DefinitionRegistry,
 ) -> (Address, usize) {
+    let new_id = pointing_port.2;
+
     // Does this variable already have an address? If not, make one.
-    let equality_address = *variable_addresses.entry(variable.id).or_insert_with(|| {
+    let equality_address = *variable_addresses.entry(new_id).or_insert_with(|| {
         // If we're looking at an input variable, store it.
         let input_vec = if input_ids.contains(&variable.id) {
             vec![variable.clone()]
@@ -390,12 +368,12 @@ fn get_or_create_equality_node(
         let address = diagram.add_node(Node::Equality(input_vec, Vec::new()));
 
         // If variable is new, add a default entry to defs.
-        defs.id_def_map.entry(variable.id).or_insert_with(|| {
+        defs.id_def_map.entry(new_id).or_insert_with(|| {
             let var_expr = TExpr {
                 v: Expr::Variable(variable.clone()),
                 t: None,
             };
-            (HashSet::new(), Box::new(var_expr))
+            (0, Box::new(var_expr))
         });
 
         address
@@ -405,25 +383,29 @@ fn get_or_create_equality_node(
     let next_idx;
     if let Node::Equality(_, ports) = diagram.nodes.get_mut(&equality_address).unwrap() {
         next_idx = ports.len();
-        ports.push(pointing_port.clone());
+        ports.push(pointing_port);
     } else {
         panic!("Expected an equality node");
     }
 
-    // Update port_id_map and id_def_map in defs.
-    defs.port_id_map.insert(pointing_port.clone(), variable.id);
-    defs.port_id_map
-        .insert(Port(equality_address, next_idx), variable.id);
-    if let Some((port_set, _)) = defs.id_def_map.get_mut(&variable.id) {
-        port_set.insert(pointing_port);
-        port_set.insert(Port(equality_address, next_idx));
+    if let Some((ref_count, _)) = defs.id_def_map.get_mut(&new_id) {
+        *ref_count += 1;
+    } else {
+        panic!("Variable ID not found in id_def_map");
     }
 
     (equality_address, next_idx)
 }
 
-// Rename port-associated variables so that original definitions remain untouched
-fn preserve_initial_defs(defs: &mut DefinitionRegistry) {
+// Given a list of 3ac equations, generate a semantically equivalent string diagram.
+pub fn build_string_diagram(
+    equations: Vec<TExpr>,
+    input_ids: &HashSet<VarId>,
+    defs: &mut DefinitionRegistry,
+) -> StringDiagram {
+    let mut diagram = StringDiagram::new(defs.next_id);
+    let mut variable_addresses: HashMap<VariableId, Address> = HashMap::new();
+
     // Create a mapping from old IDs to new IDs
     let mut old_to_new_ids = HashMap::new();
 
@@ -433,30 +415,6 @@ fn preserve_initial_defs(defs: &mut DefinitionRegistry) {
         old_to_new_ids.insert(old_id, new_id);
         defs.next_id += 1;
     }
-
-    // Update port_id_map in place
-    for (_, id) in defs.port_id_map.iter_mut() {
-        if let Some(new_id) = old_to_new_ids.get(id) {
-            *id = *new_id;
-        }
-    }
-
-    // Update id_def_map in place
-    for (old_id, new_id) in old_to_new_ids.iter() {
-        if let Some(value) = defs.id_def_map.remove(old_id) {
-            defs.id_def_map.insert(*new_id, value);
-        }
-    }
-}
-
-// Given a list of 3ac equations, generate a semantically equivalent string diagram.
-pub fn build_string_diagram(
-    equations: Vec<TExpr>,
-    input_ids: &HashSet<u32>,
-    defs: &mut DefinitionRegistry,
-) -> StringDiagram {
-    let mut diagram = StringDiagram::new();
-    let mut variable_addresses: HashMap<VariableId, Address> = HashMap::new();
 
     for eq in equations {
         if let Expr::Infix(InfixOp::Equal, left, right) = eq.v {
@@ -475,22 +433,19 @@ pub fn build_string_diagram(
 
                     let (equality_address, new_port_index) = get_or_create_equality_node(
                         var,
-                        Port(target_address, 0),
+                        Port(target_address, 0, *old_to_new_ids.get(&var.id).unwrap()),
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
                         defs,
                     );
 
-                    let const_addr = diagram.add_node(Node::Constant(
-                        c.clone(),
-                        Port(equality_address, new_port_index),
-                    ));
+                    let const_id = defs.register_definition(Expr::Constant(c.clone()));
 
-                    defs.register_definition(
-                        (Port(const_addr, 0), Port(equality_address, new_port_index)),
-                        Expr::Constant(c.clone()),
-                    );
+                    let _const_addr = diagram.add_node(Node::Constant(
+                        c.clone(),
+                        Port(equality_address, new_port_index, const_id),
+                    ));
                 }
                 (Expr::Variable(var1), Expr::Variable(var2)) => {
                     let eq_address1 = variable_addresses.get(&var1.id).cloned();
@@ -513,7 +468,7 @@ pub fn build_string_diagram(
 
                     let (equality_address1, new_port_index1) = get_or_create_equality_node(
                         var1,
-                        Port(target_address, 0),
+                        Port(target_address, 0, *old_to_new_ids.get(&var1.id).unwrap()),
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
@@ -521,7 +476,7 @@ pub fn build_string_diagram(
                     );
                     let (equality_address2, new_port_index2) = get_or_create_equality_node(
                         var2,
-                        Port(target_address, 1),
+                        Port(target_address, 1, *old_to_new_ids.get(&var2.id).unwrap()),
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
@@ -532,8 +487,16 @@ pub fn build_string_diagram(
                     diagram.add_node(Node::Equality(
                         vec![],
                         vec![
-                            Port(equality_address1, new_port_index1),
-                            Port(equality_address2, new_port_index2),
+                            Port(
+                                equality_address1,
+                                new_port_index1,
+                                *old_to_new_ids.get(&var1.id).unwrap(),
+                            ),
+                            Port(
+                                equality_address2,
+                                new_port_index2,
+                                *old_to_new_ids.get(&var2.id).unwrap(),
+                            ),
                         ],
                     ));
                 }
@@ -559,7 +522,7 @@ pub fn build_string_diagram(
 
                         let (equality_address1, new_port_index1) = get_or_create_equality_node(
                             var1,
-                            Port(target_address, 0),
+                            Port(target_address, 0, *old_to_new_ids.get(&var1.id).unwrap()),
                             &mut diagram,
                             &mut variable_addresses,
                             input_ids,
@@ -567,7 +530,7 @@ pub fn build_string_diagram(
                         );
                         let (equality_address2, new_port_index2) = get_or_create_equality_node(
                             var2,
-                            Port(target_address, 1),
+                            Port(target_address, 1, *old_to_new_ids.get(&var2.id).unwrap()),
                             &mut diagram,
                             &mut variable_addresses,
                             input_ids,
@@ -576,8 +539,16 @@ pub fn build_string_diagram(
 
                         diagram.add_node(Node::MultiplyConstant(
                             (-1).into(),
-                            Port(equality_address1, new_port_index1),
-                            Port(equality_address2, new_port_index2),
+                            Port(
+                                equality_address1,
+                                new_port_index1,
+                                *old_to_new_ids.get(&var1.id).unwrap(),
+                            ),
+                            Port(
+                                equality_address2,
+                                new_port_index2,
+                                *old_to_new_ids.get(&var2.id).unwrap(),
+                            ),
                         ));
                     }
                 }
@@ -605,7 +576,7 @@ pub fn build_string_diagram(
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 1),
+                                    Port(target_address, 1, *old_to_new_ids.get(&var.id).unwrap()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
@@ -613,7 +584,11 @@ pub fn build_string_diagram(
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
-                                    Port(target_address, 0),
+                                    Port(
+                                        target_address,
+                                        0,
+                                        *old_to_new_ids.get(&term_var1.id).unwrap(),
+                                    ),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
@@ -621,22 +596,38 @@ pub fn build_string_diagram(
                                 );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
-                                    Port(target_address, 2),
+                                    Port(
+                                        target_address,
+                                        2,
+                                        *old_to_new_ids.get(&term_var2.id).unwrap(),
+                                    ),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                     defs,
                                 );
                                 ports = vec![
-                                    Port(address1, port_index1),
-                                    Port(address0, port_index0),
-                                    Port(address2, port_index2),
+                                    Port(
+                                        address1,
+                                        port_index1,
+                                        *old_to_new_ids.get(&term_var1.id).unwrap(),
+                                    ),
+                                    Port(
+                                        address0,
+                                        port_index0,
+                                        *old_to_new_ids.get(&var.id).unwrap(),
+                                    ),
+                                    Port(
+                                        address2,
+                                        port_index2,
+                                        *old_to_new_ids.get(&term_var2.id).unwrap(),
+                                    ),
                                 ];
                             } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
                             {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 0),
+                                    Port(target_address, 0, *old_to_new_ids.get(&var.id).unwrap()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
@@ -644,7 +635,11 @@ pub fn build_string_diagram(
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
-                                    Port(target_address, 1),
+                                    Port(
+                                        target_address,
+                                        1,
+                                        *old_to_new_ids.get(&term_var1.id).unwrap(),
+                                    ),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
@@ -652,16 +647,32 @@ pub fn build_string_diagram(
                                 );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
-                                    Port(target_address, 2),
+                                    Port(
+                                        target_address,
+                                        2,
+                                        *old_to_new_ids.get(&term_var2.id).unwrap(),
+                                    ),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                     defs,
                                 );
                                 ports = vec![
-                                    Port(address0, port_index0),
-                                    Port(address1, port_index1),
-                                    Port(address2, port_index2),
+                                    Port(
+                                        address0,
+                                        port_index0,
+                                        *old_to_new_ids.get(&var.id).unwrap(),
+                                    ),
+                                    Port(
+                                        address1,
+                                        port_index1,
+                                        *old_to_new_ids.get(&term_var1.id).unwrap(),
+                                    ),
+                                    Port(
+                                        address2,
+                                        port_index2,
+                                        *old_to_new_ids.get(&term_var2.id).unwrap(),
+                                    ),
                                 ];
                             } else {
                                 panic!("Invalid operation encountered: {op}")
@@ -677,63 +688,83 @@ pub fn build_string_diagram(
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 1),
+                                    Port(target_address, 1, *old_to_new_ids.get(&var.id).unwrap()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                     defs,
                                 );
+                                let const_id =
+                                    defs.register_definition(Expr::Constant(const1.clone()));
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
-                                    Port(target_address, 0),
+                                    Port(target_address, 0, const_id),
                                 ));
-                                defs.register_definition(
-                                    (Port(address1, 0), Port(target_address, 0)),
-                                    Expr::Constant(const1.clone()),
-                                );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
-                                    Port(target_address, 2),
+                                    Port(
+                                        target_address,
+                                        2,
+                                        *old_to_new_ids.get(&term_var2.id).unwrap(),
+                                    ),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                     defs,
                                 );
                                 ports = vec![
-                                    Port(address1, 0),
-                                    Port(address0, port_index0),
-                                    Port(address2, port_index2),
+                                    Port(address1, 0, const_id),
+                                    Port(
+                                        address0,
+                                        port_index0,
+                                        *old_to_new_ids.get(&var.id).unwrap(),
+                                    ),
+                                    Port(
+                                        address2,
+                                        port_index2,
+                                        *old_to_new_ids.get(&term_var2.id).unwrap(),
+                                    ),
                                 ];
                             } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
                             {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 0),
+                                    Port(target_address, 0, *old_to_new_ids.get(&var.id).unwrap()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                     defs,
                                 );
+                                let const_var =
+                                    defs.register_definition(Expr::Constant(const1.clone()));
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
-                                    Port(target_address, 1),
+                                    Port(target_address, 1, const_var),
                                 ));
-                                defs.register_definition(
-                                    (Port(address1, 0), Port(target_address, 1)),
-                                    Expr::Constant(const1.clone()),
-                                );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
-                                    Port(target_address, 2),
+                                    Port(
+                                        target_address,
+                                        2,
+                                        *old_to_new_ids.get(&term_var2.id).unwrap(),
+                                    ),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                     defs,
                                 );
                                 ports = vec![
-                                    Port(address0, port_index0),
-                                    Port(address1, 0),
-                                    Port(address2, port_index2),
+                                    Port(
+                                        address0,
+                                        port_index0,
+                                        *old_to_new_ids.get(&var.id).unwrap(),
+                                    ),
+                                    Port(address1, 0, const_var),
+                                    Port(
+                                        address2,
+                                        port_index2,
+                                        *old_to_new_ids.get(&term_var2.id).unwrap(),
+                                    ),
                                 ];
                             } else {
                                 panic!("Invalid operation encountered: {op}")
@@ -749,7 +780,7 @@ pub fn build_string_diagram(
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 1),
+                                    Port(target_address, 1, *old_to_new_ids.get(&var.id).unwrap()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
@@ -757,30 +788,40 @@ pub fn build_string_diagram(
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
-                                    Port(target_address, 0),
+                                    Port(
+                                        target_address,
+                                        0,
+                                        *old_to_new_ids.get(&term_var1.id).unwrap(),
+                                    ),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                     defs,
                                 );
+                                let const_id =
+                                    defs.register_definition(Expr::Constant(const2.clone()));
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
-                                    Port(target_address, 2),
+                                    Port(target_address, 2, const_id),
                                 ));
-                                defs.register_definition(
-                                    (Port(address2, 0), Port(target_address, 2)),
-                                    Expr::Constant(const2.clone()),
-                                );
                                 ports = vec![
-                                    Port(address1, port_index1),
-                                    Port(address0, port_index0),
-                                    Port(address2, 0),
+                                    Port(
+                                        address1,
+                                        port_index1,
+                                        *old_to_new_ids.get(&term_var1.id).unwrap(),
+                                    ),
+                                    Port(
+                                        address0,
+                                        port_index0,
+                                        *old_to_new_ids.get(&var.id).unwrap(),
+                                    ),
+                                    Port(address2, 0, const_id),
                                 ];
                             } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
                             {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 0),
+                                    Port(target_address, 0, *old_to_new_ids.get(&var.id).unwrap()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
@@ -788,24 +829,34 @@ pub fn build_string_diagram(
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
-                                    Port(target_address, 1),
+                                    Port(
+                                        target_address,
+                                        1,
+                                        *old_to_new_ids.get(&term_var1.id).unwrap(),
+                                    ),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                     defs,
                                 );
+                                let const_id =
+                                    defs.register_definition(Expr::Constant(const2.clone()));
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
-                                    Port(target_address, 2),
+                                    Port(target_address, 2, const_id),
                                 ));
-                                defs.register_definition(
-                                    (Port(address2, 0), Port(target_address, 2)),
-                                    Expr::Constant(const2.clone()),
-                                );
                                 ports = vec![
-                                    Port(address0, port_index0),
-                                    Port(address1, port_index1),
-                                    Port(address2, 0),
+                                    Port(
+                                        address0,
+                                        port_index0,
+                                        *old_to_new_ids.get(&var.id).unwrap(),
+                                    ),
+                                    Port(
+                                        address1,
+                                        port_index1,
+                                        *old_to_new_ids.get(&term_var1.id).unwrap(),
+                                    ),
+                                    Port(address2, 0, const_id),
                                 ];
                             } else {
                                 panic!("Invalid operation encountered: {op}")
@@ -817,63 +868,63 @@ pub fn build_string_diagram(
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 1),
+                                    Port(target_address, 1, *old_to_new_ids.get(&var.id).unwrap()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                     defs,
                                 );
+                                let const_id1 =
+                                    defs.register_definition(Expr::Constant(const1.clone()));
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
-                                    Port(target_address, 0),
+                                    Port(target_address, 0, const_id1),
                                 ));
-                                defs.register_definition(
-                                    (Port(address1, 0), Port(target_address, 0)),
-                                    Expr::Constant(const1.clone()),
-                                );
+                                let const_id2 =
+                                    defs.register_definition(Expr::Constant(const2.clone()));
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
-                                    Port(target_address, 2),
+                                    Port(target_address, 2, const_id2),
                                 ));
-                                defs.register_definition(
-                                    (Port(address2, 0), Port(target_address, 2)),
-                                    Expr::Constant(const2.clone()),
-                                );
                                 ports = vec![
-                                    Port(address1, 0),
-                                    Port(address0, port_index0),
-                                    Port(address2, 0),
+                                    Port(address1, 0, const_id1),
+                                    Port(
+                                        address0,
+                                        port_index0,
+                                        *old_to_new_ids.get(&var.id).unwrap(),
+                                    ),
+                                    Port(address2, 0, const_id2),
                                 ];
                             } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
                             {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 0),
+                                    Port(target_address, 0, *old_to_new_ids.get(&var.id).unwrap()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                     defs,
                                 );
+                                let const_id1 =
+                                    defs.register_definition(Expr::Constant(const1.clone()));
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
-                                    Port(target_address, 1),
+                                    Port(target_address, 1, const_id1),
                                 ));
-                                defs.register_definition(
-                                    (Port(address1, 0), Port(target_address, 1)),
-                                    Expr::Constant(const1.clone()),
-                                );
+                                let const_id2 =
+                                    defs.register_definition(Expr::Constant(const2.clone()));
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
-                                    Port(target_address, 2),
+                                    Port(target_address, 2, const_id2),
                                 ));
-                                defs.register_definition(
-                                    (Port(address2, 0), Port(target_address, 2)),
-                                    Expr::Constant(const2.clone()),
-                                );
                                 ports = vec![
-                                    Port(address0, port_index0),
-                                    Port(address1, 0),
-                                    Port(address2, 0),
+                                    Port(
+                                        address0,
+                                        port_index0,
+                                        *old_to_new_ids.get(&var.id).unwrap(),
+                                    ),
+                                    Port(address1, 0, const_id1),
+                                    Port(address2, 0, const_id2),
                                 ];
                             } else {
                                 panic!("Invalid operation encountered: {op}")
@@ -896,13 +947,10 @@ pub fn build_string_diagram(
         }
     }
 
-    // Rename variables to preserve initial definitions
-    preserve_initial_defs(defs);
-
     diagram
 }
 
-fn get_variable_ids_in_equality_nodes(diagram: &StringDiagram) -> HashSet<u32> {
+fn get_variable_ids_in_equality_nodes(diagram: &StringDiagram) -> HashSet<VarId> {
     let mut variable_ids = HashSet::new();
 
     for node in diagram.nodes.values() {
@@ -920,10 +968,10 @@ fn get_variable_ids_in_equality_nodes(diagram: &StringDiagram) -> HashSet<u32> {
 fn construct_port_vars(
     diagram: &StringDiagram,
     reg: &DefinitionRegistry,
-) -> HashMap<Port, Variable> {
+) -> HashMap<(Address, PortIndex), Variable> {
     let named_var_ids = get_variable_ids_in_equality_nodes(diagram);
 
-    let mut port_vars: HashMap<Port, Variable> = HashMap::new();
+    let mut port_vars: HashMap<(Address, PortIndex), Variable> = HashMap::new();
     let mut variable_id_counter = reg.next_id;
     while named_var_ids.contains(&variable_id_counter) {
         variable_id_counter += 1;
@@ -934,38 +982,24 @@ fn construct_port_vars(
         if let Node::Equality(vars, ports) = node {
             if let Some(var) = vars.first() {
                 for (index, target_port) in ports.iter().enumerate() {
-                    let current_port = Port(*address, index);
+                    let current_port = (*address, index);
+                    let target_port = (target_port.0, target_port.1);
 
                     port_vars.insert(current_port, var.clone());
-                    port_vars.insert(target_port.clone(), var.clone());
+                    port_vars.insert(target_port, var.clone());
                 }
-            } else if let Some(id) = reg.port_id_map.get(&Port(*address, 0)) {
+            } else if let Some(Port(target_addr, target_ptidx, target_id)) = ports.first() {
                 let var = Variable {
                     name: None,
-                    id: *id,
+                    id: *target_id,
                 };
 
-                for (index, target_port) in ports.iter().enumerate() {
-                    let current_port = Port(*address, index);
+                for (index, _target_port) in ports.iter().enumerate() {
+                    let current_port = (*address, index);
+                    let target_port = (*target_addr, *target_ptidx);
 
                     port_vars.insert(current_port, var.clone());
-                    port_vars.insert(target_port.clone(), var.clone());
-                }
-            } else {
-                let var = Variable {
-                    name: None,
-                    id: variable_id_counter,
-                };
-                variable_id_counter += 1;
-                while named_var_ids.contains(&variable_id_counter) {
-                    variable_id_counter += 1;
-                }
-
-                for (index, target_port) in ports.iter().enumerate() {
-                    let current_port = Port(*address, index);
-
-                    port_vars.insert(current_port, var.clone());
-                    port_vars.insert(target_port.clone(), var.clone());
+                    port_vars.insert(target_port, var.clone());
                 }
             }
         }
@@ -975,30 +1009,16 @@ fn construct_port_vars(
     for (address, _) in &diagram.nodes {
         let ports = diagram.port_list(address);
 
-        for (index, target_port) in ports.iter().enumerate() {
-            let current_port = Port(*address, index);
-            if !port_vars.contains_key(&current_port) {
-                if let Some(id) = reg.port_id_map.get(&current_port) {
-                    let variable = Variable {
-                        name: None,
-                        id: *id,
-                    };
-                    port_vars.insert(current_port, variable.clone());
-                    port_vars.insert(target_port.clone(), variable);
-                } else {
-                    let variable = Variable {
-                        name: None,
-                        id: variable_id_counter,
-                    };
-                    port_vars.insert(current_port, variable.clone());
-                    port_vars.insert(target_port.clone(), variable);
+        for (index, Port(target_addr, target_ptidx, target_id)) in ports.iter().enumerate() {
+            let current_port = (*address, index);
+            let target_port = (*target_addr, *target_ptidx);
+            let variable = Variable {
+                name: None,
+                id: *target_id,
+            };
 
-                    variable_id_counter += 1;
-                    while named_var_ids.contains(&variable_id_counter) {
-                        variable_id_counter += 1;
-                    }
-                }
-            }
+            port_vars.insert(current_port, variable.clone());
+            port_vars.insert(target_port, variable.clone());
         }
     }
 
@@ -1015,9 +1035,9 @@ fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExp
             Node::Addition(ports) => {
                 // Additionns should already be split up, and trivial removed
                 if ports.len() == 3 {
-                    let first_port = &ports[0];
-                    let second_port = &ports[1];
-                    let third_port = &ports[2];
+                    let first_port = &(ports[0].0, ports[0].1);
+                    let second_port = &(ports[1].0, ports[1].1);
+                    let third_port = &(ports[2].0, ports[2].1);
 
                     expressions.push(TExpr {
                         v: Expr::Infix(
@@ -1048,9 +1068,9 @@ fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExp
             Node::Multiplication(ports) => {
                 // Multiplication should already be split up, and trivial removed
                 if ports.len() == 3 {
-                    let first_port = &ports[0];
-                    let second_port = &ports[1];
-                    let third_port = &ports[2];
+                    let first_port = &(ports[0].0, ports[0].1);
+                    let second_port = &(ports[1].0, ports[1].1);
+                    let third_port = &(ports[2].0, ports[2].1);
 
                     expressions.push(TExpr {
                         v: Expr::Infix(
@@ -1105,7 +1125,7 @@ fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExp
                     v: Expr::Infix(
                         InfixOp::Equal,
                         Box::new(TExpr {
-                            v: Expr::Variable(port_vars[p1].clone()),
+                            v: Expr::Variable(port_vars[&(p1.0, p1.1)].clone()),
                             t: None,
                         }),
                         Box::new(TExpr {
@@ -1116,7 +1136,7 @@ fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExp
                                     t: None,
                                 }),
                                 Box::new(TExpr {
-                                    v: Expr::Variable(port_vars[p2].clone()),
+                                    v: Expr::Variable(port_vars[&(p2.0, p2.1)].clone()),
                                     t: None,
                                 }),
                             ),
@@ -1131,7 +1151,7 @@ fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExp
                     v: Expr::Infix(
                         InfixOp::Equal,
                         Box::new(TExpr {
-                            v: Expr::Variable(port_vars[p1].clone()),
+                            v: Expr::Variable(port_vars[&(p1.0, p1.1)].clone()),
                             t: None,
                         }),
                         Box::new(TExpr {
@@ -1142,7 +1162,7 @@ fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExp
                                     t: None,
                                 }),
                                 Box::new(TExpr {
-                                    v: Expr::Variable(port_vars[p2].clone()),
+                                    v: Expr::Variable(port_vars[&(p2.0, p2.1)].clone()),
                                     t: None,
                                 }),
                             ),
@@ -1164,11 +1184,11 @@ fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExp
                             v: Expr::Infix(
                                 InfixOp::Add,
                                 Box::new(TExpr {
-                                    v: Expr::Variable(port_vars[p1].clone()),
+                                    v: Expr::Variable(port_vars[&(p1.0, p1.1)].clone()),
                                     t: None,
                                 }),
                                 Box::new(TExpr {
-                                    v: Expr::Variable(port_vars[p2].clone()),
+                                    v: Expr::Variable(port_vars[&(p2.0, p2.1)].clone()),
                                     t: None,
                                 }),
                             ),
@@ -1190,11 +1210,11 @@ fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExp
                             v: Expr::Infix(
                                 InfixOp::Multiply,
                                 Box::new(TExpr {
-                                    v: Expr::Variable(port_vars[p1].clone()),
+                                    v: Expr::Variable(port_vars[&(p1.0, p1.1)].clone()),
                                     t: None,
                                 }),
                                 Box::new(TExpr {
-                                    v: Expr::Variable(port_vars[p2].clone()),
+                                    v: Expr::Variable(port_vars[&(p2.0, p2.1)].clone()),
                                     t: None,
                                 }),
                             ),
@@ -1215,7 +1235,7 @@ fn convert_to_3ac(diagram: &StringDiagram, reg: &DefinitionRegistry) -> Vec<TExp
                     v: Expr::Infix(
                         InfixOp::Equal,
                         Box::new(TExpr {
-                            v: Expr::Variable(port_vars[p].clone()),
+                            v: Expr::Variable(port_vars[&(p.0, p.1)].clone()),
                             t: None,
                         }),
                         Box::new(TExpr {
@@ -1387,8 +1407,10 @@ fn split_node(diagram: &mut StringDiagram, address: Address) {
             return;
         };
 
+    let new_id = diagram.get_next_var_id();
+
     // Create a new node with the rightmost argument of the original
-    let new_node_ports = vec![Port(address, 2)]
+    let new_node_ports = vec![Port(address, 2, new_id)]
         .into_iter()
         .chain(remaining_ports.iter().cloned())
         .collect();
@@ -1406,13 +1428,13 @@ fn split_node(diagram: &mut StringDiagram, address: Address) {
     {
         *ports = first_two_ports
             .into_iter()
-            .chain(std::iter::once(Port(new_address, 0)))
+            .chain(std::iter::once(Port(new_address, 0, new_id)))
             .collect();
     }
 
     // Update the port links for the remaining ports in the original node
     for (idx, port) in remaining_ports.iter().enumerate() {
-        diagram.replace_port(port, &Port(new_address, idx + 1));
+        diagram.replace_port(port, &Port(new_address, idx + 1, port.2));
     }
 }
 
@@ -1464,19 +1486,20 @@ fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) -> R
     // Create a new equality node with as many ports as the size of the exponent plus one.
     let mut equality_ports = Vec::new();
     equality_ports.push(p2.clone()); // The first port of the equality node should be the second port of the original exponentiation node
-    for i in 0..exp_value {
-        // Point the equality ports to the multiplication ports
-        equality_ports.push(Port(address, i + 1));
-    }
-    let equality_address = diagram.add_node(Node::Equality(vec![], equality_ports));
 
     // Create a new multiplication node
     let mut multiplication_ports = Vec::new();
     multiplication_ports.push(p1); // Keep the first argument the same
+
     for i in 0..exp_value {
+        let new_id = diagram.get_next_var_id();
+        // Point the equality ports to the multiplication ports
+        equality_ports.push(Port(address, i + 1, new_id));
+
         // Point the multiplication ports to the equality ports
-        multiplication_ports.push(Port(equality_address, i + 1));
+        multiplication_ports.push(Port(diagram.next_address, i + 1, new_id));
     }
+    let equality_address = diagram.add_node(Node::Equality(vec![], equality_ports));
 
     // Replace the exponentiation node with the multiplication node
     diagram
@@ -1484,7 +1507,7 @@ fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) -> R
         .insert(address, Node::Multiplication(multiplication_ports));
 
     // The second link of the original exponent node should now point to the first port of the new equality node.
-    diagram.replace_port(&p2, &Port(equality_address, 0));
+    diagram.replace_port(&p2, &Port(equality_address, 0, p2.2));
 
     trace
 }
@@ -1544,7 +1567,7 @@ fn fuse_equality_nodes(
 
     // Update the target ports in the diagram
     for (index, port) in new_ports.iter().enumerate() {
-        diagram.replace_port(port, &Port(prime_node_address, index));
+        diagram.replace_port(port, &Port(prime_node_address, index, port.2));
     }
 }
 
@@ -1601,7 +1624,7 @@ fn spider_fusion(diagram: &mut StringDiagram, prime_node_address: Address, port_
 
     // Update the target ports in the diagram
     for (index, port) in new_ports.iter().enumerate() {
-        diagram.replace_port(port, &Port(prime_node_address, index));
+        diagram.replace_port(port, &Port(prime_node_address, index, port.2));
     }
 }
 
@@ -1692,7 +1715,7 @@ fn add_constant_constant_head(
     );
 
     // Update the target link of the second port of the AddConstant node
-    diagram.replace_port(&second_port, &Port(address, 0));
+    diagram.replace_port(&second_port, &Port(address, 0, second_port.2));
 
     // Remove the original constant node connected to the first port
     diagram.nodes.remove(&first_port.0);
@@ -1733,7 +1756,7 @@ fn add_constant_constant_tail(
     );
 
     // Update the target link of the second port of the AddConstant node
-    diagram.replace_port(&first_port, &Port(address, 0));
+    diagram.replace_port(&first_port, &Port(address, 0, first_port.2));
 
     // Remove the original constant node connected to the first port
     diagram.nodes.remove(&second_port.0);
@@ -1781,7 +1804,10 @@ fn fuse_addition_by_constant_hd_tl(
     }
 
     // Update the target link of the second port to point to the first node
-    diagram.replace_port(&second_node_second_port, &Port(address, 1));
+    diagram.replace_port(
+        &second_node_second_port,
+        &Port(address, 1, second_node_second_port.2),
+    );
 
     // Remove the second AddConstant node from the diagram
     diagram.nodes.remove(&second_node_address);
@@ -1829,7 +1855,10 @@ fn fuse_addition_by_constant_hd_hd(
     }
 
     // Update the target link of the second port to point to the first node
-    diagram.replace_port(&second_node_second_port, &Port(address, 0));
+    diagram.replace_port(
+        &second_node_second_port,
+        &Port(address, 0, second_node_second_port.2),
+    );
 
     // Remove the second AddConstant node from the diagram
     diagram.nodes.remove(&second_node_address);
@@ -1877,7 +1906,10 @@ fn fuse_addition_by_constant_tl_tl(
     }
 
     // Update the target link of the second port to point to the first node
-    diagram.replace_port(&second_node_first_port, &Port(address, 1));
+    diagram.replace_port(
+        &second_node_first_port,
+        &Port(address, 1, second_node_first_port.2),
+    );
 
     // Remove the second AddConstant node from the diagram
     diagram.nodes.remove(&second_node_address);
@@ -1921,7 +1953,7 @@ fn mul_constant_constant_head(
     );
 
     // Update the target link of the second port of the MultiplyConstant node
-    diagram.replace_port(&second_port, &Port(address, 0));
+    diagram.replace_port(&second_port, &Port(address, 0, second_port.2));
 
     // Remove the original constant node connected to the first port
     diagram.nodes.remove(&first_port.0);
@@ -1964,7 +1996,7 @@ fn mul_constant_constant_tail(
     );
 
     // Update the target link of the second port of the MultiplyConstant node
-    diagram.replace_port(&first_port, &Port(address, 0));
+    diagram.replace_port(&first_port, &Port(address, 0, first_port.2));
 
     // Remove the original constant node connected to the first port
     diagram.nodes.remove(&second_port.0);
@@ -1993,7 +2025,7 @@ fn mul_constant_zero(diagram: &mut StringDiagram, address: Address) {
             .insert(address, Node::Constant(BigInt::from(0), port1));
 
         // Update the target link of the second port to point to the new Unrestricted node
-        diagram.replace_port(&port2, &Port(unrestricted_address, 0));
+        diagram.replace_port(&port2, &Port(unrestricted_address, 0, port2.2));
     }
 }
 
@@ -2039,7 +2071,10 @@ fn fuse_multiplication_by_constant_hd_tl(
     }
 
     // Update the target link of the second port to point to the first node
-    diagram.replace_port(&second_node_second_port, &Port(address, 1));
+    diagram.replace_port(
+        &second_node_second_port,
+        &Port(address, 1, second_node_second_port.2),
+    );
 
     // Remove the second MultiplyConstant node from the diagram
     diagram.nodes.remove(&second_node_address);
@@ -2100,10 +2135,13 @@ fn fuse_multiplication_by_constant_hd_hd(
     );
 
     // Update the target link of the first port to point to the first node
-    diagram.replace_port(&second_port, &Port(address, 0));
+    diagram.replace_port(&second_port, &Port(address, 0, second_port.2));
 
     // Update the target link of the second port to point to the first node
-    diagram.replace_port(&second_node_second_port, &Port(address, 1));
+    diagram.replace_port(
+        &second_node_second_port,
+        &Port(address, 1, second_node_second_port.2),
+    );
 
     // Remove the second MultiplyConstant node from the diagram
     diagram.nodes.remove(&second_node_address);
@@ -2164,10 +2202,13 @@ fn fuse_multiplication_by_constant_tl_tl(
     );
 
     // Update the target link of the first port to point to the first node
-    diagram.replace_port(&second_node_first_port, &Port(address, 0));
+    diagram.replace_port(
+        &second_node_first_port,
+        &Port(address, 0, second_node_first_port.2),
+    );
 
     // Update the target link of the second port to point to the first node
-    diagram.replace_port(&first_port, &Port(address, 1));
+    diagram.replace_port(&first_port, &Port(address, 1, first_port.2));
 
     // Remove the second MultiplyConstant node from the diagram
     diagram.nodes.remove(&second_node_address);
@@ -2210,7 +2251,7 @@ fn exp_constant_constant_tail(
     );
 
     // Update the target link of the second port of the ExponentiateConstant node
-    diagram.replace_port(&first_port, &Port(address, 0));
+    diagram.replace_port(&first_port, &Port(address, 0, second_port.2));
 
     // Remove the original constant node connected to the first port
     diagram.nodes.remove(&second_port.0);
@@ -2266,7 +2307,10 @@ fn fuse_exponentiation_by_constant_hd_tl(
     }
 
     // Update the target link of the second port to point to the first node
-    diagram.replace_port(&second_node_second_port, &Port(address, 1));
+    diagram.replace_port(
+        &second_node_second_port,
+        &Port(address, 1, second_node_second_port.2),
+    );
 
     // Remove the second ExponentiateConstant node from the diagram
     diagram.nodes.remove(&second_node_address);
@@ -2309,7 +2353,7 @@ fn equality_unrestricted(diagram: &mut StringDiagram, address: Address, port_ind
 
     // Now apply the stored new ports to the diagram
     for (index, new_port) in new_ports.iter().enumerate() {
-        diagram.replace_port(new_port, &Port(address, index));
+        diagram.replace_port(new_port, &Port(address, index, new_port.2));
     }
 }
 
@@ -2345,24 +2389,26 @@ fn addition_const_addition(
     };
 
     // Whatever the head of the Addition node is pointing to should now point to the head of the AddConstant node.
-    diagram.replace_port(&old_head_port, &Port(target_address, 0));
+    diagram.replace_port(&old_head_port, &Port(target_address, 0, old_head_port.2));
+
+    let new_id = diagram.get_next_var_id();
 
     // The head of the Addition node should now point to the tail of the AddConstant node.
-    diagram.replace_port(&Port(address, 0), &Port(target_address, 1));
+    diagram.replace_port(&Port(address, 0, 0), &Port(target_address, 1, new_id));
 
     // Make the necessary connection based on which port of the AddConstant node was connected to the Addition node.
     if target_port_index == 0 {
-        diagram.replace_port(&Port(address, port_index), &second_port);
-        diagram.replace_port(&second_port, &Port(address, port_index));
+        diagram.replace_port(&Port(address, port_index, 0), &second_port);
+        diagram.replace_port(&second_port, &Port(address, port_index, second_port.2));
     } else {
-        diagram.replace_port(&Port(address, port_index), &first_port);
-        diagram.replace_port(&first_port, &Port(address, port_index));
+        diagram.replace_port(&Port(address, port_index, 0), &first_port);
+        diagram.replace_port(&first_port, &Port(address, port_index, first_port.2));
     };
 
     // Insert the updated AddConstant node.
     diagram.nodes.insert(
         target_address,
-        Node::AddConstant(new_value, old_head_port, Port(address, 0)),
+        Node::AddConstant(new_value, old_head_port.clone(), Port(address, 0, new_id)),
     );
 }
 
@@ -2398,24 +2444,26 @@ fn multiplication_const_multiplication(
     };
 
     // Whatever the head of the Multiplication node is pointing to should now point to the head of the MultiplyConstant node.
-    diagram.replace_port(&old_head_port, &Port(target_address, 0));
+    diagram.replace_port(&old_head_port, &Port(target_address, 0, old_head_port.2));
+
+    let new_id = diagram.get_next_var_id();
 
     // The head of the Multiplication node should now point to the tail of the MultiplyConstant node.
-    diagram.replace_port(&Port(address, 0), &Port(target_address, 1));
+    diagram.replace_port(&Port(address, 0, 0), &Port(target_address, 1, new_id));
 
     // Make the necessary connection based on which port of the MultiplyConstant node was connected to the Multiplication node.
     if target_port_index == 0 {
-        diagram.replace_port(&Port(address, port_index), &second_port);
-        diagram.replace_port(&second_port, &Port(address, port_index));
+        diagram.replace_port(&Port(address, port_index, 0), &second_port);
+        diagram.replace_port(&second_port, &Port(address, port_index, second_port.2));
     } else {
-        diagram.replace_port(&Port(address, port_index), &first_port);
-        diagram.replace_port(&first_port, &Port(address, port_index));
+        diagram.replace_port(&Port(address, port_index, 0), &first_port);
+        diagram.replace_port(&first_port, &Port(address, port_index, first_port.2));
     };
 
     // Insert the updated MultiplyConstant node.
     diagram.nodes.insert(
         target_address,
-        Node::MultiplyConstant(new_value, old_head_port, Port(address, 0)),
+        Node::MultiplyConstant(new_value, old_head_port.clone(), Port(address, 0, new_id)),
     );
 }
 
@@ -2437,10 +2485,12 @@ fn addition_const(diagram: &mut StringDiagram, address: Address, port_index: Por
     };
 
     // Whatever the head of the Addition node is pointing to should now point to the head of the AddConstant node.
-    diagram.replace_port(&old_head_port, &Port(target_address, 0));
+    diagram.replace_port(&old_head_port, &Port(target_address, 0, old_head_port.2));
+
+    let new_id = diagram.get_next_var_id();
 
     // The head of the Addition node should now point to the tail of the AddConstant node.
-    diagram.replace_port(&Port(address, 0), &Port(target_address, 1));
+    diagram.replace_port(&Port(address, 0, 0), &Port(target_address, 1, new_id));
 
     // Drop the previous port index and update linked ports.
     // Temporarily store the new ports to avoid borrowing issues
@@ -2457,13 +2507,13 @@ fn addition_const(diagram: &mut StringDiagram, address: Address, port_index: Por
 
     // Now apply the stored new ports to the diagram
     for (index, new_port) in new_ports.iter().enumerate() {
-        diagram.replace_port(new_port, &Port(address, index));
+        diagram.replace_port(new_port, &Port(address, index, new_port.2));
     }
 
     // Insert the updated AddConstant node.
     diagram.nodes.insert(
         target_address,
-        Node::AddConstant(value, old_head_port, Port(address, 0)),
+        Node::AddConstant(value, old_head_port.clone(), Port(address, 0, new_id)),
     );
 }
 
@@ -2485,10 +2535,12 @@ fn multiplication_const(diagram: &mut StringDiagram, address: Address, port_inde
     };
 
     // Whatever the head of the Multiplication node is pointing to should now point to the head of the MultiplyConstant node.
-    diagram.replace_port(&old_head_port, &Port(target_address, 0));
+    diagram.replace_port(&old_head_port, &Port(target_address, 0, old_head_port.2));
+
+    let new_id = diagram.get_next_var_id();
 
     // The head of the Multiplication node should now point to the tail of the MultiplyConstant node.
-    diagram.replace_port(&Port(address, 0), &Port(target_address, 1));
+    diagram.replace_port(&Port(address, 0, 0), &Port(target_address, 1, new_id));
 
     // Drop the previous port index and update linked ports.
     // Temporarily store the new ports to avoid borrowing issues
@@ -2505,24 +2557,31 @@ fn multiplication_const(diagram: &mut StringDiagram, address: Address, port_inde
 
     // Now apply the stored new ports to the diagram
     for (index, new_port) in new_ports.iter().enumerate() {
-        diagram.replace_port(new_port, &Port(address, index));
+        diagram.replace_port(new_port, &Port(address, index, new_port.2));
     }
 
     // Insert the updated MultiplyConstant node.
     diagram.nodes.insert(
         target_address,
-        Node::MultiplyConstant(value, old_head_port, Port(address, 0)),
+        Node::MultiplyConstant(value, old_head_port.clone(), Port(address, 0, new_id)),
     );
 }
 
 // If X = c and Y = X and A = X etc. then Y = c and A = c, etc
 fn equality_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract the necessary information
-    let (has_variables, target_port, const_value) =
+    let (has_variables, target_port, const_value, cvar_id) =
         if let Some(Node::Equality(variables, ports)) = diagram.nodes.get(&address) {
             if let Some(target_port) = ports.get(port_index) {
-                if let Some(Node::Constant(value, _)) = diagram.nodes.get(&target_port.0) {
-                    (!variables.is_empty(), target_port.clone(), value.clone())
+                if let Some(Node::Constant(value, Port(_, _, cvar_id))) =
+                    diagram.nodes.get(&target_port.0)
+                {
+                    (
+                        !variables.is_empty(),
+                        target_port.clone(),
+                        value.clone(),
+                        *cvar_id,
+                    )
                 } else {
                     return;
                 }
@@ -2546,15 +2605,17 @@ fn equality_const(diagram: &mut StringDiagram, address: Address, port_index: Por
         // the original constant node should be dropped from the equality node.
         if has_variables {
             ports.retain(|port| *port == target_port);
-            diagram.replace_port(&target_port, &Port(address, 0));
+            diagram.replace_port(&target_port, &Port(address, 0, target_port.2));
         }
     }
 
     // Update the gathered ports
     for port in ports_to_update {
-        let new_const_node_addr =
-            diagram.add_node(Node::Constant(const_value.clone(), port.clone()));
-        diagram.replace_port(&port, &Port(new_const_node_addr, 0));
+        let new_const_node_addr = diagram.add_node(Node::Constant(
+            const_value.clone(),
+            Port(port.0, port.1, cvar_id),
+        ));
+        diagram.replace_port(&port, &Port(new_const_node_addr, 0, cvar_id));
     }
 
     // If the equality node has no variables, it, along with the original constant node, should be deleted.
@@ -2598,7 +2659,7 @@ fn addmul_unrestricted(diagram: &mut StringDiagram, address: Address, port_index
     // Update the gathered ports
     for port in ports_to_update {
         let new_const_node_addr = diagram.add_node(Node::Unrestricted(port.clone()));
-        diagram.replace_port(&port, &Port(new_const_node_addr, 0));
+        diagram.replace_port(&port, &Port(new_const_node_addr, 0, port.2));
     }
 
     diagram.nodes.remove(&address);
@@ -2626,16 +2687,10 @@ fn delete_const_op_unrestricted(
         _ => return,
     };
 
-    // Determine if either of the ports is connected to an Unrestricted node
-    let is_port1_unrestricted = matches!(diagram.nodes.get(&port1.0), Some(Node::Unrestricted(_)));
-    let is_port2_unrestricted = matches!(diagram.nodes.get(&port2.0), Some(Node::Unrestricted(_)));
-
-    let (unrestricted_port, other_port) = if is_port1_unrestricted {
-        (port1, port2)
-    } else if is_port2_unrestricted {
-        (port2, port1)
+    let (unrestricted_port, other_port) = if port_index == 0 {
+        (port2.clone(), Port(port1.0, port1.1, port2.2))
     } else {
-        return;
+        (port1.clone(), Port(port2.0, port2.1, port1.2))
     };
 
     // At this point, one of the ports is connected to an Unrestricted node
@@ -2683,17 +2738,26 @@ fn swap_add_and_multiply_constants_hd_tl(
     let new_add_value = field_ops.infix(InfixOp::Multiply, add_value, multiply_value.clone());
 
     // Update the diagram.
+    let new_id = diagram.get_next_var_id();
 
     // Turn the AddConstant node into a MultiplyConstant node.
     diagram.nodes.insert(
         address,
-        Node::MultiplyConstant(multiply_value, add_head_port, add_tail_port),
+        Node::MultiplyConstant(
+            multiply_value,
+            Port(add_head_port.0, add_head_port.1, new_id),
+            add_tail_port,
+        ),
     );
 
     // Turn the MultiplyConstant node into an AddConstant node.
     diagram.nodes.insert(
         multiply_address,
-        Node::AddConstant(new_add_value, multiply_head_port, multiply_tail_port),
+        Node::AddConstant(
+            new_add_value,
+            multiply_head_port,
+            Port(multiply_tail_port.0, multiply_tail_port.1, new_id),
+        ),
     );
 }
 
@@ -2735,20 +2799,25 @@ fn swap_add_and_multiply_constants_tl_tl(
         field_ops.negate(field_ops.infix(InfixOp::Multiply, add_value, multiply_value.clone()));
 
     // Update the diagram.
+    let new_id = diagram.get_next_var_id();
 
     // Turn the AddConstant node into a MultiplyConstant node with swapped ports.
     diagram.nodes.insert(
         address,
-        Node::MultiplyConstant(multiply_value, add_tail_port, add_head_port.clone()),
+        Node::MultiplyConstant(
+            multiply_value,
+            Port(add_tail_port.0, add_tail_port.1, new_id),
+            add_head_port.clone(),
+        ),
     );
 
     // Update the linking ports to compensate for the swap.
-    diagram.replace_port(&add_head_port, &Port(address, 1));
+    diagram.replace_port(&add_head_port, &Port(address, 1, add_head_port.2));
 
     // Turn the MultiplyConstant node into an AddConstant node.
     diagram.nodes.insert(
         multiply_address,
-        Node::AddConstant(new_add_value, multiply_head_port, Port(address, 0)),
+        Node::AddConstant(new_add_value, multiply_head_port, Port(address, 0, new_id)),
     );
 }
 
@@ -2801,7 +2870,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                             .collect();
                         let outer_ports_2 = ports
                             .iter()
-                            .filter(|&p| p != &Port(address, port_index))
+                            .filter(|&p| (p.0 != address) & (p.1 != port_index))
                             .cloned()
                             .collect();
 
@@ -2851,7 +2920,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                                     .collect();
                                 let outer_ports_2 = ports
                                     .iter()
-                                    .filter(|&p| p != &Port(address, port_index))
+                                    .filter(|&p| (p.0 != address) & (p.1 != port_index))
                                     .cloned()
                                     .collect();
 
@@ -2914,7 +2983,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                                     .collect();
                                 let outer_ports_2 = ports
                                     .iter()
-                                    .filter(|&p| p != &Port(address, port_index))
+                                    .filter(|&p| (p.0 != address) & (p.1 != port_index))
                                     .cloned()
                                     .collect();
 
@@ -3392,8 +3461,8 @@ fn cvv_addmul(diagram: &mut StringDiagram, address: Address) {
         diagram.nodes.insert(address, new_node);
 
         // Update the linking ports of the new node
-        diagram.replace_port(&tail1_port, &Port(address, 0));
-        diagram.replace_port(&tail2_port, &Port(address, 1));
+        diagram.replace_port(&tail1_port, &Port(address, 0, tail1_port.2));
+        diagram.replace_port(&tail2_port, &Port(address, 1, tail2_port.2));
 
         // Now that we have updated the node and linking ports, we can safely remove the Constant node
         diagram.nodes.remove(&head_port.0);
@@ -3466,205 +3535,205 @@ fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
 
 // Update definitions after binary node is removed
 fn binary_removal_update(
-    defs: &mut DefinitionRegistry,
-    address: &Address,
-    port1: &Port,
-    port2: &Port,
+    _defs: &mut DefinitionRegistry,
+    _address: &Address,
+    _port1: &Port,
+    _port2: &Port,
 ) {
     // Get the id of the definition both remaining ports will be assinged to
-    let main_id = *defs.port_id_map.get(port1).unwrap();
+    //let main_id = *defs.port_id_map.get(port1).unwrap();
 
     // Remove the ansciliary connection (second port will be added back later)
-    defs.remove_ports((&Port(*address, 1), port2));
+    //defs.remove_ports((&Port(*address, 1), port2));
 
     // Remove principal port, and add second port to definition
-    defs.port_id_map.remove(&Port(*address, 0));
-    if let Some((ports, _)) = defs.id_def_map.get_mut(&main_id) {
-        ports.remove(&Port(*address, 0));
-        ports.insert(port2.clone());
-    }
+    // defs.port_id_map.remove(&Port(*address, 0));
+    // if let Some((ports, _)) = defs.id_def_map.get_mut(&main_id) {
+    //     ports.remove(&Port(*address, 0));
+    //     ports.insert(port2.clone());
+    // }
 
     // Map second port to its new definition
-    defs.port_id_map.insert(port2.clone(), main_id);
+    //defs.port_id_map.insert(port2.clone(), main_id);
 }
 
 fn spider_fusion_update(
-    defs: &mut DefinitionRegistry,
-    conserved_address: &Address,
-    ports: &Vec<Port>,
-    conserved_ports: &usize,
-    removed_address: &Address,
-    removed_ports: &usize,
+    _defs: &mut DefinitionRegistry,
+    _conserved_address: &Address,
+    _ports: &Vec<Port>,
+    _conserved_ports: &usize,
+    _removed_address: &Address,
+    _removed_ports: &usize,
 ) {
     // Remove the ports of the form Port(removed_address, x)
-    for i in 0..*removed_ports {
-        defs.remove_port(&Port(*removed_address, i));
-    }
+    // for i in 0..*removed_ports {
+    //     defs.remove_port(&Port(*removed_address, i));
+    // }
 
     // Remove original ports of the conserved address (these will be added back later)
-    for i in 0..*conserved_ports {
-        defs.remove_port(&Port(*conserved_address, i));
-    }
+    // for i in 0..*conserved_ports {
+    //     defs.remove_port(&Port(*conserved_address, i));
+    // }
 
     // Update the variable IDs for the new connections (this adds back the ports)
     // This just assignes variables of outer ports to the inner ports;
     // No definitions need to be changed.
-    for (index, port) in ports.iter().enumerate() {
-        if let Some(&var_id) = defs.port_id_map.get(port) {
-            defs.add_port_to_id(Port(*conserved_address, index), var_id);
-        }
-    }
+    // for (index, port) in ports.iter().enumerate() {
+    //     if let Some(&var_id) = defs.port_id_map.get(port) {
+    //         defs.add_port_to_id(Port(*conserved_address, index), var_id);
+    //     }
+    // }
 }
 
 fn constant_eq_update(
-    defs: &mut DefinitionRegistry,
-    removed_address: &Address,
-    ports: &Vec<Port>,
-    removed_const_address: &Address,
-    lowest_const_addr: &Address,
-    constant_value: BigInt,
+    _defs: &mut DefinitionRegistry,
+    _removed_address: &Address,
+    _ports: &Vec<Port>,
+    _removed_const_address: &Address,
+    _lowest_const_addr: &Address,
+    _constant_value: BigInt,
 ) {
     // Note: if the equality node had variables, then there will be an isolated link with no assigned variable.
     // This is fine, as this will get its value from the named variable stored in the equality node.
 
     // Remove constant port
-    defs.remove_port(&Port(*removed_const_address, 0));
+    // defs.remove_port(&Port(*removed_const_address, 0));
 
     // Remove every port in removed_address
-    let num_ports = ports.len() + 1;
-    for i in 0..num_ports {
-        defs.remove_port(&Port(*removed_address, i));
-    }
+    // let num_ports = ports.len() + 1;
+    // for i in 0..num_ports {
+    //     defs.remove_port(&Port(*removed_address, i));
+    // }
 
     // Replace the definition for all the ids connected to each port in ports with the constant
-    for port in ports.iter() {
-        if let Some((_, expr)) = defs.id_def_map.get_mut(defs.port_id_map.get(port).unwrap()) {
-            // Replace the definition with the constant
-            *expr = Box::new(TExpr {
-                v: Expr::Constant(constant_value.clone()),
-                t: None,
-            });
-        }
-    }
+    // for port in ports.iter() {
+    //     if let Some((_, expr)) = defs.id_def_map.get_mut(defs.port_id_map.get(port).unwrap()) {
+    //         // Replace the definition with the constant
+    //         *expr = Box::new(TExpr {
+    //             v: Expr::Constant(constant_value.clone()),
+    //             t: None,
+    //         });
+    //     }
+    // }
 
     // Assign the variable id of the port in ports to the new constant port
-    for (index, port) in ports.iter().enumerate() {
-        if let Some(&var_id) = defs.port_id_map.get(port) {
-            defs.add_port_to_id(Port(*lowest_const_addr + index, 0), var_id);
-        }
-    }
+    // for (index, port) in ports.iter().enumerate() {
+    //     if let Some(&var_id) = defs.port_id_map.get(port) {
+    //         defs.add_port_to_id(Port(*lowest_const_addr + index, 0), var_id);
+    //     }
+    // }
 }
 
 fn unrestricted_op_update(
-    defs: &mut DefinitionRegistry,
-    removed_address: &Address,
-    ports: &Vec<Port>,
-    removed_unrest_address: &Address,
-    lowest_unrest_addr: &Address,
+    _defs: &mut DefinitionRegistry,
+    _removed_address: &Address,
+    _ports: &Vec<Port>,
+    _removed_unrest_address: &Address,
+    _lowest_unrest_addr: &Address,
 ) {
     // Remove unrestricted port
-    defs.remove_port(&Port(*removed_unrest_address, 0));
+    // defs.remove_port(&Port(*removed_unrest_address, 0));
 
     // Remove every port in removed_address
-    let num_ports = ports.len() + 1;
-    for i in 0..num_ports {
-        defs.remove_port(&Port(*removed_address, i));
-    }
+    // let num_ports = ports.len() + 1;
+    // for i in 0..num_ports {
+    //     defs.remove_port(&Port(*removed_address, i));
+    // }
 
     // Assign the variable id of the port in ports to the new unrestricted port
-    for (index, port) in ports.iter().enumerate() {
-        if let Some(&var_id) = defs.port_id_map.get(port) {
-            defs.add_port_to_id(Port(*lowest_unrest_addr + index, 0), var_id);
-        }
-    }
+    // for (index, port) in ports.iter().enumerate() {
+    //     if let Some(&var_id) = defs.port_id_map.get(port) {
+    //         defs.add_port_to_id(Port(*lowest_unrest_addr + index, 0), var_id);
+    //     }
+    // }
 
     // Note: no definitions need to be altered.
 }
 
 fn split_operation_update(
-    defs: &mut DefinitionRegistry,
-    split_address: &Address,
-    right_address: &Address,
-    right_ports: &Vec<Port>,
-    is_add: bool,
+    _defs: &mut DefinitionRegistry,
+    _split_address: &Address,
+    _right_address: &Address,
+    _right_ports: &Vec<Port>,
+    _is_add: bool,
 ) {
     // Determine operation
-    let op = if is_add {
-        InfixOp::Add
-    } else {
-        InfixOp::Multiply
-    };
+    // let op = if is_add {
+    //     InfixOp::Add
+    // } else {
+    //     InfixOp::Multiply
+    // };
 
     // Remove all the old ports no longer connected to the split node
-    for i in 0..right_ports.len() {
-        defs.remove_port(&Port(*split_address, i as PortIndex + 2));
-    }
+    // for i in 0..right_ports.len() {
+    //     defs.remove_port(&Port(*split_address, i as PortIndex + 2));
+    // }
 
     // If the operation being split is ternary, then the definition of the right side should be the sum of the right two values
     //    or, rather, the variables holding those values.
     // If the operation being split isn't ternary, then `right_two_address` will be `None`, and the right value is (temporarily) set to 0.
-    let new_definition = match right_ports.len() {
-        2 => {
-            let var1 = defs.port_id_map.get(&right_ports[0]).unwrap();
-            let var2 = defs.port_id_map.get(&right_ports[1]).unwrap();
-            Expr::Infix(
-                op,
-                Box::new(TExpr {
-                    v: Expr::Variable(Variable {
-                        id: *var1,
-                        name: None,
-                    }),
-                    t: None,
-                }),
-                Box::new(TExpr {
-                    v: Expr::Variable(Variable {
-                        id: *var2,
-                        name: None,
-                    }),
-                    t: None,
-                }),
-            )
-        }
-        _ => Expr::Constant(0.into()), // default to constant 0
-    };
+    // let new_definition = match right_ports.len() {
+    //     2 => {
+    //         let var1 = defs.port_id_map.get(&right_ports[0]).unwrap();
+    //         let var2 = defs.port_id_map.get(&right_ports[1]).unwrap();
+    //         Expr::Infix(
+    //             op,
+    //             Box::new(TExpr {
+    //                 v: Expr::Variable(Variable {
+    //                     id: *var1,
+    //                     name: None,
+    //                 }),
+    //                 t: None,
+    //             }),
+    //             Box::new(TExpr {
+    //                 v: Expr::Variable(Variable {
+    //                     id: *var2,
+    //                     name: None,
+    //                 }),
+    //                 t: None,
+    //             }),
+    //         )
+    //     }
+    //     _ => Expr::Constant(0.into()), // default to constant 0
+    // };
 
     // Register this new definition
-    let right_id = defs.register_definition(
-        (Port(*split_address, 2), Port(*right_address, 0)),
-        new_definition,
-    );
+    // let right_id = defs.register_definition(
+    //     (Port(*split_address, 2), Port(*right_address, 0)),
+    //     new_definition,
+    // );
 
     // Update the definition of the id associated with the operation head.
-    let head_id = defs.port_id_map.get(&Port(*split_address, 0)).unwrap();
-    let left_id = defs.port_id_map.get(&Port(*split_address, 1)).unwrap();
-    if let Some((_, expr)) = defs.id_def_map.get_mut(head_id) {
-        *expr = Box::new(TExpr {
-            v: Expr::Infix(
-                op,
-                Box::new(TExpr {
-                    v: Expr::Variable(Variable {
-                        id: *left_id,
-                        name: None,
-                    }),
-                    t: None,
-                }),
-                Box::new(TExpr {
-                    v: Expr::Variable(Variable {
-                        id: right_id,
-                        name: None,
-                    }),
-                    t: None,
-                }),
-            ),
-            t: None,
-        });
-    }
+    // let head_id = defs.port_id_map.get(&Port(*split_address, 0)).unwrap();
+    // let left_id = defs.port_id_map.get(&Port(*split_address, 1)).unwrap();
+    // if let Some((_, expr)) = defs.id_def_map.get_mut(head_id) {
+    //     *expr = Box::new(TExpr {
+    //         v: Expr::Infix(
+    //             op,
+    //             Box::new(TExpr {
+    //                 v: Expr::Variable(Variable {
+    //                     id: *left_id,
+    //                     name: None,
+    //                 }),
+    //                 t: None,
+    //             }),
+    //             Box::new(TExpr {
+    //                 v: Expr::Variable(Variable {
+    //                     id: right_id,
+    //                     name: None,
+    //                 }),
+    //                 t: None,
+    //             }),
+    //         ),
+    //         t: None,
+    //     });
+    // }
 
     // Assign the variable ids associated with the right_ports to the ports of right_address
-    for (i, port) in right_ports.iter().enumerate() {
-        let id = defs.port_id_map.get(port).unwrap();
-        defs.add_port_to_id(Port(*right_address, i as PortIndex + 1), *id);
-    }
+    // for (i, port) in right_ports.iter().enumerate() {
+    //     let id = defs.port_id_map.get(port).unwrap();
+    //     defs.add_port_to_id(Port(*right_address, i as PortIndex + 1), *id);
+    // }
 }
 
 fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
@@ -3675,13 +3744,13 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
         RewriteRule::RemoveUnaryEquality(_address) => {
             // Nothing to do; no ports affected
         }
-        RewriteRule::RemoveUnaryAddition(address) => {
+        RewriteRule::RemoveUnaryAddition(_address) => {
             // Overwrite old definition with constant expression
-            defs.replace_definition_of_port(&Port(address, 0), Expr::Constant(BigInt::from(0)));
+            //defs.replace_definition_of_port(&Port(address, 0), Expr::Constant(BigInt::from(0)));
         }
-        RewriteRule::RemoveUnaryMultiplication(address) => {
+        RewriteRule::RemoveUnaryMultiplication(_address) => {
             // Overwrite old definition with constant expression
-            defs.replace_definition_of_port(&Port(address, 0), Expr::Constant(BigInt::from(1)));
+            //defs.replace_definition_of_port(&Port(address, 0), Expr::Constant(BigInt::from(1)));
         }
         RewriteRule::SplitAddition(split_address, right_address, right_ports) => {
             split_operation_update(defs, &split_address, &right_address, &right_ports, true)
@@ -3868,17 +3937,17 @@ fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
         RewriteRule::FuseExponentiationByConstantHdTl(_address) => {
             // Not implemented
         }
-        RewriteRule::ConstantConstantRemoval(address1, address2) => {
-            defs.remove_ports((&Port(address1, 0), &Port(address2, 0)));
+        RewriteRule::ConstantConstantRemoval(_address1, _address2) => {
+            //defs.remove_ports((&Port(address1, 0), &Port(address2, 0)));
         }
-        RewriteRule::UnrestrictedUnaryRemoval(address1, address2) => {
-            defs.remove_ports((&Port(address1, 0), &Port(address2, 0)));
+        RewriteRule::UnrestrictedUnaryRemoval(_address1, _address2) => {
+            //defs.remove_ports((&Port(address1, 0), &Port(address2, 0)));
         }
-        RewriteRule::ReduceCVVAddition(add_address, const_port) => {
-            defs.remove_ports((&Port(add_address, 0), &const_port));
+        RewriteRule::ReduceCVVAddition(_add_address, _const_port) => {
+            //defs.remove_ports((&Port(add_address, 0), &const_port));
         }
-        RewriteRule::ReduceCVVMultiplication(mul_address, const_port) => {
-            defs.remove_ports((&Port(mul_address, 0), &const_port));
+        RewriteRule::ReduceCVVMultiplication(_mul_address, _const_port) => {
+            //defs.remove_ports((&Port(mul_address, 0), &const_port));
         }
     }
 }
@@ -3893,7 +3962,7 @@ fn synthesize_defs(defs: &mut DefinitionRegistry, trace: RewriteTrace) -> Vec<De
 
 pub fn simplify_3ac(
     equations: &mut Vec<TExpr>,
-    input_ids: &HashSet<u32>,
+    input_ids: &HashSet<VarId>,
     defs: &mut Vec<Definition>,
     field_ops: &dyn FieldOps,
 ) {
