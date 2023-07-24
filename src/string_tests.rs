@@ -108,8 +108,72 @@ mod tests {
         input_ids.insert(13);
         input_ids.insert(14);
 
+        let mut def_vec = vec![];
+        def_vec.push(Definition(LetBinding(
+            TPat {
+                v: Pat::Variable(Variable { id: 11, name: None }),
+                t: None,
+            },
+            Box::new(TExpr {
+                v: Expr::Constant(BigInt::from(0)),
+                t: None,
+            }),
+        )));
+        def_vec.push(Definition(LetBinding(
+            TPat {
+                v: Pat::Variable(Variable { id: 12, name: None }),
+                t: None,
+            },
+            Box::new(TExpr {
+                v: Expr::Constant(BigInt::from(0)),
+                t: None,
+            }),
+        )));
+        def_vec.push(Definition(LetBinding(
+            TPat {
+                v: Pat::Variable(Variable { id: 13, name: None }),
+                t: None,
+            },
+            Box::new(TExpr {
+                v: Expr::Constant(BigInt::from(0)),
+                t: None,
+            }),
+        )));
+        def_vec.push(Definition(LetBinding(
+            TPat {
+                v: Pat::Variable(Variable { id: 14, name: None }),
+                t: None,
+            },
+            Box::new(TExpr {
+                v: Expr::Constant(BigInt::from(0)),
+                t: None,
+            }),
+        )));
+        def_vec.push(Definition(LetBinding(
+            TPat {
+                v: Pat::Variable(Variable { id: 56, name: None }),
+                t: None,
+            },
+            Box::new(TExpr {
+                v: Expr::Constant(BigInt::from(0)),
+                t: None,
+            }),
+        )));
+        def_vec.push(Definition(LetBinding(
+            TPat {
+                v: Pat::Variable(Variable { id: 58, name: None }),
+                t: None,
+            },
+            Box::new(TExpr {
+                v: Expr::Constant(BigInt::from(0)),
+                t: None,
+            }),
+        )));
+
         let str_diag =
-            build_string_diagram(test_expr, &input_ids, &mut DefinitionRegistry::new(vec![]));
+            build_string_diagram(test_expr, &input_ids, &mut DefinitionRegistry::new(def_vec));
+
+        println!("{:?}", str_diag);
 
         assert!(
             str_diag.is_well_formed(),
