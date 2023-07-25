@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn test_fuse_equality_nodes_basic() {
         // Create a simple diagram with two equality nodes and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(4, 2, 1)));
         let i3 = diagram.add_node(Node::Unrestricted(Port(5, 0, 2)));
@@ -209,7 +209,14 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseEquality(addr1, 1));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::FuseEquality(addr1, 1),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -242,7 +249,7 @@ mod tests {
     #[test]
     fn test_fuse_addition_nodes() {
         // Create a simple diagram with two equality nodes and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(4, 2, 1)));
         let i4 = diagram.add_node(Node::Unrestricted(Port(5, 1, 2)));
@@ -266,7 +273,14 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseAddition(addr1, 1));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::FuseAddition(addr1, 1),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -293,7 +307,7 @@ mod tests {
     #[test]
     fn test_fuse_multiplication_nodes() {
         // Create a simple diagram with two equality nodes and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(4, 2, 1)));
         let i4 = diagram.add_node(Node::Unrestricted(Port(5, 1, 2)));
@@ -317,7 +331,14 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseMultiplication(addr1, 1));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::FuseMultiplication(addr1, 1),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -344,7 +365,7 @@ mod tests {
     #[test]
     fn test_split_addition_nodes_basic() {
         // Create a simple diagram with a single addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
         let i3 = diagram.add_node(Node::Unrestricted(Port(4, 2, 2)));
@@ -364,14 +385,16 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Split the node
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::SplitAddition(
                 addr1,
                 Port(i1, 0, 0),
                 Port(i2, 0, 1),
-                addr1 + 1,
                 vec![Port(i3, 0, 2), Port(i4, 0, 3)],
             ),
         );
@@ -432,7 +455,7 @@ mod tests {
     #[test]
     fn test_split_multiplication_nodes_basic() {
         // Create a simple diagram with a single multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
         let i3 = diagram.add_node(Node::Unrestricted(Port(4, 2, 2)));
@@ -452,14 +475,16 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Split the node
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::SplitMultiplication(
                 addr1,
                 Port(i1, 0, 0),
                 Port(i2, 0, 1),
-                addr1 + 1,
                 vec![Port(i3, 0, 2), Port(i4, 0, 3)],
             ),
         );
@@ -520,7 +545,7 @@ mod tests {
     #[test]
     fn test_constant_constant_eq() {
         // Create a simple diagram with a single pair of interacting constants and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(i1, 0, 0)));
         let i3 = diagram.add_node(Node::Constant(BigInt::from(55), Port(3, 0, 1)));
@@ -533,8 +558,13 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::ConstantConstantRemoval(i3, i4),
         );
@@ -563,7 +593,7 @@ mod tests {
     #[test]
     fn test_unrestricted_constant() {
         // Create a simple diagram with a single interacting constant and unrestricted and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(i1, 0, 0)));
         let i3 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
@@ -576,8 +606,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::UnrestrictedUnaryRemoval(i3, i4),
         );
@@ -606,7 +639,7 @@ mod tests {
     #[test]
     fn test_unrestricted_unrestricted() {
         // Create a simple diagram with interacting unrestricted nodes and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(i1, 0, 0)));
         let i3: usize = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
@@ -619,8 +652,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::UnrestrictedUnaryRemoval(i3, i4),
         );
@@ -649,7 +685,7 @@ mod tests {
     #[test]
     fn test_add_constant_constant_head() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Constant(BigInt::from(16), Port(2, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(2, 1, 1)));
         let i3 = diagram.add_node(Node::AddConstant(
@@ -665,7 +701,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::AddConstantConstantHead(i3));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::AddConstantConstantHead(i3),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -699,7 +742,7 @@ mod tests {
     #[test]
     fn test_add_constant_constant_tail() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Constant(BigInt::from(16), Port(2, 1, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, 1)));
         let i3 = diagram.add_node(Node::AddConstant(
@@ -715,7 +758,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::AddConstantConstantTail(i3));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::AddConstantConstantTail(i3),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -749,7 +799,7 @@ mod tests {
     #[test]
     fn test_mul_constant_constant_head() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Constant(BigInt::from(15), Port(2, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(2, 1, 1)));
         let i3 = diagram.add_node(Node::MultiplyConstant(
@@ -765,7 +815,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::MulConstantConstantHead(i3));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::MulConstantConstantHead(i3),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -799,7 +856,7 @@ mod tests {
     #[test]
     fn test_mul_constant_constant_tail() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Constant(BigInt::from(16), Port(2, 1, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, 1)));
         let i3 = diagram.add_node(Node::MultiplyConstant(
@@ -815,7 +872,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::MulConstantConstantTail(i3));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::MulConstantConstantTail(i3),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -849,7 +913,7 @@ mod tests {
     #[test]
     fn test_exp_constant_constant_tail() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Constant(BigInt::from(6), Port(2, 1, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, 1)));
         let i3 = diagram.add_node(Node::ExponentiateConstant(
@@ -865,7 +929,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::ExpConstantConstantTail(i3));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::ExpConstantConstantTail(i3),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -901,7 +972,7 @@ mod tests {
     #[test]
     fn test_mul_constant_zero() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, 1)));
         let i3 = diagram.add_node(Node::MultiplyConstant(
@@ -917,8 +988,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::MulConstantZero(i3, (Port(i1, 0, 0), Port(i2, 0, 1)), i3 + 1),
         );
@@ -963,7 +1037,7 @@ mod tests {
     #[test]
     fn test_add_constant_zero() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
@@ -981,8 +1055,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::AddConstantZero(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
         );
@@ -1007,7 +1084,7 @@ mod tests {
     #[test]
     fn test_mul_constant_one() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
@@ -1025,8 +1102,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::MulConstantOne(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
         );
@@ -1048,7 +1128,7 @@ mod tests {
     #[test]
     fn test_exp_constant_one() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
@@ -1066,8 +1146,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::ExpConstantOne(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
         );
@@ -1089,7 +1172,7 @@ mod tests {
     #[test]
     fn test_remove_binary_addition_node() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
@@ -1103,8 +1186,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::RemoveBinaryAddition(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
         );
@@ -1129,7 +1215,7 @@ mod tests {
     #[test]
     fn test_remove_binary_multiplication_node() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
@@ -1143,8 +1229,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::RemoveBinaryMultiplication(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
         );
@@ -1166,7 +1255,7 @@ mod tests {
     #[test]
     fn test_fuse_addition_by_constant_hd_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
         let i3 = diagram.add_node(Node::AddConstant(
@@ -1187,8 +1276,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::FuseAdditionByConstantHdTl(i3),
         );
@@ -1226,7 +1318,7 @@ mod tests {
     #[test]
     fn test_fuse_addition_by_constant_hd_hd() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
         let i3 = diagram.add_node(Node::AddConstant(
@@ -1247,8 +1339,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::FuseAdditionByConstantHdHd(i3),
         );
@@ -1286,7 +1381,7 @@ mod tests {
     #[test]
     fn test_fuse_addition_by_constant_tl_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
         let i3 = diagram.add_node(Node::AddConstant(
@@ -1307,8 +1402,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::FuseAdditionByConstantTlTl(i3),
         );
@@ -1346,7 +1444,7 @@ mod tests {
     #[test]
     fn test_fuse_multiplication_by_constant_hd_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
         let i3 = diagram.add_node(Node::MultiplyConstant(
@@ -1367,8 +1465,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::FuseMultiplicationByConstantHdTl(i3),
         );
@@ -1403,7 +1504,7 @@ mod tests {
     #[test]
     fn test_fuse_multiplication_by_constant_hd_hd() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
         let i3 = diagram.add_node(Node::MultiplyConstant(
@@ -1424,8 +1525,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::FuseMultiplicationByConstantHdHd(i3),
         );
@@ -1460,7 +1564,7 @@ mod tests {
     #[test]
     fn test_fuse_multiplication_by_constant_tl_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
         let i3 = diagram.add_node(Node::MultiplyConstant(
@@ -1481,8 +1585,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::FuseMultiplicationByConstantTlTl(i3),
         );
@@ -1517,7 +1624,7 @@ mod tests {
     #[test]
     fn test_fuse_exponentiation_by_constant_hd_tl() {
         // Create a simple diagram with a single constant exponentiation node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
         let i3 = diagram.add_node(Node::ExponentiateConstant(
@@ -1538,8 +1645,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::FuseExponentiationByConstantHdTl(i3),
         );
@@ -1574,7 +1684,7 @@ mod tests {
     #[test]
     fn test_equality_unrestricted() {
         // Create a simple diagram with one equality node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, 0)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
         let i3 = diagram.add_node(Node::Unrestricted(Port(3, 2, 2)));
@@ -1590,8 +1700,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::EqualityUnrestricted(addr1, 1),
         );
@@ -1625,7 +1738,7 @@ mod tests {
     #[test]
     fn test_binary_equation_node() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
@@ -1639,8 +1752,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::RemoveBinaryEquality(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
         );
@@ -1665,7 +1781,7 @@ mod tests {
     #[test]
     fn test_addition_const_addition_hd() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, 1)));
@@ -1693,7 +1809,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::AdditionConstAddition(ia, 3));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::AdditionConstAddition(ia, 3, 6, BigInt::from(15)),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -1738,7 +1861,7 @@ mod tests {
     #[test]
     fn test_addition_const_addition_tl() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, 1)));
@@ -1766,7 +1889,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::AdditionConstAddition(ia, 3));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::AdditionConstAddition(ia, 3, 6, BigInt::from(15)),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -1811,7 +1941,7 @@ mod tests {
     #[test]
     fn test_multiplication_const_multiplication_hd() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, 1)));
@@ -1839,10 +1969,13 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
-            RewriteRule::MultiplicationConstMultiplication(ia, 3),
+            RewriteRule::MultiplicationConstMultiplication(ia, 3, 6, BigInt::from(15)),
         );
 
         assert!(
@@ -1888,7 +2021,7 @@ mod tests {
     #[test]
     fn test_multiplication_const_multiplication_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, 1)));
@@ -1916,10 +2049,13 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
-            RewriteRule::MultiplicationConstMultiplication(ia, 3),
+            RewriteRule::MultiplicationConstMultiplication(ia, 3, 6, BigInt::from(15)),
         );
 
         assert!(
@@ -1965,7 +2101,7 @@ mod tests {
     #[test]
     fn test_addition_const() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, 1)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, 2)));
@@ -1988,7 +2124,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::AdditionConst(ia, 3));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::AdditionConst(ia, 3, 5, BigInt::from(15)),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -2033,7 +2176,7 @@ mod tests {
     #[test]
     fn test_multiplication_const() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, 1)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, 2)));
@@ -2056,7 +2199,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::MultiplicationConst(ia, 3));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::MultiplicationConst(ia, 3, 5, BigInt::from(15)),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -2101,7 +2251,7 @@ mod tests {
     #[test]
     fn test_equality_const_nvar() {
         // Create a simple diagram with a single constant Equality interaction and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, 1)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, 2)));
@@ -2127,8 +2277,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::EqualityConst(ia, 3, ic, vec![], ic + 1, BigInt::from(15)),
         );
@@ -2246,7 +2399,7 @@ mod tests {
     #[test]
     fn test_equality_const_var() {
         // Create a simple diagram with a single constant Equality interaction and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, 1)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, 2)));
@@ -2272,8 +2425,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::EqualityConst(ia, 3, ic, vec![], ic + 1, BigInt::from(15)),
         );
@@ -2394,7 +2550,7 @@ mod tests {
     #[test]
     fn test_addmul_unrestricted() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, 1)));
         let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, 2)));
@@ -2417,8 +2573,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::AddMulUnrestricted(ia, 3, vec![], ic, ic + 1),
         );
@@ -2532,7 +2691,7 @@ mod tests {
     #[test]
     fn test_addition_const_unrestricted_1() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
@@ -2550,8 +2709,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::DeleteConstOpUnrestricted(ia, 0),
         );
@@ -2597,7 +2759,7 @@ mod tests {
     #[test]
     fn test_addition_const_unrestricted_2() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
@@ -2615,8 +2777,11 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
         apply_rewrite_step(
             &mut diagram,
+            &mut reg,
             &(),
             RewriteRule::DeleteConstOpUnrestricted(ia, 1),
         );
@@ -2662,7 +2827,7 @@ mod tests {
     #[test]
     fn test_swap_add_and_multiply_constants_hd_tl() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
@@ -2687,7 +2852,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::SwapAddMulConstantsHdTl(ia));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::SwapAddMulConstantsHdTl(ia, 1, BigInt::from(15)),
+        );
 
         assert!(
             diagram.is_well_formed(),
@@ -2730,7 +2902,7 @@ mod tests {
     #[test]
     fn test_swap_add_and_multiply_constants_tl_tl() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
-        let mut diagram = StringDiagram::new(100);
+        let mut diagram = StringDiagram::new();
         diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
         let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
         diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
@@ -2755,7 +2927,14 @@ mod tests {
 
         let node_count = diagram.nodes.len();
 
-        apply_rewrite_step(&mut diagram, &(), RewriteRule::SwapAddMulConstantsTlTl(ia));
+        let mut reg = DefinitionRegistry::new(&mut vec![]);
+        reg.next_id = 100;
+        apply_rewrite_step(
+            &mut diagram,
+            &mut reg,
+            &(),
+            RewriteRule::SwapAddMulConstantsTlTl(ia, 1, BigInt::from(15)),
+        );
 
         assert!(
             diagram.is_well_formed(),

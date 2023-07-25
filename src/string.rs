@@ -58,22 +58,14 @@ pub enum Node {
 pub struct StringDiagram {
     pub nodes: HashMap<Address, Node>,
     pub next_address: Address,
-    pub next_var_id: VarId,
 }
 
 impl StringDiagram {
-    pub fn new(next_var_id: VarId) -> Self {
+    pub fn new() -> Self {
         StringDiagram {
             nodes: HashMap::new(),
             next_address: 0,
-            next_var_id,
         }
-    }
-
-    pub fn get_next_var_id(&mut self) -> VarId {
-        self.next_var_id += 1;
-
-        self.next_var_id - 1
     }
 
     pub fn add_node(&mut self, node: Node) -> Address {
@@ -271,6 +263,15 @@ impl DefinitionRegistry {
         compiled_defs
     }
 
+    // Destructively empty synthesized definitions into original definition vector
+    fn get_next_var_id(&mut self) -> u32 {
+        let new_id = self.next_id;
+
+        self.next_id += 1;
+
+        new_id
+    }
+
     fn register_definition(&mut self, definition: Expr) -> VarId {
         // Insert the definition into the id_def_map
         let boxed_def = Box::new(TExpr {
@@ -280,27 +281,7 @@ impl DefinitionRegistry {
         self.id_def_map.insert(self.next_id, boxed_def);
 
         // Increment the next_id
-        self.next_id += 1;
-
-        self.next_id - 1
-    }
-
-    fn replace_definition_of_port(&mut self, target_port: &Port, input_expr: Expr) -> VarId {
-        // Fetch the id associated with the port
-        let id = target_port.2;
-
-        // Wrap the input expression inside a TExpr
-        let texpr = TExpr {
-            v: input_expr,
-            t: None, // no type information
-        };
-
-        // Update the definition associated with the id
-        if let Some(def) = self.id_def_map.get_mut(&id) {
-            *def = Box::new(texpr);
-        }
-
-        id
+        self.get_next_var_id()
     }
 }
 
@@ -355,7 +336,7 @@ pub fn build_string_diagram(
     input_ids: &HashSet<VarId>,
     defs: &mut DefinitionRegistry,
 ) -> StringDiagram {
-    let mut diagram = StringDiagram::new(defs.next_id);
+    let mut diagram = StringDiagram::new();
     let mut variable_addresses: HashMap<VariableId, Address> = HashMap::new();
 
     for eq in equations {
@@ -1102,14 +1083,12 @@ pub enum RewriteRule {
     RemoveUnaryMultiplication(Address),
     // A = X + Y + Z   ==>   A = X + V & V = Y + Z
     // Stores the address of the add node, ports for the head and left argument of add node,
-    // the new address of the right node
     // and all the ports connected to the args of the new node
-    SplitAddition(Address, Port, Port, Address, Vec<Port>),
+    SplitAddition(Address, Port, Port, Vec<Port>),
     // A = X * Y * Z   ==>   A = X * V & V = Y * Z
     // Stores the address of the add node, ports for the head and left argument of mul node,
-    // the new address of the right node
     // and all the ports connected to the args of the new node
-    SplitMultiplication(Address, Port, Port, Address, Vec<Port>),
+    SplitMultiplication(Address, Port, Port, Vec<Port>),
     // A = B ^ n    =>   A = B * B * ... * B
     SplitExponentiation(Address),
     // Store address of equality node, index pointing to fusable/conserved node,
@@ -1169,10 +1148,26 @@ pub enum RewriteRule {
     // A = B, expressed through a redundant equality, eliminated.
     // Constains address of Equality node and The two ports it connects to.
     RemoveBinaryEquality(Address, (Port, Port)),
-    AdditionConstAddition(Address, PortIndex),
-    MultiplicationConstMultiplication(Address, PortIndex),
-    AdditionConst(Address, PortIndex),
-    MultiplicationConst(Address, PortIndex),
+    // Turns X = A + (c + B) + D into X = c + X' & X' = A + B + D, for constant c
+    // Stores address of addition node, port index of constant addition,
+    // Old variable ID of the removed link,
+    // And the constant value
+    AdditionConstAddition(Address, PortIndex, VarId, BigInt),
+    // Turns X = A * (c * B) * D into X = c * X' & X' = A * B * D, for constant c
+    // Stores address of multiplication node, port index of constant multiplication,
+    // Old variable ID of the removed link,
+    // And the constant value
+    MultiplicationConstMultiplication(Address, PortIndex, VarId, BigInt),
+    // Turns X = A + B + c + D into X = c + X' & X' = A + B + D, for constant c
+    // Stores address of addition node, port index of constant addition,
+    // Old variable ID of the removed link,
+    // And the constant value
+    AdditionConst(Address, PortIndex, VarId, BigInt),
+    // Turns X = A * B * c * D into X = c * X' & X' = A * B * D, for constant c
+    // Stores address of addition node, port index of constant addition,
+    // Old variable ID of the removed link,
+    // And the constant value
+    MultiplicationConst(Address, PortIndex, VarId, BigInt),
     // n = X & X = Y & X = Z & ...   ==>    n = Y & n = Z & ,,,
     // Stores the address of the equality node, the index that points to a constant
     // the address of that constant, a list of the outlying ports connected to the equality node
@@ -1189,8 +1184,20 @@ pub enum RewriteRule {
     // And the smallest address of the new unrestricted nodes
     AddMulUnrestricted(Address, PortIndex, Vec<Port>, Address, Address),
     DeleteConstOpUnrestricted(Address, PortIndex),
-    SwapAddMulConstantsHdTl(Address),
-    SwapAddMulConstantsTlTl(Address),
+    // X = m * Y
+    // Y = n + Z
+    // becomes
+    // X = (m * n) + Y
+    // Y = m * Z
+    // Stores original address of addition node, old outer var_id of addition node, and multiplicative constant
+    SwapAddMulConstantsHdTl(Address, VarId, BigInt),
+    // X = m * Y
+    // Z = n + Y
+    // becomes
+    // X = (- m * n) + Y
+    // Y = m * Z
+    // Stores original address of addition node, old outer var_id of addition node, and multiplicative constant
+    SwapAddMulConstantsTlTl(Address, VarId, BigInt),
     // n = V & V = X + Y   ==>    n = X + Y
     // Contains address of addition node and the port of the constant
     ReduceCVVAddition(Address, Port),
@@ -1201,7 +1208,7 @@ pub enum RewriteRule {
 
 pub type RewriteTrace = Vec<RewriteRule>;
 
-fn split_node(diagram: &mut StringDiagram, address: Address) {
+fn split_node(diagram: &mut StringDiagram, defs: &mut DefinitionRegistry, address: Address) {
     // Extract information about the node at the given address
     let (first_two_ports, remaining_ports) =
         if let Some(Node::Addition(ports) | Node::Multiplication(ports)) =
@@ -1219,7 +1226,7 @@ fn split_node(diagram: &mut StringDiagram, address: Address) {
             return;
         };
 
-    let new_id = diagram.get_next_var_id();
+    let new_id = defs.next_id;
 
     // Create a new node with the rightmost argument of the original
     let new_node_ports = vec![Port(address, 2, new_id)]
@@ -1251,33 +1258,33 @@ fn split_node(diagram: &mut StringDiagram, address: Address) {
 }
 
 // Completely decompose addition/multiplication node at address so it only has three arguments
-fn decompose_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
-    let mut trace: RewriteTrace = vec![];
-
+fn decompose_node(diagram: &mut StringDiagram, defs: &mut DefinitionRegistry, address: Address) {
     while let Some(Node::Addition(ports)) = diagram.nodes.get(&address) {
         if ports.len() > 3 {
             let right_ports = ports[2..].to_vec();
-            trace.push(RewriteRule::SplitAddition(
+            let rule = RewriteRule::SplitAddition(
                 address,
                 ports[0].clone(),
                 ports[1].clone(),
-                diagram.next_address,
                 right_ports,
-            ));
-            split_node(diagram, address);
+            );
+            split_node(diagram, defs, address);
+            calculate_defs(defs, rule);
         } else {
             break; // Decomposition is complete
         }
     }
-
-    trace
 }
 
 // Split X = Y ^ n into X = Y * Y * ... * Y
 // TODO: This is dumb. It needs to be split so that
 //       X = Y ^ 2*n => Y1 = Y ^ n /\ X = Y1 * Y1, etc.
 //       much smaller that way
-fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) -> RewriteTrace {
+fn split_exponentiation_node(
+    diagram: &mut StringDiagram,
+    defs: &mut DefinitionRegistry,
+    address: Address,
+) -> RewriteTrace {
     let trace: RewriteTrace = vec![];
 
     // Get the data needed from the node at the address
@@ -1306,7 +1313,7 @@ fn split_exponentiation_node(diagram: &mut StringDiagram, address: Address) -> R
     multiplication_ports.push(p1); // Keep the first argument the same
 
     for i in 0..exp_value {
-        let new_id = diagram.get_next_var_id();
+        let new_id = defs.next_id;
         // Point the equality ports to the multiplication ports
         equality_ports.push(Port(address, i + 1, new_id));
 
@@ -2175,6 +2182,7 @@ fn equality_unrestricted(diagram: &mut StringDiagram, address: Address, port_ind
 // Into X = c + (A + B + ... + D + ...)
 fn addition_const_addition(
     diagram: &mut StringDiagram,
+    defs: &mut DefinitionRegistry,
     address: Address,
     port_index: PortIndex,
     field_ops: &dyn FieldOps,
@@ -2208,7 +2216,7 @@ fn addition_const_addition(
         &Port(target_address, 0, old_head_port.2),
     );
 
-    let new_id = diagram.get_next_var_id();
+    let new_id = defs.next_id;
 
     // The head of the Addition node should now point to the tail of the AddConstant node.
     diagram.replace_port(&(address, 0), &Port(target_address, 1, new_id));
@@ -2239,6 +2247,7 @@ fn addition_const_addition(
 // Into X = c * (A * B * ... * D * ...)
 fn multiplication_const_multiplication(
     diagram: &mut StringDiagram,
+    defs: &mut DefinitionRegistry,
     address: Address,
     port_index: PortIndex,
     field_ops: &dyn FieldOps,
@@ -2272,7 +2281,7 @@ fn multiplication_const_multiplication(
         &Port(target_address, 0, old_head_port.2),
     );
 
-    let new_id = diagram.get_next_var_id();
+    let new_id = defs.next_id;
 
     // The head of the Multiplication node should now point to the tail of the MultiplyConstant node.
     diagram.replace_port(&(address, 0), &Port(target_address, 1, new_id));
@@ -2301,7 +2310,12 @@ fn multiplication_const_multiplication(
 
 // Turn X = A + B + ... + c + ... for constant c
 // Into X = c + (A + B + ...)
-fn addition_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
+fn addition_const(
+    diagram: &mut StringDiagram,
+    defs: &mut DefinitionRegistry,
+    address: Address,
+    port_index: PortIndex,
+) {
     // Extract the necessary information from the diagram.
     let (old_head_port, target_address) = {
         let ports = match diagram.nodes.get(&address) {
@@ -2322,7 +2336,7 @@ fn addition_const(diagram: &mut StringDiagram, address: Address, port_index: Por
         &Port(target_address, 0, old_head_port.2),
     );
 
-    let new_id = diagram.get_next_var_id();
+    let new_id = defs.next_id;
 
     // The head of the Addition node should now point to the tail of the AddConstant node.
     diagram.replace_port(&(address, 0), &Port(target_address, 1, new_id));
@@ -2354,7 +2368,12 @@ fn addition_const(diagram: &mut StringDiagram, address: Address, port_index: Por
 
 // Turn X = A * B * ... * c * ... for constant c
 // Into X = c * (A * B * ...)
-fn multiplication_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
+fn multiplication_const(
+    diagram: &mut StringDiagram,
+    defs: &mut DefinitionRegistry,
+    address: Address,
+    port_index: PortIndex,
+) {
     // Extract the necessary information from the diagram.
     let (old_head_port, target_address) = {
         let ports = match diagram.nodes.get(&address) {
@@ -2375,7 +2394,7 @@ fn multiplication_const(diagram: &mut StringDiagram, address: Address, port_inde
         &Port(target_address, 0, old_head_port.2),
     );
 
-    let new_id = diagram.get_next_var_id();
+    let new_id = defs.next_id;
 
     // The head of the Multiplication node should now point to the tail of the MultiplyConstant node.
     diagram.replace_port(&(address, 0), &Port(target_address, 1, new_id));
@@ -2549,6 +2568,7 @@ fn delete_const_op_unrestricted(
 // Y = m * Z
 fn swap_add_and_multiply_constants_hd_tl(
     diagram: &mut StringDiagram,
+    defs: &mut DefinitionRegistry,
     address: Address,
     field_ops: &dyn FieldOps,
 ) {
@@ -2576,7 +2596,7 @@ fn swap_add_and_multiply_constants_hd_tl(
     let new_add_value = field_ops.infix(InfixOp::Multiply, add_value, multiply_value.clone());
 
     // Update the diagram.
-    let new_id = diagram.get_next_var_id();
+    let new_id = defs.next_id;
 
     // Turn the AddConstant node into a MultiplyConstant node.
     diagram.nodes.insert(
@@ -2608,6 +2628,7 @@ fn swap_add_and_multiply_constants_hd_tl(
 // Y = m * Z
 fn swap_add_and_multiply_constants_tl_tl(
     diagram: &mut StringDiagram,
+    defs: &mut DefinitionRegistry,
     address: Address,
     field_ops: &dyn FieldOps,
 ) {
@@ -2637,7 +2658,7 @@ fn swap_add_and_multiply_constants_tl_tl(
         field_ops.negate(field_ops.infix(InfixOp::Multiply, add_value, multiply_value.clone()));
 
     // Update the diagram.
-    let new_id = diagram.get_next_var_id();
+    let new_id = defs.next_id;
 
     // Turn the AddConstant node into a MultiplyConstant node with swapped ports.
     diagram.nodes.insert(
@@ -2663,7 +2684,11 @@ fn swap_add_and_multiply_constants_tl_tl(
 }
 
 // Try finding an appropriate rewrite for a given address
-fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<RewriteRule> {
+fn gen_string_diagram_step(
+    diagram: &StringDiagram,
+    _defs: &DefinitionRegistry,
+    address: Address,
+) -> Option<RewriteRule> {
     if let Some(node) = diagram.nodes.get(&address).cloned() {
         match node {
             Node::Equality(vars, ports) => {
@@ -2740,12 +2765,25 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                                 return Some(RewriteRule::FuseAddition(address, port_index));
                             }
                         }
-                        if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&target_port.0)
+                        if let Some(Node::AddConstant(const_val, _, _)) =
+                            diagram.nodes.get(&target_port.0)
                         {
-                            return Some(RewriteRule::AdditionConstAddition(address, port_index));
+                            return Some(RewriteRule::AdditionConstAddition(
+                                address,
+                                port_index,
+                                target_port.2,
+                                const_val.clone(),
+                            ));
                         }
-                        if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
-                            return Some(RewriteRule::AdditionConst(address, port_index));
+                        if let Some(Node::Constant(const_val, _)) =
+                            diagram.nodes.get(&target_port.0)
+                        {
+                            return Some(RewriteRule::AdditionConst(
+                                address,
+                                port_index,
+                                target_port.2,
+                                const_val.clone(),
+                            ));
                         }
                     }
                 }
@@ -2792,12 +2830,20 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                         {
                             if val != &BigInt::from(0) {
                                 return Some(RewriteRule::MultiplicationConstMultiplication(
-                                    address, port_index,
+                                    address,
+                                    port_index,
+                                    target_port.2,
+                                    val.clone(),
                                 ));
                             }
                         }
-                        if let Some(Node::Constant(_, _)) = diagram.nodes.get(&target_port.0) {
-                            return Some(RewriteRule::MultiplicationConst(address, port_index));
+                        if let Some(Node::Constant(val, _)) = diagram.nodes.get(&target_port.0) {
+                            return Some(RewriteRule::MultiplicationConst(
+                                address,
+                                port_index,
+                                target_port.2,
+                                val.clone(),
+                            ));
                         }
                     }
                 }
@@ -2832,14 +2878,22 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
                         return Some(RewriteRule::FuseAdditionByConstantTlTl(address));
                     }
                 }
-                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+                if let Some(Node::MultiplyConstant(value, _, _)) = diagram.nodes.get(&port2.0) {
                     if port2.1 == 1 {
-                        return Some(RewriteRule::SwapAddMulConstantsTlTl(address));
+                        return Some(RewriteRule::SwapAddMulConstantsTlTl(
+                            address,
+                            port1.2,
+                            value.clone(),
+                        ));
                     }
                 }
-                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
+                if let Some(Node::MultiplyConstant(value, _, _)) = diagram.nodes.get(&port1.0) {
                     if port1.1 == 1 {
-                        return Some(RewriteRule::SwapAddMulConstantsHdTl(address));
+                        return Some(RewriteRule::SwapAddMulConstantsHdTl(
+                            address,
+                            port2.2,
+                            value.clone(),
+                        ));
                     }
                 }
                 None
@@ -2930,6 +2984,7 @@ fn gen_string_diagram_step(diagram: &StringDiagram, address: Address) -> Option<
 // Apply a rewrite rule and return effected addresses
 pub fn apply_rewrite_step(
     diagram: &mut StringDiagram,
+    defs: &mut DefinitionRegistry,
     field_ops: &dyn FieldOps,
     rule: RewriteRule,
 ) -> Vec<Address> {
@@ -2962,16 +3017,16 @@ pub fn apply_rewrite_step(
             }
             vec![]
         }
-        RewriteRule::SplitAddition(address, _, _, _, _) => {
-            split_node(diagram, address);
+        RewriteRule::SplitAddition(address, _, _, _) => {
+            split_node(diagram, defs, address);
             vec![address]
         }
-        RewriteRule::SplitMultiplication(address, _, _, _, _) => {
-            split_node(diagram, address);
+        RewriteRule::SplitMultiplication(address, _, _, _) => {
+            split_node(diagram, defs, address);
             vec![address]
         }
         RewriteRule::SplitExponentiation(address) => {
-            split_exponentiation_node(diagram, address);
+            split_exponentiation_node(diagram, defs, address);
             vec![address]
         }
         RewriteRule::FuseEquality(address, port_index) => {
@@ -3027,37 +3082,37 @@ pub fn apply_rewrite_step(
             remove_binary_node(diagram, address);
             vec![port1.0, port2.0]
         }
-        RewriteRule::AdditionConstAddition(address, port_index) => {
+        RewriteRule::AdditionConstAddition(address, port_index, _, _) => {
             if let Some(Node::Addition(ports)) = diagram.nodes.get(&address).cloned() {
                 let target_port = &ports[port_index];
-                addition_const_addition(diagram, address, port_index, field_ops);
+                addition_const_addition(diagram, defs, address, port_index, field_ops);
                 vec![address, target_port.0]
             } else {
                 vec![]
             }
         }
-        RewriteRule::MultiplicationConstMultiplication(address, port_index) => {
+        RewriteRule::MultiplicationConstMultiplication(address, port_index, _, _) => {
             if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address).cloned() {
                 let target_port = &ports[port_index];
-                multiplication_const_multiplication(diagram, address, port_index, field_ops);
+                multiplication_const_multiplication(diagram, defs, address, port_index, field_ops);
                 vec![address, target_port.0]
             } else {
                 vec![]
             }
         }
-        RewriteRule::AdditionConst(address, port_index) => {
+        RewriteRule::AdditionConst(address, port_index, _, _) => {
             if let Some(Node::Addition(ports)) = diagram.nodes.get(&address).cloned() {
                 let target_port = &ports[port_index];
-                addition_const(diagram, address, port_index);
+                addition_const(diagram, defs, address, port_index);
                 vec![address, target_port.0]
             } else {
                 vec![]
             }
         }
-        RewriteRule::MultiplicationConst(address, port_index) => {
+        RewriteRule::MultiplicationConst(address, port_index, _, _) => {
             if let Some(Node::Multiplication(ports)) = diagram.nodes.get(&address).cloned() {
                 let target_port = &ports[port_index];
-                multiplication_const(diagram, address, port_index);
+                multiplication_const(diagram, defs, address, port_index);
                 vec![address, target_port.0]
             } else {
                 vec![]
@@ -3086,17 +3141,17 @@ pub fn apply_rewrite_step(
             delete_const_op_unrestricted(diagram, address, port_index);
             vec![address]
         }
-        RewriteRule::SwapAddMulConstantsHdTl(address) => {
+        RewriteRule::SwapAddMulConstantsHdTl(address, _, _) => {
             if let Some(Node::AddConstant(_, port1, _)) = diagram.nodes.get(&address).cloned() {
-                swap_add_and_multiply_constants_hd_tl(diagram, address, field_ops);
+                swap_add_and_multiply_constants_hd_tl(diagram, defs, address, field_ops);
                 vec![address, port1.0]
             } else {
                 vec![]
             }
         }
-        RewriteRule::SwapAddMulConstantsTlTl(address) => {
+        RewriteRule::SwapAddMulConstantsTlTl(address, _, _) => {
             if let Some(Node::AddConstant(_, _, port2)) = diagram.nodes.get(&address).cloned() {
-                swap_add_and_multiply_constants_tl_tl(diagram, address, field_ops);
+                swap_add_and_multiply_constants_tl_tl(diagram, defs, address, field_ops);
                 vec![address, port2.0]
             } else {
                 vec![]
@@ -3166,23 +3221,27 @@ pub fn apply_rewrite_step(
 // Return a list of *still existing* addresses of nodes that have been modified.
 fn simplify_string_diagram_step(
     diagram: &mut StringDiagram,
+    defs: &mut DefinitionRegistry,
     field_ops: &dyn FieldOps,
     address: Address,
 ) -> (Option<RewriteRule>, Vec<Address>) {
-    let step = gen_string_diagram_step(diagram, address);
+    let step = gen_string_diagram_step(diagram, defs, address);
 
     if let Some(rule) = &step {
-        let res = apply_rewrite_step(diagram, field_ops, rule.clone());
+        let res = apply_rewrite_step(diagram, defs, field_ops, rule.clone());
         (step, res)
     } else {
         (None, vec![])
     }
 }
 
-fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps) -> RewriteTrace {
+fn simplify_string_diagram(
+    diagram: &mut StringDiagram,
+    defs: &mut DefinitionRegistry,
+    field_ops: &dyn FieldOps,
+) {
     // Initialize the vector with all the addresses in the diagram.
     let mut addresses_to_process: Vec<Address> = diagram.nodes.keys().cloned().collect();
-    let mut trace: RewriteTrace = Vec::new();
 
     while !addresses_to_process.is_empty() {
         let mut new_addresses = HashSet::new();
@@ -3190,7 +3249,7 @@ fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps
         for address in addresses_to_process {
             // Apply a single simplification step to the address.
             let (rule, modified_addresses) =
-                simplify_string_diagram_step(diagram, field_ops, address);
+                simplify_string_diagram_step(diagram, defs, field_ops, address);
             // Add the modified addresses to the hash set.
             for modified_address in modified_addresses {
                 new_addresses.insert(modified_address);
@@ -3202,15 +3261,13 @@ fn simplify_string_diagram(diagram: &mut StringDiagram, field_ops: &dyn FieldOps
             }
 
             if let Some(rule) = rule {
-                trace.push(rule)
+                calculate_defs(defs, rule)
             }
         }
 
         // Convert the HashSet to a Vec for the next iteration.
         addresses_to_process = new_addresses.into_iter().collect();
     }
-
-    trace
 }
 
 // If we have c = v1 + v2 or c = v1 * v2, we can avoid making a new variable
@@ -3259,9 +3316,8 @@ fn cvv_addmul(diagram: &mut StringDiagram, address: Address) {
 
 // Ensure there aren't any additions/multiplications with more than 2 inputs
 // And also that there aren't any exponential nodes.
-fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
+fn prep_for_3ac(diagram: &mut StringDiagram, defs: &mut DefinitionRegistry) {
     let mut changed = true;
-    let mut trace: RewriteTrace = vec![];
 
     while changed {
         changed = false;
@@ -3277,16 +3333,17 @@ fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
                     Node::Addition(ports) => {
                         // If there are more than three ports in the addition node, decompose it
                         if ports.len() > 3 {
-                            trace.extend(decompose_node(diagram, prime_node_address));
+                            decompose_node(diagram, defs, prime_node_address);
                             changed = true;
                         }
                         if ports.len() == 3 {
                             if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
                                 cvv_addmul(diagram, prime_node_address);
-                                trace.push(RewriteRule::ReduceCVVAddition(
+                                let rule = RewriteRule::ReduceCVVAddition(
                                     prime_node_address,
                                     ports[0].clone(),
-                                ));
+                                );
+                                calculate_defs(defs, rule);
                                 changed = true;
                             }
                         }
@@ -3294,22 +3351,23 @@ fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
                     Node::Multiplication(ports) => {
                         // If there are more than three ports in the multiplication node, decompose it
                         if ports.len() > 3 {
-                            trace.extend(decompose_node(diagram, prime_node_address));
+                            decompose_node(diagram, defs, prime_node_address);
                             changed = true;
                         }
                         if ports.len() == 3 {
                             if let Some(Node::Constant(_, _)) = diagram.nodes.get(&ports[0].0) {
                                 cvv_addmul(diagram, prime_node_address);
-                                trace.push(RewriteRule::ReduceCVVMultiplication(
+                                let rule = RewriteRule::ReduceCVVMultiplication(
                                     prime_node_address,
                                     ports[0].clone(),
-                                ));
+                                );
+                                calculate_defs(defs, rule);
                                 changed = true;
                             }
                         }
                     }
                     Node::ExponentiateConstant(_, _, _) => {
-                        trace.extend(split_exponentiation_node(diagram, prime_node_address));
+                        split_exponentiation_node(diagram, defs, prime_node_address);
                         changed = true;
                     }
                     _ => {}
@@ -3317,15 +3375,12 @@ fn prep_for_3ac(diagram: &mut StringDiagram) -> RewriteTrace {
             }
         }
     }
-
-    trace
 }
 
 fn split_operation_update(
     defs: &mut DefinitionRegistry,
     split_head_port: &Port,
     split_left_port: &Port,
-    _right_address: &Address,
     right_ports: &Vec<Port>,
     is_add: bool,
 ) {
@@ -3394,69 +3449,97 @@ fn split_operation_update(
     }
 }
 
+fn const_update(defs: &mut DefinitionRegistry, old_id: u32, const_val: BigInt, is_add: bool) {
+    let op = if is_add {
+        InfixOp::Subtract
+    } else {
+        InfixOp::Divide
+    };
+
+    // Create the new definition
+    let definition = Expr::Infix(
+        op,
+        Box::new(TExpr {
+            v: Expr::Variable(Variable {
+                id: old_id,
+                name: None,
+            }),
+            t: None,
+        }),
+        Box::new(TExpr {
+            v: Expr::Constant(const_val),
+            t: None,
+        }),
+    );
+
+    defs.register_definition(definition);
+}
+
+fn swap_addmul_update(defs: &mut DefinitionRegistry, south_id: u32, const_val: BigInt) {
+    // Create the new definition
+    let definition = Expr::Infix(
+        InfixOp::Multiply,
+        Box::new(TExpr {
+            v: Expr::Variable(Variable {
+                id: south_id,
+                name: None,
+            }),
+            t: None,
+        }),
+        Box::new(TExpr {
+            v: Expr::Constant(const_val),
+            t: None,
+        }),
+    );
+
+    defs.register_definition(definition);
+}
+
 fn calculate_defs(defs: &mut DefinitionRegistry, rule: RewriteRule) {
     match rule {
-        RewriteRule::SplitAddition(
-            _address,
-            split_head_port,
-            split_left_port,
-            right_address,
-            right_ports,
-        ) => split_operation_update(
-            defs,
-            &split_head_port,
-            &split_left_port,
-            &right_address,
-            &right_ports,
-            true,
-        ),
+        RewriteRule::SplitAddition(_address, split_head_port, split_left_port, right_ports) => {
+            split_operation_update(defs, &split_head_port, &split_left_port, &right_ports, true)
+        }
         RewriteRule::SplitMultiplication(
             _address,
             split_head_port,
             split_left_port,
-            right_address,
             right_ports,
         ) => split_operation_update(
             defs,
             &split_head_port,
             &split_left_port,
-            &right_address,
             &right_ports,
             false,
         ),
         RewriteRule::SplitExponentiation(_address) => {
             // Not implemented!!!
         }
-        RewriteRule::AdditionConstAddition(_address, _port_index) => {
-            // Not implemented!!!
+        RewriteRule::AdditionConstAddition(_address, _port_index, old_id, const_val) => {
+            const_update(defs, old_id, const_val, true)
         }
-        RewriteRule::MultiplicationConstMultiplication(_address, _port_index) => {
-            // Not implemented!!!
+        RewriteRule::MultiplicationConstMultiplication(
+            _address,
+            _port_index,
+            old_id,
+            const_val,
+        ) => const_update(defs, old_id, const_val, false),
+        RewriteRule::AdditionConst(_address, _port_index, old_id, const_val) => {
+            const_update(defs, old_id, const_val, true)
         }
-        RewriteRule::AdditionConst(_address, _port_index) => {
-            // Not implemented!!!
+        RewriteRule::MultiplicationConst(_address, _port_index, old_id, const_val) => {
+            const_update(defs, old_id, const_val, false)
         }
-        RewriteRule::MultiplicationConst(_address, _port_index) => {
-            // Not implemented!!!
+        RewriteRule::SwapAddMulConstantsHdTl(_address, south_id, mul_constant) => {
+            swap_addmul_update(defs, south_id, mul_constant)
         }
-        RewriteRule::SwapAddMulConstantsHdTl(_address) => {
-            // Not implemented!!!
-        }
-        RewriteRule::SwapAddMulConstantsTlTl(_address) => {
-            // Not implemented!!!
+        RewriteRule::SwapAddMulConstantsTlTl(_address, south_id, mul_constant) => {
+            swap_addmul_update(defs, south_id, mul_constant)
         }
         _ => {
             // Nothing to do; no defs affected
         }
     }
-}
-
-fn synthesize_defs(defs: &mut DefinitionRegistry, trace: RewriteTrace) -> Vec<Definition> {
-    for rule in trace {
-        calculate_defs(defs, rule)
-    }
-
-    defs.compile_definitions()
 }
 
 pub fn simplify_3ac(
@@ -3467,11 +3550,10 @@ pub fn simplify_3ac(
 ) {
     let mut reg: DefinitionRegistry = DefinitionRegistry::new(defs);
     let mut diag: StringDiagram = build_string_diagram(equations.to_vec(), input_ids, &mut reg);
-
     equations.clear();
-    let mut trace = simplify_string_diagram(&mut diag, field_ops);
+    simplify_string_diagram(&mut diag, &mut reg, field_ops);
     println!("Converting back into 3AC...");
-    trace.extend(prep_for_3ac(&mut diag));
+    prep_for_3ac(&mut diag, &mut reg);
     equations.extend(convert_to_3ac(&diag, &reg));
-    defs.extend(synthesize_defs(&mut reg, trace));
+    defs.extend(reg.compile_definitions());
 }
