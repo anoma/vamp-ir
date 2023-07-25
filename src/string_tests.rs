@@ -170,10 +170,13 @@ mod tests {
             }),
         )));
 
-        let str_diag =
-            build_string_diagram(test_expr, &input_ids, &mut DefinitionRegistry::new(def_vec));
+        let str_diag = build_string_diagram(
+            test_expr,
+            &input_ids,
+            &mut DefinitionRegistry::new(&mut def_vec),
+        );
 
-        println!("{:?}", str_diag);
+        println!("{str_diag:?}");
 
         assert!(
             str_diag.is_well_formed(),
@@ -206,11 +209,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(
-            &mut diagram,
-            &(),
-            RewriteRule::FuseEquality(addr1, 1, vec![], addr2, vec![]),
-        );
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseEquality(addr1, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -267,11 +266,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(
-            &mut diagram,
-            &(),
-            RewriteRule::FuseAddition(addr1, 1, vec![], addr2, vec![]),
-        );
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseAddition(addr1, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -322,11 +317,7 @@ mod tests {
         let node_count = diagram.nodes.len();
 
         // Fuse the nodes together
-        apply_rewrite_step(
-            &mut diagram,
-            &(),
-            RewriteRule::FuseMultiplication(addr1, 1, vec![], addr2, vec![]),
-        );
+        apply_rewrite_step(&mut diagram, &(), RewriteRule::FuseMultiplication(addr1, 1));
 
         assert!(
             diagram.is_well_formed(),
@@ -376,7 +367,13 @@ mod tests {
         apply_rewrite_step(
             &mut diagram,
             &(),
-            RewriteRule::SplitAddition(addr1, addr1 + 1, vec![Port(i3, 0, 2), Port(i4, 0, 3)]),
+            RewriteRule::SplitAddition(
+                addr1,
+                Port(i1, 0, 0),
+                Port(i2, 0, 1),
+                addr1 + 1,
+                vec![Port(i3, 0, 2), Port(i4, 0, 3)],
+            ),
         );
 
         assert!(
@@ -460,6 +457,8 @@ mod tests {
             &(),
             RewriteRule::SplitMultiplication(
                 addr1,
+                Port(i1, 0, 0),
+                Port(i2, 0, 1),
                 addr1 + 1,
                 vec![Port(i3, 0, 2), Port(i4, 0, 3)],
             ),
