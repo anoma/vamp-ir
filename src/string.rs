@@ -3404,26 +3404,32 @@ fn split_operation_update(
     let head_id = split_head_port.2;
     let left_id = split_left_port.2;
     if let Some(expr) = defs.id_def_map.get_mut(&head_id) {
-        *expr = Box::new(TExpr {
-            v: Expr::Infix(
-                op,
-                Box::new(TExpr {
-                    v: Expr::Variable(Variable {
-                        id: left_id,
-                        name: None,
-                    }),
-                    t: None,
-                }),
-                Box::new(TExpr {
-                    v: Expr::Variable(Variable {
-                        id: right_id,
-                        name: None,
-                    }),
-                    t: None,
-                }),
-            ),
+        if let TExpr {
+            v: Expr::Constant(_),
             t: None,
-        });
+        } = **expr
+        {
+            *expr = Box::new(TExpr {
+                v: Expr::Infix(
+                    op,
+                    Box::new(TExpr {
+                        v: Expr::Variable(Variable {
+                            id: left_id,
+                            name: None,
+                        }),
+                        t: None,
+                    }),
+                    Box::new(TExpr {
+                        v: Expr::Variable(Variable {
+                            id: right_id,
+                            name: None,
+                        }),
+                        t: None,
+                    }),
+                ),
+                t: None,
+            });
+        }
     }
 }
 
@@ -3529,7 +3535,6 @@ pub fn simplify_3ac(
     let mut reg: DefinitionRegistry = DefinitionRegistry::new(defs);
     let mut diag: StringDiagram = build_string_diagram(equations.to_vec(), input_ids, &mut reg);
     equations.clear();
-    //println!("Performing simplifications");
     simplify_string_diagram(&mut diag, &mut reg, field_ops);
     println!("Converting back into 3AC...");
     prep_for_3ac(&mut diag, &mut reg);
