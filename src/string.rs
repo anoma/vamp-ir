@@ -297,10 +297,7 @@ fn get_or_create_equality_node(
     diagram: &mut StringDiagram,
     variable_addresses: &mut HashMap<VariableId, Address>,
     input_ids: &HashSet<VarId>,
-    defs: &mut DefinitionRegistry,
 ) -> (Address, PortIndex) {
-    let new_id = pointing_port.2;
-
     // Does this variable already have an address? If not, make one.
     let equality_address = *variable_addresses.entry(variable.id).or_insert_with(|| {
         // If we're looking at an input variable, store it.
@@ -310,18 +307,7 @@ fn get_or_create_equality_node(
             vec![]
         };
 
-        let address = diagram.add_node(Node::Equality(input_vec, Vec::new()));
-
-        // If variable is new, add a default entry to defs.
-        defs.id_def_map.entry(new_id).or_insert_with(|| {
-            let var_expr = TExpr {
-                v: Expr::Variable(variable.clone()),
-                t: None,
-            };
-            Box::new(var_expr)
-        });
-
-        address
+        diagram.add_node(Node::Equality(input_vec, Vec::new()))
     });
 
     // Find the largest index in that equality node. Place the pointing port there.
@@ -366,7 +352,6 @@ pub fn build_string_diagram(
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
-                        defs,
                     );
 
                     let _const_addr = diagram.add_node(Node::Constant(
@@ -399,7 +384,6 @@ pub fn build_string_diagram(
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
-                        defs,
                     );
                     let (equality_address2, new_port_index2) = get_or_create_equality_node(
                         var2,
@@ -407,7 +391,6 @@ pub fn build_string_diagram(
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
-                        defs,
                     );
 
                     // Connect these nodes by adding an equality node that points to both.
@@ -445,7 +428,6 @@ pub fn build_string_diagram(
                             &mut diagram,
                             &mut variable_addresses,
                             input_ids,
-                            defs,
                         );
                         let (equality_address2, new_port_index2) = get_or_create_equality_node(
                             var2,
@@ -453,7 +435,6 @@ pub fn build_string_diagram(
                             &mut diagram,
                             &mut variable_addresses,
                             input_ids,
-                            defs,
                         );
 
                         diagram.add_node(Node::MultiplyConstant(
@@ -491,7 +472,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
@@ -499,7 +479,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
@@ -507,7 +486,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 ports = vec![
                                     Port(address1, port_index1, term_var1.id),
@@ -522,7 +500,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
@@ -530,7 +507,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
@@ -538,7 +514,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 ports = vec![
                                     Port(address0, port_index0, var.id),
@@ -563,7 +538,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
@@ -575,7 +549,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 ports = vec![
                                     Port(address1, 0, var.id),
@@ -590,7 +563,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
@@ -602,7 +574,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 ports = vec![
                                     Port(address0, port_index0, var.id),
@@ -627,7 +598,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
@@ -635,7 +605,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
@@ -654,7 +623,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
@@ -662,7 +630,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
@@ -688,7 +655,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let const_id1 =
                                     defs.register_definition(Expr::Constant(const1.clone()));
@@ -715,7 +681,6 @@ pub fn build_string_diagram(
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
-                                    defs,
                                 );
                                 let const_id1 =
                                     defs.register_definition(Expr::Constant(const1.clone()));
@@ -3564,6 +3529,7 @@ pub fn simplify_3ac(
     let mut reg: DefinitionRegistry = DefinitionRegistry::new(defs);
     let mut diag: StringDiagram = build_string_diagram(equations.to_vec(), input_ids, &mut reg);
     equations.clear();
+    //println!("Performing simplifications");
     simplify_string_diagram(&mut diag, &mut reg, field_ops);
     println!("Converting back into 3AC...");
     prep_for_3ac(&mut diag, &mut reg);
