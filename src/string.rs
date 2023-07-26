@@ -112,18 +112,22 @@ impl StringDiagram {
     }
 
     // Helper function to check if the port is connected back to the original (address, port_index).
+    // Also checks that every port link has a single, unique variable id.
     fn is_connected_back(&self, port: &Port, original: (Address, PortIndex)) -> bool {
-        let Port(target_address, target_port_index, _) = port;
+        let Port(target_address, target_port_index, var_id) = port;
+        // Port should not link to itself
         if target_address == &original.0 && target_port_index == &original.1 {
             return false;
         }
         if let Some(target_node) = self.nodes.get(target_address) {
             match target_node {
                 Node::Addition(ports) | Node::Multiplication(ports) | Node::Equality(_, ports) => {
-                    if let Some(Port(back_address, back_port_index, _)) =
+                    if let Some(Port(back_address, back_port_index, var_id_2)) =
                         ports.get(*target_port_index)
                     {
-                        return *back_address == original.0 && *back_port_index == original.1;
+                        return *back_address == original.0
+                            && *back_port_index == original.1
+                            && var_id == var_id_2;
                     }
                 }
                 Node::AddConstant(_, port1, port2)
@@ -136,10 +140,12 @@ impl StringDiagram {
                     } else {
                         port2
                     };
-                    return back_port.0 == original.0 && back_port.1 == original.1;
+                    return back_port.0 == original.0
+                        && back_port.1 == original.1
+                        && back_port.2 == *var_id;
                 }
                 Node::Unrestricted(port) | Node::Constant(_, port) => {
-                    return port.0 == original.0 && port.1 == original.1;
+                    return port.0 == original.0 && port.1 == original.1 && port.2 == *var_id;
                 }
                 Node::Contradiction => {}
             }
@@ -1471,7 +1477,14 @@ fn remove_binary_node(diagram: &mut StringDiagram, address: Address) {
     diagram.nodes.remove(&address);
 
     // Update the target links of both ports to point at each other
-    diagram.replace_port(&first_port_target.location(), &second_port_target);
+    diagram.replace_port(
+        &first_port_target.location(),
+        &Port(
+            second_port_target.0,
+            second_port_target.1,
+            first_port_target.2,
+        ),
+    );
     diagram.replace_port(&second_port_target.location(), &first_port_target);
 }
 
@@ -2072,7 +2085,7 @@ fn exp_constant_constant_tail(
     );
 
     // Update the target link of the second port of the ExponentiateConstant node
-    diagram.replace_port(&first_port.location(), &Port(address, 0, second_port.2));
+    diagram.replace_port(&first_port.location(), &Port(address, 0, first_port.2));
 
     // Remove the original constant node connected to the first port
     diagram.nodes.remove(&second_port.0);
