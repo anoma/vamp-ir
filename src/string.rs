@@ -2822,42 +2822,42 @@ fn gen_string_diagram_step(
 ) -> Option<RewriteRule> {
     if let Some(node) = diagram.nodes.get(&address).cloned() {
         match node {
-            Node::Equality(_vars, ports) => {
-                // if ports.is_empty() {
-                //     // Delete empty equations
-                //     return Some(RewriteRule::DeleteEmptyEquality(address));
-                // }
-                // if vars.is_empty() && ports.len() == 1 {
-                //     return Some(RewriteRule::RemoveUnaryEquality(address));
-                // }
-                // if vars.is_empty() && ports.len() == 2 {
-                //     return Some(RewriteRule::RemoveBinaryEquality(
-                //         address,
-                //         (ports[0].clone(), ports[1].clone()),
-                //     ));
-                // }
+            Node::Equality(vars, ports) => {
+                if ports.is_empty() {
+                    // Delete empty equations
+                    return Some(RewriteRule::DeleteEmptyEquality(address));
+                }
+                if vars.is_empty() && ports.len() == 1 {
+                    return Some(RewriteRule::RemoveUnaryEquality(address));
+                }
+                if vars.is_empty() && ports.len() == 2 {
+                    return Some(RewriteRule::RemoveBinaryEquality(
+                        address,
+                        (ports[0].clone(), ports[1].clone()),
+                    ));
+                }
                 for (port_index, target_port) in ports.iter().enumerate() {
-                    // if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-                    //     return Some(RewriteRule::EqualityUnrestricted(address, port_index));
-                    // }
-                    // if let Some(Node::Constant(val, _)) = diagram.nodes.get(&target_port.0) {
-                    //     if ports.len() == 1 && !vars.is_empty() {
-                    //         let outer_ports = ports
-                    //             .iter()
-                    //             .filter(|p| p != &target_port)
-                    //             .cloned()
-                    //             .collect();
+                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
+                        return Some(RewriteRule::EqualityUnrestricted(address, port_index));
+                    }
+                    if let Some(Node::Constant(val, _)) = diagram.nodes.get(&target_port.0) {
+                        if ports.len() == 1 && !vars.is_empty() {
+                            let outer_ports = ports
+                                .iter()
+                                .filter(|p| p != &target_port)
+                                .cloned()
+                                .collect();
 
-                    //         return Some(RewriteRule::EqualityConst(
-                    //             address,
-                    //             port_index,
-                    //             target_port.0,
-                    //             outer_ports,
-                    //             diagram.next_address,
-                    //             val.clone(),
-                    //         ));
-                    //     }
-                    // }
+                            return Some(RewriteRule::EqualityConst(
+                                address,
+                                port_index,
+                                target_port.0,
+                                outer_ports,
+                                diagram.next_address,
+                                val.clone(),
+                            ));
+                        }
+                    }
 
                     if let Some(Node::Equality(_, _ports2)) = diagram.nodes.get(&target_port.0) {
                         return Some(RewriteRule::FuseEquality(address, port_index));
@@ -2865,210 +2865,210 @@ fn gen_string_diagram_step(
                 }
                 None
             }
-            // Node::Addition(ports) => {
-            //     if ports.len() == 1 {
-            //         return Some(RewriteRule::RemoveUnaryAddition(address));
-            //     }
-            //     if ports.len() == 2 {
-            //         return Some(RewriteRule::RemoveBinaryAddition(
-            //             address,
-            //             (ports[0].clone(), ports[1].clone()),
-            //         ));
-            //     }
-            //     for (port_index, target_port) in ports.iter().enumerate() {
-            //         if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-            //             let outer_ports = ports
-            //                 .iter()
-            //                 .filter(|p| p != &target_port)
-            //                 .cloned()
-            //                 .collect();
-            //             return Some(RewriteRule::AddMulUnrestricted(
-            //                 address,
-            //                 port_index,
-            //                 outer_ports,
-            //                 target_port.0,
-            //                 diagram.next_address,
-            //             ));
-            //         }
-            //         if port_index > 0 {
-            //             if let Some(Node::Addition(_ports2)) = diagram.nodes.get(&target_port.0) {
-            //                 if target_port.1 == 0 {
-            //                     return Some(RewriteRule::FuseAddition(address, port_index));
-            //                 }
-            //             }
-            //             if let Some(Node::AddConstant(const_val, _, _)) =
-            //                 diagram.nodes.get(&target_port.0)
-            //             {
-            //                 return Some(RewriteRule::AdditionConstAddition(
-            //                     address,
-            //                     port_index,
-            //                     target_port.2,
-            //                     const_val.clone(),
-            //                 ));
-            //             }
-            //             if let Some(Node::Constant(const_val, _)) =
-            //                 diagram.nodes.get(&target_port.0)
-            //             {
-            //                 return Some(RewriteRule::AdditionConst(
-            //                     address,
-            //                     port_index,
-            //                     target_port.2,
-            //                     const_val.clone(),
-            //                 ));
-            //             }
-            //         }
-            //     }
-            //     None
-            // }
-            // Node::Multiplication(ports) => {
-            //     if ports.len() == 1 {
-            //         return Some(RewriteRule::RemoveUnaryMultiplication(address));
-            //     }
-            //     if ports.len() == 2 {
-            //         return Some(RewriteRule::RemoveBinaryMultiplication(
-            //             address,
-            //             (ports[0].clone(), ports[1].clone()),
-            //         ));
-            //     }
-            //     for (port_index, target_port) in ports.iter().enumerate() {
-            //         if port_index == 0 {
-            //             if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-            //                 let outer_ports = ports
-            //                     .iter()
-            //                     .filter(|p| p != &target_port)
-            //                     .cloned()
-            //                     .collect();
-            //                 return Some(RewriteRule::AddMulUnrestricted(
-            //                     address,
-            //                     port_index,
-            //                     outer_ports,
-            //                     target_port.0,
-            //                     diagram.next_address,
-            //                 ));
-            //             }
-            //         }
-            //         if port_index > 0 {
-            //             if let Some(Node::Multiplication(_ports2)) =
-            //                 diagram.nodes.get(&target_port.0)
-            //             {
-            //                 if target_port.1 == 0 {
-            //                     return Some(RewriteRule::FuseMultiplication(address, port_index));
-            //                 }
-            //             }
+            Node::Addition(ports) => {
+                if ports.len() == 1 {
+                    return Some(RewriteRule::RemoveUnaryAddition(address));
+                }
+                if ports.len() == 2 {
+                    return Some(RewriteRule::RemoveBinaryAddition(
+                        address,
+                        (ports[0].clone(), ports[1].clone()),
+                    ));
+                }
+                for (port_index, target_port) in ports.iter().enumerate() {
+                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
+                        let outer_ports = ports
+                            .iter()
+                            .filter(|p| p != &target_port)
+                            .cloned()
+                            .collect();
+                        return Some(RewriteRule::AddMulUnrestricted(
+                            address,
+                            port_index,
+                            outer_ports,
+                            target_port.0,
+                            diagram.next_address,
+                        ));
+                    }
+                    if port_index > 0 {
+                        // if let Some(Node::Addition(_ports2)) = diagram.nodes.get(&target_port.0) {
+                        //     if target_port.1 == 0 {
+                        //         return Some(RewriteRule::FuseAddition(address, port_index));
+                        //     }
+                        // }
+                        if let Some(Node::AddConstant(const_val, _, _)) =
+                            diagram.nodes.get(&target_port.0)
+                        {
+                            return Some(RewriteRule::AdditionConstAddition(
+                                address,
+                                port_index,
+                                ports[0].2.id,
+                                const_val.clone(),
+                            ));
+                        }
+                        if let Some(Node::Constant(const_val, _)) =
+                            diagram.nodes.get(&target_port.0)
+                        {
+                            return Some(RewriteRule::AdditionConst(
+                                address,
+                                port_index,
+                                ports[0].2.id,
+                                const_val.clone(),
+                            ));
+                        }
+                    }
+                }
+                None
+            }
+            Node::Multiplication(ports) => {
+                if ports.len() == 1 {
+                    return Some(RewriteRule::RemoveUnaryMultiplication(address));
+                }
+                if ports.len() == 2 {
+                    return Some(RewriteRule::RemoveBinaryMultiplication(
+                        address,
+                        (ports[0].clone(), ports[1].clone()),
+                    ));
+                }
+                for (port_index, target_port) in ports.iter().enumerate() {
+                    if port_index == 0 {
+                        if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
+                            let outer_ports = ports
+                                .iter()
+                                .filter(|p| p != &target_port)
+                                .cloned()
+                                .collect();
+                            return Some(RewriteRule::AddMulUnrestricted(
+                                address,
+                                port_index,
+                                outer_ports,
+                                target_port.0,
+                                diagram.next_address,
+                            ));
+                        }
+                    }
+                    if port_index > 0 {
+                        // if let Some(Node::Multiplication(_ports2)) =
+                        //     diagram.nodes.get(&target_port.0)
+                        // {
+                        //     if target_port.1 == 0 {
+                        //         return Some(RewriteRule::FuseMultiplication(address, port_index));
+                        //     }
+                        // }
 
-            //             if let Some(Node::MultiplyConstant(val, _, _)) =
-            //                 diagram.nodes.get(&target_port.0)
-            //             {
-            //                 if val != &BigInt::from(0) {
-            //                     return Some(RewriteRule::MultiplicationConstMultiplication(
-            //                         address,
-            //                         port_index,
-            //                         target_port.2,
-            //                         val.clone(),
-            //                     ));
-            //                 }
-            //             }
-            //             if let Some(Node::Constant(val, _)) = diagram.nodes.get(&target_port.0) {
-            //                 return Some(RewriteRule::MultiplicationConst(
-            //                     address,
-            //                     port_index,
-            //                     target_port.2,
-            //                     val.clone(),
-            //                 ));
-            //             }
-            //         }
-            //     }
-            //     None
-            // }
-            // Node::AddConstant(value, port1, port2) => {
-            //     if value == BigInt::from(0) {
-            //         return Some(RewriteRule::AddConstantZero(address, (port1, port2)));
-            //     }
-            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
-            //         return Some(RewriteRule::AddConstantConstantHead(address));
-            //     }
-            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-            //         return Some(RewriteRule::AddConstantConstantTail(address));
-            //     }
-            //     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-            //         return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
-            //     }
-            //     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
-            //         return Some(RewriteRule::DeleteConstOpUnrestricted(address, port2.1));
-            //     }
-            //     if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
-            //         if port1.1 == 0 {
-            //             return Some(RewriteRule::FuseAdditionByConstantHdHd(address));
-            //         }
-            //     }
-            //     if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
-            //         if port2.1 == 0 {
-            //             return Some(RewriteRule::FuseAdditionByConstantHdTl(address));
-            //         }
-            //         if port2.1 == 1 {
-            //             return Some(RewriteRule::FuseAdditionByConstantTlTl(address));
-            //         }
-            //     }
-            //     if let Some(Node::MultiplyConstant(value, _, _)) = diagram.nodes.get(&port2.0) {
-            //         if port2.1 == 1 {
-            //             return Some(RewriteRule::SwapAddMulConstantsTlTl(
-            //                 address,
-            //                 port1.2,
-            //                 value.clone(),
-            //             ));
-            //         }
-            //     }
-            //     if let Some(Node::MultiplyConstant(value, _, _)) = diagram.nodes.get(&port1.0) {
-            //         if port1.1 == 1 {
-            //             return Some(RewriteRule::SwapAddMulConstantsHdTl(
-            //                 address,
-            //                 port2.2,
-            //                 value.clone(),
-            //             ));
-            //         }
-            //     }
-            //     None
-            // }
-            // Node::MultiplyConstant(value, port1, port2) => {
-            //     if value == BigInt::from(0) {
-            //         return Some(RewriteRule::MulConstantZero(
-            //             address,
-            //             (port1, port2),
-            //             diagram.next_address,
-            //         ));
-            //     }
-            //     if value == BigInt::from(1) {
-            //         return Some(RewriteRule::MulConstantOne(address, (port1, port2)));
-            //     }
-            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
-            //         return Some(RewriteRule::MulConstantConstantHead(address));
-            //     }
-            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-            //         return Some(RewriteRule::MulConstantConstantTail(address));
-            //     }
-            //     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-            //         return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
-            //     }
-            //     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
-            //         if value != BigInt::from(0) {
-            //             return Some(RewriteRule::DeleteConstOpUnrestricted(address, port2.1));
-            //         }
-            //     }
-            //     if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
-            //         if port2.1 == 0 {
-            //             return Some(RewriteRule::FuseMultiplicationByConstantHdHd(address));
-            //         }
-            //     }
-            //     if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
-            //         if port2.1 == 0 {
-            //             return Some(RewriteRule::FuseMultiplicationByConstantHdTl(address));
-            //         }
-            //         if port2.1 == 1 {
-            //             return Some(RewriteRule::FuseMultiplicationByConstantTlTl(address));
-            //         }
-            //     }
-            //     None
-            // }
+                        if let Some(Node::MultiplyConstant(val, _, _)) =
+                            diagram.nodes.get(&target_port.0)
+                        {
+                            if val != &BigInt::from(0) {
+                                return Some(RewriteRule::MultiplicationConstMultiplication(
+                                    address,
+                                    port_index,
+                                    ports[0].2.id,
+                                    val.clone(),
+                                ));
+                            }
+                        }
+                        if let Some(Node::Constant(val, _)) = diagram.nodes.get(&target_port.0) {
+                            return Some(RewriteRule::MultiplicationConst(
+                                address,
+                                port_index,
+                                ports[0].2.id,
+                                val.clone(),
+                            ));
+                        }
+                    }
+                }
+                None
+            }
+            Node::AddConstant(value, port1, port2) => {
+                if value == BigInt::from(0) {
+                    return Some(RewriteRule::AddConstantZero(address, (port1, port2)));
+                }
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
+                    return Some(RewriteRule::AddConstantConstantHead(address));
+                }
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
+                    return Some(RewriteRule::AddConstantConstantTail(address));
+                }
+                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+                    return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
+                }
+                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
+                    return Some(RewriteRule::DeleteConstOpUnrestricted(address, port2.1));
+                }
+                if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
+                    if port1.1 == 0 {
+                        return Some(RewriteRule::FuseAdditionByConstantHdHd(address));
+                    }
+                }
+                if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+                    if port2.1 == 0 {
+                        return Some(RewriteRule::FuseAdditionByConstantHdTl(address));
+                    }
+                    if port2.1 == 1 {
+                        return Some(RewriteRule::FuseAdditionByConstantTlTl(address));
+                    }
+                }
+                if let Some(Node::MultiplyConstant(value, _, _)) = diagram.nodes.get(&port2.0) {
+                    if port2.1 == 1 {
+                        return Some(RewriteRule::SwapAddMulConstantsTlTl(
+                            address,
+                            port1.2.id,
+                            value.clone(),
+                        ));
+                    }
+                }
+                if let Some(Node::MultiplyConstant(value, _, _)) = diagram.nodes.get(&port1.0) {
+                    if port1.1 == 1 {
+                        return Some(RewriteRule::SwapAddMulConstantsHdTl(
+                            address,
+                            port2.2.id,
+                            value.clone(),
+                        ));
+                    }
+                }
+                None
+            }
+            Node::MultiplyConstant(value, port1, port2) => {
+                if value == BigInt::from(0) {
+                    return Some(RewriteRule::MulConstantZero(
+                        address,
+                        (port1, port2),
+                        diagram.next_address,
+                    ));
+                }
+                if value == BigInt::from(1) {
+                    return Some(RewriteRule::MulConstantOne(address, (port1, port2)));
+                }
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
+                    return Some(RewriteRule::MulConstantConstantHead(address));
+                }
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
+                    return Some(RewriteRule::MulConstantConstantTail(address));
+                }
+                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+                    return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
+                }
+                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
+                    if value != BigInt::from(0) {
+                        return Some(RewriteRule::DeleteConstOpUnrestricted(address, port2.1));
+                    }
+                }
+                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
+                    if port2.1 == 0 {
+                        return Some(RewriteRule::FuseMultiplicationByConstantHdHd(address));
+                    }
+                }
+                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+                    if port2.1 == 0 {
+                        return Some(RewriteRule::FuseMultiplicationByConstantHdTl(address));
+                    }
+                    if port2.1 == 1 {
+                        return Some(RewriteRule::FuseMultiplicationByConstantTlTl(address));
+                    }
+                }
+                None
+            }
             // Node::ExponentiateConstant(value, port1, port2) => {
             //     if value == BigInt::from(1) {
             //         return Some(RewriteRule::ExpConstantOne(address, (port1, port2)));
@@ -3091,20 +3091,20 @@ fn gen_string_diagram_step(
             //     }
             //     None
             // }
-            // Node::Constant(_, port) => {
-            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
-            //         return Some(RewriteRule::ConstantConstantRemoval(address, port.0));
-            //     }
-            //     None
-            // }
-            // Node::Unrestricted(port) => {
-            //     if let Some(Node::Constant(_, _) | Node::Unrestricted(_)) =
-            //         diagram.nodes.get(&port.0)
-            //     {
-            //         return Some(RewriteRule::UnrestrictedUnaryRemoval(address, port.0));
-            //     }
-            //     None
-            // }
+            Node::Constant(_, port) => {
+                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
+                    return Some(RewriteRule::ConstantConstantRemoval(address, port.0));
+                }
+                None
+            }
+            Node::Unrestricted(port) => {
+                if let Some(Node::Constant(_, _) | Node::Unrestricted(_)) =
+                    diagram.nodes.get(&port.0)
+                {
+                    return Some(RewriteRule::UnrestrictedUnaryRemoval(address, port.0));
+                }
+                None
+            }
             _ => None,
         }
     } else {
@@ -3359,7 +3359,11 @@ fn simplify_string_diagram_step(
     let step = gen_string_diagram_step(diagram, defs, address);
 
     if let Some(rule) = &step {
+        println!("Applying rule: {rule:?}");
         let res = apply_rewrite_step(diagram, defs, field_ops, rule.clone());
+        // for (i, e) in &diagram.nodes {
+        //     println!("{i}: {e}");
+        // }
         (step, res)
     } else {
         (None, vec![])
@@ -3679,7 +3683,15 @@ pub fn simplify_3ac(
     let mut reg: DefinitionRegistry = DefinitionRegistry::new(defs);
     let mut diag: StringDiagram = build_string_diagram(equations.to_vec(), input_ids, &mut reg);
     equations.clear();
+    // println!("Starting Diagram:");
+    // for (i, e) in &diag.nodes {
+    //     println!("{i}: {e}");
+    // }
     simplify_string_diagram(&mut diag, &mut reg, field_ops);
+    // println!("Ending Diagram:");
+    // for (i, e) in &diag.nodes {
+    //     println!("{i}: {e}");
+    // }
     println!("Converting back into 3AC...");
     prep_for_3ac(&mut diag, &mut reg);
     equations.extend(convert_to_3ac(&diag, &reg));
