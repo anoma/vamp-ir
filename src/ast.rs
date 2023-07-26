@@ -924,7 +924,7 @@ impl fmt::Display for InfixOp {
 
 pub type VariableId = u32;
 
-#[derive(Clone, Debug, Encode, Decode)]
+#[derive(Clone, Debug, Encode, Decode, PartialEq, Eq)]
 pub struct Variable {
     pub name: Option<String>,
     pub id: VariableId,

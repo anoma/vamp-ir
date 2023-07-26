@@ -20,6 +20,7 @@ use crate::ast::*;
 use crate::transform::FieldOps;
 use num_bigint::BigInt;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 
 // Define the address type
 pub type VarId = u32;
@@ -27,12 +28,19 @@ pub type Address = usize;
 pub type PortIndex = usize;
 
 // Define a port as a pair of node address and a list index
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Port(pub Address, pub PortIndex, pub VarId);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Port(pub Address, pub PortIndex, pub Variable);
 
 impl Port {
     pub fn location(&self) -> (Address, PortIndex) {
         (self.0, self.1)
+    }
+}
+
+impl fmt::Display for Port {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {}, {})", self.0, self.1, self.2)?;
+        Ok(())
     }
 }
 
@@ -51,6 +59,99 @@ pub enum Node {
 
     CVVAdd(BigInt, Port, Port), // First port plus the second equals the constant (Only used during 3ac translation)
     CVVMul(BigInt, Port, Port), // First port times the second equals the constant (Only used during 3ac translation)
+}
+
+impl fmt::Display for Node {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self {
+            Node::Addition(ports) => {
+                if ports.len() > 1 {
+                    write!(f, "{{")?;
+                }
+                let mut iter = ports.iter();
+                let expr = iter
+                    .next()
+                    .expect("sequence should contain at least one expression");
+                write!(f, "{expr}")?;
+                for expr in iter {
+                    write!(f, " + {expr}")?;
+                }
+                if ports.len() > 1 {
+                    write!(f, "}}")?;
+                }
+            }
+            Node::Multiplication(ports) => {
+                if ports.len() > 1 {
+                    write!(f, "{{")?;
+                }
+                let mut iter = ports.iter();
+                let expr = iter
+                    .next()
+                    .expect("sequence should contain at least one expression");
+                write!(f, "{expr}")?;
+                for expr in iter {
+                    write!(f, " * {expr}")?;
+                }
+                if ports.len() > 1 {
+                    write!(f, "}}")?;
+                }
+            }
+            Node::Equality(vars, ports) => {
+                if !vars.is_empty() {
+                    write!(f, "[")?;
+                    let mut iter = vars.iter();
+                    let expr = iter
+                        .next()
+                        .expect("sequence should contain at least one expression");
+                    write!(f, "{expr}")?;
+                    for expr in iter {
+                        write!(f, ", {expr}")?;
+                    }
+                    write!(f, "]")?;
+                }
+
+                if ports.len() > 1 {
+                    write!(f, "{{")?;
+                }
+                let mut iter = ports.iter();
+                let expr = iter
+                    .next()
+                    .expect("sequence should contain at least one expression");
+                write!(f, "={expr}")?;
+                for expr in iter {
+                    write!(f, " = {expr}")?;
+                }
+                if ports.len() > 1 {
+                    write!(f, "}}")?;
+                }
+            }
+            Node::AddConstant(val, port1, port2) => {
+                write!(f, "{port1} = {val} + {port2}")?;
+            }
+            Node::MultiplyConstant(val, port1, port2) => {
+                write!(f, "{port1} = {val} * {port2}")?;
+            }
+            Node::ExponentiateConstant(val, port1, port2) => {
+                write!(f, "{port1} = {port2} ^ {val}")?;
+            }
+            Node::Unrestricted(port1) => {
+                write!(f, "{port1} exists")?;
+            }
+            Node::Constant(val, port1) => {
+                write!(f, "{port1} = {val}")?;
+            }
+            Node::Contradiction => {
+                write!(f, "XXX")?;
+            }
+            Node::CVVAdd(val, port1, port2) => {
+                write!(f, "{val} = {port1} + {port2}")?;
+            }
+            Node::CVVMul(val, port1, port2) => {
+                write!(f, "{val} = {port1} * {port2}")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 // Define the String Diagram
@@ -114,7 +215,7 @@ impl StringDiagram {
     // Helper function to check if the port is connected back to the original (address, port_index).
     // Also checks that every port link has a single, unique variable id.
     fn is_connected_back(&self, port: &Port, original: (Address, PortIndex)) -> bool {
-        let Port(target_address, target_port_index, var_id) = port;
+        let Port(target_address, target_port_index, var) = port;
         // Port should not link to itself
         if target_address == &original.0 && target_port_index == &original.1 {
             return false;
@@ -122,12 +223,12 @@ impl StringDiagram {
         if let Some(target_node) = self.nodes.get(target_address) {
             match target_node {
                 Node::Addition(ports) | Node::Multiplication(ports) | Node::Equality(_, ports) => {
-                    if let Some(Port(back_address, back_port_index, var_id_2)) =
+                    if let Some(Port(back_address, back_port_index, var_2)) =
                         ports.get(*target_port_index)
                     {
                         return *back_address == original.0
                             && *back_port_index == original.1
-                            && var_id == var_id_2;
+                            && var.id == var_2.id;
                     }
                 }
                 Node::AddConstant(_, port1, port2)
@@ -142,10 +243,10 @@ impl StringDiagram {
                     };
                     return back_port.0 == original.0
                         && back_port.1 == original.1
-                        && back_port.2 == *var_id;
+                        && back_port.2.id == var.id;
                 }
                 Node::Unrestricted(port) | Node::Constant(_, port) => {
-                    return port.0 == original.0 && port.1 == original.1 && port.2 == *var_id;
+                    return port.0 == original.0 && port.1 == original.1 && port.2.id == var.id;
                 }
                 Node::Contradiction => {}
             }
@@ -348,7 +449,7 @@ pub fn build_string_diagram(
 
                     let (equality_address, new_port_index) = get_or_create_equality_node(
                         var,
-                        Port(target_address, 0, var.id),
+                        Port(target_address, 0, var.clone()),
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
@@ -356,7 +457,7 @@ pub fn build_string_diagram(
 
                     let _const_addr = diagram.add_node(Node::Constant(
                         c.clone(),
-                        Port(equality_address, new_port_index, var.id),
+                        Port(equality_address, new_port_index, var.clone()),
                     ));
                 }
                 (Expr::Variable(var1), Expr::Variable(var2)) => {
@@ -380,14 +481,14 @@ pub fn build_string_diagram(
 
                     let (equality_address1, new_port_index1) = get_or_create_equality_node(
                         var1,
-                        Port(target_address, 0, var1.id),
+                        Port(target_address, 0, var1.clone()),
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
                     );
                     let (equality_address2, new_port_index2) = get_or_create_equality_node(
                         var2,
-                        Port(target_address, 1, var2.id),
+                        Port(target_address, 1, var2.clone()),
                         &mut diagram,
                         &mut variable_addresses,
                         input_ids,
@@ -397,8 +498,8 @@ pub fn build_string_diagram(
                     diagram.add_node(Node::Equality(
                         vec![],
                         vec![
-                            Port(equality_address1, new_port_index1, var1.id),
-                            Port(equality_address2, new_port_index2, var2.id),
+                            Port(equality_address1, new_port_index1, var1.clone()),
+                            Port(equality_address2, new_port_index2, var2.clone()),
                         ],
                     ));
                 }
@@ -424,14 +525,14 @@ pub fn build_string_diagram(
 
                         let (equality_address1, new_port_index1) = get_or_create_equality_node(
                             var1,
-                            Port(target_address, 0, var1.id),
+                            Port(target_address, 0, var1.clone()),
                             &mut diagram,
                             &mut variable_addresses,
                             input_ids,
                         );
                         let (equality_address2, new_port_index2) = get_or_create_equality_node(
                             var2,
-                            Port(target_address, 1, var2.id),
+                            Port(target_address, 1, var2.clone()),
                             &mut diagram,
                             &mut variable_addresses,
                             input_ids,
@@ -439,8 +540,8 @@ pub fn build_string_diagram(
 
                         diagram.add_node(Node::MultiplyConstant(
                             (-1).into(),
-                            Port(equality_address1, new_port_index1, var1.id),
-                            Port(equality_address2, new_port_index2, var2.id),
+                            Port(equality_address1, new_port_index1, var1.clone()),
+                            Port(equality_address2, new_port_index2, var2.clone()),
                         ));
                     }
                 }
@@ -468,57 +569,57 @@ pub fn build_string_diagram(
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 1, var.id),
+                                    Port(target_address, 1, var.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
-                                    Port(target_address, 0, term_var1.id),
+                                    Port(target_address, 0, term_var1.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
-                                    Port(target_address, 2, term_var2.id),
+                                    Port(target_address, 2, term_var2.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 ports = vec![
-                                    Port(address1, port_index1, term_var1.id),
-                                    Port(address0, port_index0, var.id),
-                                    Port(address2, port_index2, term_var2.id),
+                                    Port(address1, port_index1, term_var1.clone()),
+                                    Port(address0, port_index0, var.clone()),
+                                    Port(address2, port_index2, term_var2.clone()),
                                 ];
                             } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
                             {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 0, var.id),
+                                    Port(target_address, 0, var.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
-                                    Port(target_address, 1, term_var1.id),
+                                    Port(target_address, 1, term_var1.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
-                                    Port(target_address, 2, term_var2.id),
+                                    Port(target_address, 2, term_var2.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 ports = vec![
-                                    Port(address0, port_index0, var.id),
-                                    Port(address1, port_index1, term_var1.id),
-                                    Port(address2, port_index2, term_var2.id),
+                                    Port(address0, port_index0, var.clone()),
+                                    Port(address1, port_index1, term_var1.clone()),
+                                    Port(address2, port_index2, term_var2.clone()),
                                 ];
                             } else {
                                 panic!("Invalid operation encountered: {op}")
@@ -531,54 +632,56 @@ pub fn build_string_diagram(
 
                             target_address = diagram.next_address + new_var_ids.len() + 1;
 
+                            let new_id = defs.register_definition(Expr::Constant(const1.clone()));
+
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 1, var.id),
+                                    Port(target_address, 1, var.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
-                                    Port(target_address, 0, var.id),
+                                    Port(target_address, 0, Variable::new(new_id)),
                                 ));
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
-                                    Port(target_address, 2, term_var2.id),
+                                    Port(target_address, 2, term_var2.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 ports = vec![
-                                    Port(address1, 0, var.id),
-                                    Port(address0, port_index0, var.id),
-                                    Port(address2, port_index2, term_var2.id),
+                                    Port(address1, 0, Variable::new(new_id)),
+                                    Port(address0, port_index0, var.clone()),
+                                    Port(address2, port_index2, term_var2.clone()),
                                 ];
                             } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
                             {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 0, var.id),
+                                    Port(target_address, 0, var.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
-                                    Port(target_address, 1, var.id),
+                                    Port(target_address, 1, Variable::new(new_id)),
                                 ));
                                 let (address2, port_index2) = get_or_create_equality_node(
                                     term_var2,
-                                    Port(target_address, 2, term_var2.id),
+                                    Port(target_address, 2, term_var2.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 ports = vec![
-                                    Port(address0, port_index0, var.id),
-                                    Port(address1, 0, var.id),
-                                    Port(address2, port_index2, term_var2.id),
+                                    Port(address0, port_index0, var.clone()),
+                                    Port(address1, 0, Variable::new(new_id)),
+                                    Port(address2, port_index2, term_var2.clone()),
                                 ];
                             } else {
                                 panic!("Invalid operation encountered: {op}")
@@ -591,54 +694,56 @@ pub fn build_string_diagram(
 
                             target_address = diagram.next_address + new_var_ids.len() + 1;
 
+                            let new_id = defs.register_definition(Expr::Constant(const2.clone()));
+
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 1, var.id),
+                                    Port(target_address, 1, var.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
-                                    Port(target_address, 0, term_var1.id),
+                                    Port(target_address, 0, term_var1.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
-                                    Port(target_address, 2, var.id),
+                                    Port(target_address, 2, Variable::new(new_id)),
                                 ));
                                 ports = vec![
-                                    Port(address1, port_index1, term_var1.id),
-                                    Port(address0, port_index0, var.id),
-                                    Port(address2, 0, var.id),
+                                    Port(address1, port_index1, term_var1.clone()),
+                                    Port(address0, port_index0, var.clone()),
+                                    Port(address2, 0, Variable::new(new_id)),
                                 ];
                             } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
                             {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 0, var.id),
+                                    Port(target_address, 0, var.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 let (address1, port_index1) = get_or_create_equality_node(
                                     term_var1,
-                                    Port(target_address, 1, term_var1.id),
+                                    Port(target_address, 1, term_var1.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
                                 );
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
-                                    Port(target_address, 2, var.id),
+                                    Port(target_address, 2, Variable::new(new_id)),
                                 ));
                                 ports = vec![
-                                    Port(address0, port_index0, var.id),
-                                    Port(address1, port_index1, term_var1.id),
-                                    Port(address2, 0, var.id),
+                                    Port(address0, port_index0, var.clone()),
+                                    Port(address1, port_index1, term_var1.clone()),
+                                    Port(address2, 0, Variable::new(new_id)),
                                 ];
                             } else {
                                 panic!("Invalid operation encountered: {op}")
@@ -651,7 +756,7 @@ pub fn build_string_diagram(
                             if matches!(op, InfixOp::Subtract) || matches!(op, InfixOp::Divide) {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 1, var.id),
+                                    Port(target_address, 1, var.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
@@ -660,24 +765,24 @@ pub fn build_string_diagram(
                                     defs.register_definition(Expr::Constant(const1.clone()));
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
-                                    Port(target_address, 0, const_id1),
+                                    Port(target_address, 0, Variable::new(const_id1)),
                                 ));
                                 let const_id2 =
                                     defs.register_definition(Expr::Constant(const2.clone()));
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
-                                    Port(target_address, 2, const_id2),
+                                    Port(target_address, 2, Variable::new(const_id2)),
                                 ));
                                 ports = vec![
-                                    Port(address1, 0, const_id1),
-                                    Port(address0, port_index0, var.id),
-                                    Port(address2, 0, const_id2),
+                                    Port(address1, 0, Variable::new(const_id1)),
+                                    Port(address0, port_index0, var.clone()),
+                                    Port(address2, 0, Variable::new(const_id2)),
                                 ];
                             } else if matches!(op, InfixOp::Add) || matches!(op, InfixOp::Multiply)
                             {
                                 let (address0, port_index0) = get_or_create_equality_node(
                                     var,
-                                    Port(target_address, 0, var.id),
+                                    Port(target_address, 0, var.clone()),
                                     &mut diagram,
                                     &mut variable_addresses,
                                     input_ids,
@@ -686,18 +791,18 @@ pub fn build_string_diagram(
                                     defs.register_definition(Expr::Constant(const1.clone()));
                                 let address1 = diagram.add_node(Node::Constant(
                                     const1.clone(),
-                                    Port(target_address, 1, const_id1),
+                                    Port(target_address, 1, Variable::new(const_id1)),
                                 ));
                                 let const_id2 =
                                     defs.register_definition(Expr::Constant(const2.clone()));
                                 let address2 = diagram.add_node(Node::Constant(
                                     const2.clone(),
-                                    Port(target_address, 2, const_id2),
+                                    Port(target_address, 2, Variable::new(const_id2)),
                                 ));
                                 ports = vec![
-                                    Port(address0, port_index0, var.id),
-                                    Port(address1, 0, const_id1),
-                                    Port(address2, 0, const_id2),
+                                    Port(address0, port_index0, var.clone()),
+                                    Port(address1, 0, Variable::new(const_id1)),
+                                    Port(address2, 0, Variable::new(const_id2)),
                                 ];
                             } else {
                                 panic!("Invalid operation encountered: {op}")
@@ -761,12 +866,7 @@ fn construct_port_vars(
                     port_vars.insert(current_port, var.clone());
                     port_vars.insert(target_port, var.clone());
                 }
-            } else if let Some(Port(target_addr, target_ptidx, target_id)) = ports.first() {
-                let var = Variable {
-                    name: None,
-                    id: *target_id,
-                };
-
+            } else if let Some(Port(target_addr, target_ptidx, var)) = ports.first() {
                 for (index, _target_port) in ports.iter().enumerate() {
                     let current_port = (*address, index);
                     let target_port = (*target_addr, *target_ptidx);
@@ -782,13 +882,9 @@ fn construct_port_vars(
     for (address, _) in &diagram.nodes {
         let ports = diagram.port_list(address);
 
-        for (index, Port(target_addr, target_ptidx, target_id)) in ports.iter().enumerate() {
+        for (index, Port(target_addr, target_ptidx, variable)) in ports.iter().enumerate() {
             let current_port = (*address, index);
             let target_port = (*target_addr, *target_ptidx);
-            let variable = Variable {
-                name: None,
-                id: *target_id,
-            };
 
             port_vars.insert(current_port, variable.clone());
             port_vars.insert(target_port, variable.clone());
@@ -1200,7 +1296,7 @@ fn split_node(diagram: &mut StringDiagram, defs: &mut DefinitionRegistry, addres
     let new_id = defs.next_id;
 
     // Create a new node with the rightmost argument of the original
-    let new_node_ports = vec![Port(address, 2, new_id)]
+    let new_node_ports = vec![Port(address, 2, Variable::new(new_id))]
         .into_iter()
         .chain(remaining_ports.iter().cloned())
         .collect();
@@ -1218,13 +1314,16 @@ fn split_node(diagram: &mut StringDiagram, defs: &mut DefinitionRegistry, addres
     {
         *ports = first_two_ports
             .into_iter()
-            .chain(std::iter::once(Port(new_address, 0, new_id)))
+            .chain(std::iter::once(Port(new_address, 0, Variable::new(new_id))))
             .collect();
     }
 
     // Update the port links for the remaining ports in the original node
     for (idx, port) in remaining_ports.iter().enumerate() {
-        diagram.replace_port(&port.location(), &Port(new_address, idx + 1, port.2));
+        diagram.replace_port(
+            &port.location(),
+            &Port(new_address, idx + 1, port.2.clone()),
+        );
     }
 }
 
@@ -1286,10 +1385,10 @@ fn split_exponentiation_node(
     for i in 0..exp_value {
         let new_id = defs.next_id;
         // Point the equality ports to the multiplication ports
-        equality_ports.push(Port(address, i + 1, new_id));
+        equality_ports.push(Port(address, i + 1, Variable::new(new_id)));
 
         // Point the multiplication ports to the equality ports
-        multiplication_ports.push(Port(diagram.next_address, i + 1, new_id));
+        multiplication_ports.push(Port(diagram.next_address, i + 1, Variable::new(new_id)));
     }
     let equality_address = diagram.add_node(Node::Equality(vec![], equality_ports));
 
@@ -1359,7 +1458,10 @@ fn fuse_equality_nodes(
 
     // Update the target ports in the diagram
     for (index, port) in new_ports.iter().enumerate() {
-        diagram.replace_port(&port.location(), &Port(prime_node_address, index, port.2));
+        diagram.replace_port(
+            &port.location(),
+            &Port(prime_node_address, index, port.2.clone()),
+        );
     }
 }
 
@@ -1416,7 +1518,10 @@ fn spider_fusion(diagram: &mut StringDiagram, prime_node_address: Address, port_
 
     // Update the target ports in the diagram
     for (index, port) in new_ports.iter().enumerate() {
-        diagram.replace_port(&port.location(), &Port(prime_node_address, index, port.2));
+        diagram.replace_port(
+            &port.location(),
+            &Port(prime_node_address, index, port.2.clone()),
+        );
     }
 }
 
@@ -1447,7 +1552,7 @@ fn remove_binary_node(diagram: &mut StringDiagram, address: Address) {
         &Port(
             second_port_target.0,
             second_port_target.1,
-            first_port_target.2,
+            first_port_target.2.clone(),
         ),
     );
     diagram.replace_port(&second_port_target.location(), &first_port_target);
@@ -2152,7 +2257,10 @@ fn equality_unrestricted(diagram: &mut StringDiagram, address: Address, port_ind
 
     // Now apply the stored new ports to the diagram
     for (index, new_port) in new_ports.iter().enumerate() {
-        diagram.replace_port(&new_port.location(), &Port(address, index, new_port.2));
+        diagram.replace_port(
+            &new_port.location(),
+            &Port(address, index, new_port.2.clone()),
+        );
     }
 }
 
@@ -2191,13 +2299,16 @@ fn addition_const_addition(
     // Whatever the head of the Addition node is pointing to should now point to the head of the AddConstant node.
     diagram.replace_port(
         &old_head_port.location(),
-        &Port(target_address, 0, old_head_port.2),
+        &Port(target_address, 0, old_head_port.2.clone()),
     );
 
     let new_id = defs.next_id;
 
     // The head of the Addition node should now point to the tail of the AddConstant node.
-    diagram.replace_port(&(address, 0), &Port(target_address, 1, new_id));
+    diagram.replace_port(
+        &(address, 0),
+        &Port(target_address, 1, Variable::new(new_id)),
+    );
 
     // Make the necessary connection based on which port of the AddConstant node was connected to the Addition node.
     if target_port_index == 0 {
@@ -2217,7 +2328,11 @@ fn addition_const_addition(
     // Insert the updated AddConstant node.
     diagram.nodes.insert(
         target_address,
-        Node::AddConstant(new_value, old_head_port, Port(address, 0, new_id)),
+        Node::AddConstant(
+            new_value,
+            old_head_port,
+            Port(address, 0, Variable::new(new_id)),
+        ),
     );
 }
 
@@ -2256,13 +2371,16 @@ fn multiplication_const_multiplication(
     // Whatever the head of the Multiplication node is pointing to should now point to the head of the MultiplyConstant node.
     diagram.replace_port(
         &old_head_port.location(),
-        &Port(target_address, 0, old_head_port.2),
+        &Port(target_address, 0, old_head_port.2.clone()),
     );
 
     let new_id = defs.next_id;
 
     // The head of the Multiplication node should now point to the tail of the MultiplyConstant node.
-    diagram.replace_port(&(address, 0), &Port(target_address, 1, new_id));
+    diagram.replace_port(
+        &(address, 0),
+        &Port(target_address, 1, Variable::new(new_id)),
+    );
 
     // Make the necessary connection based on which port of the MultiplyConstant node was connected to the Multiplication node.
     if target_port_index == 0 {
@@ -2282,7 +2400,11 @@ fn multiplication_const_multiplication(
     // Insert the updated MultiplyConstant node.
     diagram.nodes.insert(
         target_address,
-        Node::MultiplyConstant(new_value, old_head_port, Port(address, 0, new_id)),
+        Node::MultiplyConstant(
+            new_value,
+            old_head_port,
+            Port(address, 0, Variable::new(new_id)),
+        ),
     );
 }
 
@@ -2311,13 +2433,16 @@ fn addition_const(
     // Whatever the head of the Addition node is pointing to should now point to the head of the AddConstant node.
     diagram.replace_port(
         &old_head_port.location(),
-        &Port(target_address, 0, old_head_port.2),
+        &Port(target_address, 0, old_head_port.2.clone()),
     );
 
     let new_id = defs.next_id;
 
     // The head of the Addition node should now point to the tail of the AddConstant node.
-    diagram.replace_port(&(address, 0), &Port(target_address, 1, new_id));
+    diagram.replace_port(
+        &(address, 0),
+        &Port(target_address, 1, Variable::new(new_id)),
+    );
 
     // Drop the previous port index and update linked ports.
     // Temporarily store the new ports to avoid borrowing issues
@@ -2334,13 +2459,20 @@ fn addition_const(
 
     // Now apply the stored new ports to the diagram
     for (index, new_port) in new_ports.iter().enumerate() {
-        diagram.replace_port(&new_port.location(), &Port(address, index, new_port.2));
+        diagram.replace_port(
+            &new_port.location(),
+            &Port(address, index, new_port.2.clone()),
+        );
     }
 
     // Insert the updated AddConstant node.
     diagram.nodes.insert(
         target_address,
-        Node::AddConstant(value, old_head_port, Port(address, 0, new_id)),
+        Node::AddConstant(
+            value,
+            old_head_port,
+            Port(address, 0, Variable::new(new_id)),
+        ),
     );
 }
 
@@ -2369,13 +2501,16 @@ fn multiplication_const(
     // Whatever the head of the Multiplication node is pointing to should now point to the head of the MultiplyConstant node.
     diagram.replace_port(
         &old_head_port.location(),
-        &Port(target_address, 0, old_head_port.2),
+        &Port(target_address, 0, old_head_port.2.clone()),
     );
 
     let new_id = defs.next_id;
 
     // The head of the Multiplication node should now point to the tail of the MultiplyConstant node.
-    diagram.replace_port(&(address, 0), &Port(target_address, 1, new_id));
+    diagram.replace_port(
+        &(address, 0),
+        &Port(target_address, 1, Variable::new(new_id)),
+    );
 
     // Drop the previous port index and update linked ports.
     // Temporarily store the new ports to avoid borrowing issues
@@ -2392,30 +2527,37 @@ fn multiplication_const(
 
     // Now apply the stored new ports to the diagram
     for (index, new_port) in new_ports.iter().enumerate() {
-        diagram.replace_port(&new_port.location(), &Port(address, index, new_port.2));
+        diagram.replace_port(
+            &new_port.location(),
+            &Port(address, index, new_port.2.clone()),
+        );
     }
 
     // Insert the updated MultiplyConstant node.
     diagram.nodes.insert(
         target_address,
-        Node::MultiplyConstant(value, old_head_port, Port(address, 0, new_id)),
+        Node::MultiplyConstant(
+            value,
+            old_head_port,
+            Port(address, 0, Variable::new(new_id)),
+        ),
     );
 }
 
 // If X = c and Y = X and A = X etc. then Y = c and A = c, etc
 fn equality_const(diagram: &mut StringDiagram, address: Address, port_index: PortIndex) {
     // Extract the necessary information
-    let (has_variables, target_port, const_value, cvar_id) =
+    let (has_variables, target_port, const_value, cvar) =
         if let Some(Node::Equality(variables, ports)) = diagram.nodes.get(&address) {
             if let Some(target_port) = ports.get(port_index) {
-                if let Some(Node::Constant(value, Port(_, _, cvar_id))) =
+                if let Some(Node::Constant(value, Port(_, _, cvar))) =
                     diagram.nodes.get(&target_port.0)
                 {
                     (
                         !variables.is_empty(),
                         target_port.clone(),
                         value.clone(),
-                        *cvar_id,
+                        cvar.clone(),
                     )
                 } else {
                     return;
@@ -2439,7 +2581,7 @@ fn equality_const(diagram: &mut StringDiagram, address: Address, port_index: Por
         // If the equality node does have variables, then all ports except for the one connected to
         // the original constant node should be dropped from the equality node.
         if has_variables {
-            ports.retain(|port| *port == target_port);
+            ports.retain(|port| port.0 == target_port.0 && port.1 == target_port.1);
             diagram.replace_port(&target_port.location(), &Port(address, 0, target_port.2));
         }
     }
@@ -2448,9 +2590,12 @@ fn equality_const(diagram: &mut StringDiagram, address: Address, port_index: Por
     for port in ports_to_update {
         let new_const_node_addr = diagram.add_node(Node::Constant(
             const_value.clone(),
-            Port(port.0, port.1, cvar_id),
+            Port(port.0, port.1, cvar.clone()),
         ));
-        diagram.replace_port(&port.location(), &Port(new_const_node_addr, 0, cvar_id));
+        diagram.replace_port(
+            &port.location(),
+            &Port(new_const_node_addr, 0, cvar.clone()),
+        );
     }
 
     // If the equality node has no variables, it, along with the original constant node, should be deleted.
@@ -2581,7 +2726,7 @@ fn swap_add_and_multiply_constants_hd_tl(
         address,
         Node::MultiplyConstant(
             multiply_value,
-            Port(add_head_port.0, add_head_port.1, new_id),
+            Port(add_head_port.0, add_head_port.1, Variable::new(new_id)),
             add_tail_port,
         ),
     );
@@ -2592,7 +2737,11 @@ fn swap_add_and_multiply_constants_hd_tl(
         Node::AddConstant(
             new_add_value,
             multiply_head_port,
-            Port(multiply_tail_port.0, multiply_tail_port.1, new_id),
+            Port(
+                multiply_tail_port.0,
+                multiply_tail_port.1,
+                Variable::new(new_id),
+            ),
         ),
     );
 }
@@ -2643,7 +2792,7 @@ fn swap_add_and_multiply_constants_tl_tl(
         address,
         Node::MultiplyConstant(
             multiply_value,
-            Port(add_tail_port.0, add_tail_port.1, new_id),
+            Port(add_tail_port.0, add_tail_port.1, Variable::new(new_id)),
             add_head_port.clone(),
         ),
     );
@@ -2657,7 +2806,11 @@ fn swap_add_and_multiply_constants_tl_tl(
     // Turn the MultiplyConstant node into an AddConstant node.
     diagram.nodes.insert(
         multiply_address,
-        Node::AddConstant(new_add_value, multiply_head_port, Port(address, 0, new_id)),
+        Node::AddConstant(
+            new_add_value,
+            multiply_head_port,
+            Port(address, 0, Variable::new(new_id)),
+        ),
     );
 }
 
@@ -2669,42 +2822,42 @@ fn gen_string_diagram_step(
 ) -> Option<RewriteRule> {
     if let Some(node) = diagram.nodes.get(&address).cloned() {
         match node {
-            Node::Equality(vars, ports) => {
-                if ports.is_empty() {
-                    // Delete empty equations
-                    return Some(RewriteRule::DeleteEmptyEquality(address));
-                }
-                if vars.is_empty() && ports.len() == 1 {
-                    return Some(RewriteRule::RemoveUnaryEquality(address));
-                }
-                if vars.is_empty() && ports.len() == 2 {
-                    return Some(RewriteRule::RemoveBinaryEquality(
-                        address,
-                        (ports[0].clone(), ports[1].clone()),
-                    ));
-                }
+            Node::Equality(_vars, ports) => {
+                // if ports.is_empty() {
+                //     // Delete empty equations
+                //     return Some(RewriteRule::DeleteEmptyEquality(address));
+                // }
+                // if vars.is_empty() && ports.len() == 1 {
+                //     return Some(RewriteRule::RemoveUnaryEquality(address));
+                // }
+                // if vars.is_empty() && ports.len() == 2 {
+                //     return Some(RewriteRule::RemoveBinaryEquality(
+                //         address,
+                //         (ports[0].clone(), ports[1].clone()),
+                //     ));
+                // }
                 for (port_index, target_port) in ports.iter().enumerate() {
-                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-                        return Some(RewriteRule::EqualityUnrestricted(address, port_index));
-                    }
-                    if let Some(Node::Constant(val, _)) = diagram.nodes.get(&target_port.0) {
-                        if ports.len() == 1 && !vars.is_empty() {
-                            let outer_ports = ports
-                                .iter()
-                                .filter(|p| p != &target_port)
-                                .cloned()
-                                .collect();
+                    // if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
+                    //     return Some(RewriteRule::EqualityUnrestricted(address, port_index));
+                    // }
+                    // if let Some(Node::Constant(val, _)) = diagram.nodes.get(&target_port.0) {
+                    //     if ports.len() == 1 && !vars.is_empty() {
+                    //         let outer_ports = ports
+                    //             .iter()
+                    //             .filter(|p| p != &target_port)
+                    //             .cloned()
+                    //             .collect();
 
-                            return Some(RewriteRule::EqualityConst(
-                                address,
-                                port_index,
-                                target_port.0,
-                                outer_ports,
-                                diagram.next_address,
-                                val.clone(),
-                            ));
-                        }
-                    }
+                    //         return Some(RewriteRule::EqualityConst(
+                    //             address,
+                    //             port_index,
+                    //             target_port.0,
+                    //             outer_ports,
+                    //             diagram.next_address,
+                    //             val.clone(),
+                    //         ));
+                    //     }
+                    // }
 
                     if let Some(Node::Equality(_, _ports2)) = diagram.nodes.get(&target_port.0) {
                         return Some(RewriteRule::FuseEquality(address, port_index));
@@ -2712,246 +2865,246 @@ fn gen_string_diagram_step(
                 }
                 None
             }
-            Node::Addition(ports) => {
-                if ports.len() == 1 {
-                    return Some(RewriteRule::RemoveUnaryAddition(address));
-                }
-                if ports.len() == 2 {
-                    return Some(RewriteRule::RemoveBinaryAddition(
-                        address,
-                        (ports[0].clone(), ports[1].clone()),
-                    ));
-                }
-                for (port_index, target_port) in ports.iter().enumerate() {
-                    if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-                        let outer_ports = ports
-                            .iter()
-                            .filter(|p| p != &target_port)
-                            .cloned()
-                            .collect();
-                        return Some(RewriteRule::AddMulUnrestricted(
-                            address,
-                            port_index,
-                            outer_ports,
-                            target_port.0,
-                            diagram.next_address,
-                        ));
-                    }
-                    if port_index > 0 {
-                        if let Some(Node::Addition(_ports2)) = diagram.nodes.get(&target_port.0) {
-                            if target_port.1 == 0 {
-                                return Some(RewriteRule::FuseAddition(address, port_index));
-                            }
-                        }
-                        if let Some(Node::AddConstant(const_val, _, _)) =
-                            diagram.nodes.get(&target_port.0)
-                        {
-                            return Some(RewriteRule::AdditionConstAddition(
-                                address,
-                                port_index,
-                                target_port.2,
-                                const_val.clone(),
-                            ));
-                        }
-                        if let Some(Node::Constant(const_val, _)) =
-                            diagram.nodes.get(&target_port.0)
-                        {
-                            return Some(RewriteRule::AdditionConst(
-                                address,
-                                port_index,
-                                target_port.2,
-                                const_val.clone(),
-                            ));
-                        }
-                    }
-                }
-                None
-            }
-            Node::Multiplication(ports) => {
-                if ports.len() == 1 {
-                    return Some(RewriteRule::RemoveUnaryMultiplication(address));
-                }
-                if ports.len() == 2 {
-                    return Some(RewriteRule::RemoveBinaryMultiplication(
-                        address,
-                        (ports[0].clone(), ports[1].clone()),
-                    ));
-                }
-                for (port_index, target_port) in ports.iter().enumerate() {
-                    if port_index == 0 {
-                        if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
-                            let outer_ports = ports
-                                .iter()
-                                .filter(|p| p != &target_port)
-                                .cloned()
-                                .collect();
-                            return Some(RewriteRule::AddMulUnrestricted(
-                                address,
-                                port_index,
-                                outer_ports,
-                                target_port.0,
-                                diagram.next_address,
-                            ));
-                        }
-                    }
-                    if port_index > 0 {
-                        if let Some(Node::Multiplication(_ports2)) =
-                            diagram.nodes.get(&target_port.0)
-                        {
-                            if target_port.1 == 0 {
-                                return Some(RewriteRule::FuseMultiplication(address, port_index));
-                            }
-                        }
+            // Node::Addition(ports) => {
+            //     if ports.len() == 1 {
+            //         return Some(RewriteRule::RemoveUnaryAddition(address));
+            //     }
+            //     if ports.len() == 2 {
+            //         return Some(RewriteRule::RemoveBinaryAddition(
+            //             address,
+            //             (ports[0].clone(), ports[1].clone()),
+            //         ));
+            //     }
+            //     for (port_index, target_port) in ports.iter().enumerate() {
+            //         if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
+            //             let outer_ports = ports
+            //                 .iter()
+            //                 .filter(|p| p != &target_port)
+            //                 .cloned()
+            //                 .collect();
+            //             return Some(RewriteRule::AddMulUnrestricted(
+            //                 address,
+            //                 port_index,
+            //                 outer_ports,
+            //                 target_port.0,
+            //                 diagram.next_address,
+            //             ));
+            //         }
+            //         if port_index > 0 {
+            //             if let Some(Node::Addition(_ports2)) = diagram.nodes.get(&target_port.0) {
+            //                 if target_port.1 == 0 {
+            //                     return Some(RewriteRule::FuseAddition(address, port_index));
+            //                 }
+            //             }
+            //             if let Some(Node::AddConstant(const_val, _, _)) =
+            //                 diagram.nodes.get(&target_port.0)
+            //             {
+            //                 return Some(RewriteRule::AdditionConstAddition(
+            //                     address,
+            //                     port_index,
+            //                     target_port.2,
+            //                     const_val.clone(),
+            //                 ));
+            //             }
+            //             if let Some(Node::Constant(const_val, _)) =
+            //                 diagram.nodes.get(&target_port.0)
+            //             {
+            //                 return Some(RewriteRule::AdditionConst(
+            //                     address,
+            //                     port_index,
+            //                     target_port.2,
+            //                     const_val.clone(),
+            //                 ));
+            //             }
+            //         }
+            //     }
+            //     None
+            // }
+            // Node::Multiplication(ports) => {
+            //     if ports.len() == 1 {
+            //         return Some(RewriteRule::RemoveUnaryMultiplication(address));
+            //     }
+            //     if ports.len() == 2 {
+            //         return Some(RewriteRule::RemoveBinaryMultiplication(
+            //             address,
+            //             (ports[0].clone(), ports[1].clone()),
+            //         ));
+            //     }
+            //     for (port_index, target_port) in ports.iter().enumerate() {
+            //         if port_index == 0 {
+            //             if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&target_port.0) {
+            //                 let outer_ports = ports
+            //                     .iter()
+            //                     .filter(|p| p != &target_port)
+            //                     .cloned()
+            //                     .collect();
+            //                 return Some(RewriteRule::AddMulUnrestricted(
+            //                     address,
+            //                     port_index,
+            //                     outer_ports,
+            //                     target_port.0,
+            //                     diagram.next_address,
+            //                 ));
+            //             }
+            //         }
+            //         if port_index > 0 {
+            //             if let Some(Node::Multiplication(_ports2)) =
+            //                 diagram.nodes.get(&target_port.0)
+            //             {
+            //                 if target_port.1 == 0 {
+            //                     return Some(RewriteRule::FuseMultiplication(address, port_index));
+            //                 }
+            //             }
 
-                        if let Some(Node::MultiplyConstant(val, _, _)) =
-                            diagram.nodes.get(&target_port.0)
-                        {
-                            if val != &BigInt::from(0) {
-                                return Some(RewriteRule::MultiplicationConstMultiplication(
-                                    address,
-                                    port_index,
-                                    target_port.2,
-                                    val.clone(),
-                                ));
-                            }
-                        }
-                        if let Some(Node::Constant(val, _)) = diagram.nodes.get(&target_port.0) {
-                            return Some(RewriteRule::MultiplicationConst(
-                                address,
-                                port_index,
-                                target_port.2,
-                                val.clone(),
-                            ));
-                        }
-                    }
-                }
-                None
-            }
-            Node::AddConstant(value, port1, port2) => {
-                if value == BigInt::from(0) {
-                    return Some(RewriteRule::AddConstantZero(address, (port1, port2)));
-                }
-                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
-                    return Some(RewriteRule::AddConstantConstantHead(address));
-                }
-                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                    return Some(RewriteRule::AddConstantConstantTail(address));
-                }
-                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-                    return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
-                }
-                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
-                    return Some(RewriteRule::DeleteConstOpUnrestricted(address, port2.1));
-                }
-                if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
-                    if port1.1 == 0 {
-                        return Some(RewriteRule::FuseAdditionByConstantHdHd(address));
-                    }
-                }
-                if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
-                    if port2.1 == 0 {
-                        return Some(RewriteRule::FuseAdditionByConstantHdTl(address));
-                    }
-                    if port2.1 == 1 {
-                        return Some(RewriteRule::FuseAdditionByConstantTlTl(address));
-                    }
-                }
-                if let Some(Node::MultiplyConstant(value, _, _)) = diagram.nodes.get(&port2.0) {
-                    if port2.1 == 1 {
-                        return Some(RewriteRule::SwapAddMulConstantsTlTl(
-                            address,
-                            port1.2,
-                            value.clone(),
-                        ));
-                    }
-                }
-                if let Some(Node::MultiplyConstant(value, _, _)) = diagram.nodes.get(&port1.0) {
-                    if port1.1 == 1 {
-                        return Some(RewriteRule::SwapAddMulConstantsHdTl(
-                            address,
-                            port2.2,
-                            value.clone(),
-                        ));
-                    }
-                }
-                None
-            }
-            Node::MultiplyConstant(value, port1, port2) => {
-                if value == BigInt::from(0) {
-                    return Some(RewriteRule::MulConstantZero(
-                        address,
-                        (port1, port2),
-                        diagram.next_address,
-                    ));
-                }
-                if value == BigInt::from(1) {
-                    return Some(RewriteRule::MulConstantOne(address, (port1, port2)));
-                }
-                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
-                    return Some(RewriteRule::MulConstantConstantHead(address));
-                }
-                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                    return Some(RewriteRule::MulConstantConstantTail(address));
-                }
-                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-                    return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
-                }
-                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
-                    if value != BigInt::from(0) {
-                        return Some(RewriteRule::DeleteConstOpUnrestricted(address, port2.1));
-                    }
-                }
-                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
-                    if port2.1 == 0 {
-                        return Some(RewriteRule::FuseMultiplicationByConstantHdHd(address));
-                    }
-                }
-                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
-                    if port2.1 == 0 {
-                        return Some(RewriteRule::FuseMultiplicationByConstantHdTl(address));
-                    }
-                    if port2.1 == 1 {
-                        return Some(RewriteRule::FuseMultiplicationByConstantTlTl(address));
-                    }
-                }
-                None
-            }
-            Node::ExponentiateConstant(value, port1, port2) => {
-                if value == BigInt::from(1) {
-                    return Some(RewriteRule::ExpConstantOne(address, (port1, port2)));
-                }
-                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
-                    return Some(RewriteRule::ExpConstantConstantTail(address));
-                }
+            //             if let Some(Node::MultiplyConstant(val, _, _)) =
+            //                 diagram.nodes.get(&target_port.0)
+            //             {
+            //                 if val != &BigInt::from(0) {
+            //                     return Some(RewriteRule::MultiplicationConstMultiplication(
+            //                         address,
+            //                         port_index,
+            //                         target_port.2,
+            //                         val.clone(),
+            //                     ));
+            //                 }
+            //             }
+            //             if let Some(Node::Constant(val, _)) = diagram.nodes.get(&target_port.0) {
+            //                 return Some(RewriteRule::MultiplicationConst(
+            //                     address,
+            //                     port_index,
+            //                     target_port.2,
+            //                     val.clone(),
+            //                 ));
+            //             }
+            //         }
+            //     }
+            //     None
+            // }
+            // Node::AddConstant(value, port1, port2) => {
+            //     if value == BigInt::from(0) {
+            //         return Some(RewriteRule::AddConstantZero(address, (port1, port2)));
+            //     }
+            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
+            //         return Some(RewriteRule::AddConstantConstantHead(address));
+            //     }
+            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
+            //         return Some(RewriteRule::AddConstantConstantTail(address));
+            //     }
+            //     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+            //         return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
+            //     }
+            //     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
+            //         return Some(RewriteRule::DeleteConstOpUnrestricted(address, port2.1));
+            //     }
+            //     if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
+            //         if port1.1 == 0 {
+            //             return Some(RewriteRule::FuseAdditionByConstantHdHd(address));
+            //         }
+            //     }
+            //     if let Some(Node::AddConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+            //         if port2.1 == 0 {
+            //             return Some(RewriteRule::FuseAdditionByConstantHdTl(address));
+            //         }
+            //         if port2.1 == 1 {
+            //             return Some(RewriteRule::FuseAdditionByConstantTlTl(address));
+            //         }
+            //     }
+            //     if let Some(Node::MultiplyConstant(value, _, _)) = diagram.nodes.get(&port2.0) {
+            //         if port2.1 == 1 {
+            //             return Some(RewriteRule::SwapAddMulConstantsTlTl(
+            //                 address,
+            //                 port1.2,
+            //                 value.clone(),
+            //             ));
+            //         }
+            //     }
+            //     if let Some(Node::MultiplyConstant(value, _, _)) = diagram.nodes.get(&port1.0) {
+            //         if port1.1 == 1 {
+            //             return Some(RewriteRule::SwapAddMulConstantsHdTl(
+            //                 address,
+            //                 port2.2,
+            //                 value.clone(),
+            //             ));
+            //         }
+            //     }
+            //     None
+            // }
+            // Node::MultiplyConstant(value, port1, port2) => {
+            //     if value == BigInt::from(0) {
+            //         return Some(RewriteRule::MulConstantZero(
+            //             address,
+            //             (port1, port2),
+            //             diagram.next_address,
+            //         ));
+            //     }
+            //     if value == BigInt::from(1) {
+            //         return Some(RewriteRule::MulConstantOne(address, (port1, port2)));
+            //     }
+            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port1.0) {
+            //         return Some(RewriteRule::MulConstantConstantHead(address));
+            //     }
+            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
+            //         return Some(RewriteRule::MulConstantConstantTail(address));
+            //     }
+            //     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+            //         return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
+            //     }
+            //     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) {
+            //         if value != BigInt::from(0) {
+            //             return Some(RewriteRule::DeleteConstOpUnrestricted(address, port2.1));
+            //         }
+            //     }
+            //     if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port1.0) {
+            //         if port2.1 == 0 {
+            //             return Some(RewriteRule::FuseMultiplicationByConstantHdHd(address));
+            //         }
+            //     }
+            //     if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+            //         if port2.1 == 0 {
+            //             return Some(RewriteRule::FuseMultiplicationByConstantHdTl(address));
+            //         }
+            //         if port2.1 == 1 {
+            //             return Some(RewriteRule::FuseMultiplicationByConstantTlTl(address));
+            //         }
+            //     }
+            //     None
+            // }
+            // Node::ExponentiateConstant(value, port1, port2) => {
+            //     if value == BigInt::from(1) {
+            //         return Some(RewriteRule::ExpConstantOne(address, (port1, port2)));
+            //     }
+            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port2.0) {
+            //         return Some(RewriteRule::ExpConstantConstantTail(address));
+            //     }
 
-                if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
-                    if value != BigInt::from(0) {
-                        return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
-                    }
-                }
+            //     if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port1.0) {
+            //         if value != BigInt::from(0) {
+            //             return Some(RewriteRule::DeleteConstOpUnrestricted(address, port1.1));
+            //         }
+            //     }
 
-                // ??? if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) ????
-                if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
-                    if port2.1 == 0 {
-                        return Some(RewriteRule::FuseExponentiationByConstantHdTl(address));
-                    }
-                }
-                None
-            }
-            Node::Constant(_, port) => {
-                if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
-                    return Some(RewriteRule::ConstantConstantRemoval(address, port.0));
-                }
-                None
-            }
-            Node::Unrestricted(port) => {
-                if let Some(Node::Constant(_, _) | Node::Unrestricted(_)) =
-                    diagram.nodes.get(&port.0)
-                {
-                    return Some(RewriteRule::UnrestrictedUnaryRemoval(address, port.0));
-                }
-                None
-            }
+            //     // ??? if let Some(Node::Unrestricted(_)) = diagram.nodes.get(&port2.0) ????
+            //     if let Some(Node::MultiplyConstant(_, _, _)) = diagram.nodes.get(&port2.0) {
+            //         if port2.1 == 0 {
+            //             return Some(RewriteRule::FuseExponentiationByConstantHdTl(address));
+            //         }
+            //     }
+            //     None
+            // }
+            // Node::Constant(_, port) => {
+            //     if let Some(Node::Constant(_, _)) = diagram.nodes.get(&port.0) {
+            //         return Some(RewriteRule::ConstantConstantRemoval(address, port.0));
+            //     }
+            //     None
+            // }
+            // Node::Unrestricted(port) => {
+            //     if let Some(Node::Constant(_, _) | Node::Unrestricted(_)) =
+            //         diagram.nodes.get(&port.0)
+            //     {
+            //         return Some(RewriteRule::UnrestrictedUnaryRemoval(address, port.0));
+            //     }
+            //     None
+            // }
             _ => None,
         }
     } else {
@@ -3374,22 +3527,16 @@ fn split_operation_update(
     // If the operation being split isn't ternary, then `right_two_address` will be `None`, and the right value is (temporarily) set to 0.
     let new_definition = match right_ports.len() {
         2 => {
-            let var1 = right_ports[0].2;
-            let var2 = right_ports[1].2;
+            let var1 = right_ports[0].2.clone();
+            let var2 = right_ports[1].2.clone();
             Expr::Infix(
                 op,
                 Box::new(TExpr {
-                    v: Expr::Variable(Variable {
-                        id: var1,
-                        name: None,
-                    }),
+                    v: Expr::Variable(var1),
                     t: None,
                 }),
                 Box::new(TExpr {
-                    v: Expr::Variable(Variable {
-                        id: var2,
-                        name: None,
-                    }),
+                    v: Expr::Variable(var2),
                     t: None,
                 }),
             )
@@ -3401,9 +3548,9 @@ fn split_operation_update(
     let right_id = defs.register_definition(new_definition);
 
     // Update the definition of the id associated with the operation head.
-    let head_id = split_head_port.2;
-    let left_id = split_left_port.2;
-    if let Some(expr) = defs.id_def_map.get_mut(&head_id) {
+    let head_var = split_head_port.2.clone();
+    let left_var = split_left_port.2.clone();
+    if let Some(expr) = defs.id_def_map.get_mut(&head_var.id) {
         if let TExpr {
             v: Expr::Constant(_),
             t: None,
@@ -3413,10 +3560,7 @@ fn split_operation_update(
                 v: Expr::Infix(
                     op,
                     Box::new(TExpr {
-                        v: Expr::Variable(Variable {
-                            id: left_id,
-                            name: None,
-                        }),
+                        v: Expr::Variable(left_var),
                         t: None,
                     }),
                     Box::new(TExpr {

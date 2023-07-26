@@ -188,17 +188,25 @@ mod tests {
     fn test_fuse_equality_nodes_basic() {
         // Create a simple diagram with two equality nodes and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 2, 1)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(5, 0, 2)));
-        let i4 = diagram.add_node(Node::Unrestricted(Port(5, 2, 3)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 2, Variable::new(1))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(5, 0, Variable::new(2))));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(5, 2, Variable::new(3))));
         let addr1 = diagram.add_node(Node::Equality(
             vec![Variable::new(1)],
-            vec![Port(i1, 0, 0), Port(5, 1, 4), Port(i2, 0, 1)],
+            vec![
+                Port(i1, 0, Variable::new(0)),
+                Port(5, 1, Variable::new(4)),
+                Port(i2, 0, Variable::new(1)),
+            ],
         ));
         let addr2 = diagram.add_node(Node::Equality(
             vec![Variable::new(2)],
-            vec![Port(i3, 0, 2), Port(4, 1, 4), Port(i4, 0, 3)],
+            vec![
+                Port(i3, 0, Variable::new(2)),
+                Port(4, 1, Variable::new(4)),
+                Port(i4, 0, Variable::new(3)),
+            ],
         ));
 
         assert!(
@@ -250,19 +258,19 @@ mod tests {
     fn test_fuse_addition_nodes() {
         // Create a simple diagram with two equality nodes and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 2, 1)));
-        let i4 = diagram.add_node(Node::Unrestricted(Port(5, 1, 2)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(5, 2, 3)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 2, Variable::new(1))));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(5, 1, Variable::new(2))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(5, 2, Variable::new(3))));
         let addr1 = diagram.add_node(Node::Addition(vec![
-            Port(i1, 0, 0),
-            Port(5, 0, 4),
-            Port(i2, 0, 1),
+            Port(i1, 0, Variable::new(0)),
+            Port(5, 0, Variable::new(4)),
+            Port(i2, 0, Variable::new(1)),
         ]));
         let addr2 = diagram.add_node(Node::Addition(vec![
-            Port(addr1, 1, 4),
-            Port(i4, 0, 2),
-            Port(i5, 0, 3),
+            Port(addr1, 1, Variable::new(4)),
+            Port(i4, 0, Variable::new(2)),
+            Port(i5, 0, Variable::new(3)),
         ]));
 
         assert!(
@@ -308,19 +316,19 @@ mod tests {
     fn test_fuse_multiplication_nodes() {
         // Create a simple diagram with two equality nodes and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 2, 1)));
-        let i4 = diagram.add_node(Node::Unrestricted(Port(5, 1, 2)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(5, 2, 3)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 2, Variable::new(1))));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(5, 1, Variable::new(2))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(5, 2, Variable::new(3))));
         let addr1 = diagram.add_node(Node::Multiplication(vec![
-            Port(i1, 0, 0),
-            Port(5, 0, 4),
-            Port(i2, 0, 1),
+            Port(i1, 0, Variable::new(0)),
+            Port(5, 0, Variable::new(4)),
+            Port(i2, 0, Variable::new(1)),
         ]));
         let addr2 = diagram.add_node(Node::Multiplication(vec![
-            Port(addr1, 1, 4),
-            Port(i4, 0, 2),
-            Port(i5, 0, 3),
+            Port(addr1, 1, Variable::new(4)),
+            Port(i4, 0, Variable::new(2)),
+            Port(i5, 0, Variable::new(3)),
         ]));
 
         assert!(
@@ -366,15 +374,15 @@ mod tests {
     fn test_split_addition_nodes_basic() {
         // Create a simple diagram with a single addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(4, 2, 2)));
-        let i4 = diagram.add_node(Node::Unrestricted(Port(4, 3, 3)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 1, Variable::new(1))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(4, 2, Variable::new(2))));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(4, 3, Variable::new(3))));
         let addr1 = diagram.add_node(Node::Addition(vec![
-            Port(i1, 0, 0),
-            Port(i2, 0, 1),
-            Port(i3, 0, 2),
-            Port(i4, 0, 3),
+            Port(i1, 0, Variable::new(0)),
+            Port(i2, 0, Variable::new(1)),
+            Port(i3, 0, Variable::new(2)),
+            Port(i4, 0, Variable::new(3)),
         ]));
 
         assert!(
@@ -393,9 +401,9 @@ mod tests {
             &(),
             RewriteRule::SplitAddition(
                 addr1,
-                Port(i1, 0, 0),
-                Port(i2, 0, 1),
-                vec![Port(i3, 0, 2), Port(i4, 0, 3)],
+                Port(i1, 0, Variable::new(0)),
+                Port(i2, 0, Variable::new(1)),
+                vec![Port(i3, 0, Variable::new(2)), Port(i4, 0, Variable::new(3))],
             ),
         );
 
@@ -410,13 +418,17 @@ mod tests {
             assert_eq!(ports.len(), 3, "Modified node should only have three ports");
             assert_eq!(
                 ports[0],
-                Port(i1, 0, 0),
+                Port(i1, 0, Variable::new(0)),
                 "Modified node should have same head as original node"
             );
-            assert_eq!(ports[1], Port(i2, 0, 1), "Left arg should be unchanged");
+            assert_eq!(
+                ports[1],
+                Port(i2, 0, Variable::new(1)),
+                "Left arg should be unchanged"
+            );
             assert_eq!(
                 ports[2],
-                Port(new_address, 0, 100),
+                Port(new_address, 0, Variable::new(100)),
                 "Right arg should point at new node"
             );
         } else {
@@ -428,17 +440,17 @@ mod tests {
             assert_eq!(ports.len(), 3, "New node should only have three ports");
             assert_eq!(
                 ports[0],
-                Port(addr1, 2, 100),
+                Port(addr1, 2, Variable::new(100)),
                 "Modified node should have same head as original node"
             );
             assert_eq!(
                 ports[1],
-                Port(i3, 0, 2),
+                Port(i3, 0, Variable::new(2)),
                 "Left arg should be second last orig arg"
             );
             assert_eq!(
                 ports[2],
-                Port(i4, 0, 3),
+                Port(i4, 0, Variable::new(3)),
                 "Right arg should be last orig arg"
             );
         } else {
@@ -456,15 +468,15 @@ mod tests {
     fn test_split_multiplication_nodes_basic() {
         // Create a simple diagram with a single multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(4, 2, 2)));
-        let i4 = diagram.add_node(Node::Unrestricted(Port(4, 3, 3)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 1, Variable::new(1))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(4, 2, Variable::new(2))));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(4, 3, Variable::new(3))));
         let addr1 = diagram.add_node(Node::Multiplication(vec![
-            Port(i1, 0, 0),
-            Port(i2, 0, 1),
-            Port(i3, 0, 2),
-            Port(i4, 0, 3),
+            Port(i1, 0, Variable::new(0)),
+            Port(i2, 0, Variable::new(1)),
+            Port(i3, 0, Variable::new(2)),
+            Port(i4, 0, Variable::new(3)),
         ]));
 
         assert!(
@@ -483,9 +495,9 @@ mod tests {
             &(),
             RewriteRule::SplitMultiplication(
                 addr1,
-                Port(i1, 0, 0),
-                Port(i2, 0, 1),
-                vec![Port(i3, 0, 2), Port(i4, 0, 3)],
+                Port(i1, 0, Variable::new(0)),
+                Port(i2, 0, Variable::new(1)),
+                vec![Port(i3, 0, Variable::new(2)), Port(i4, 0, Variable::new(3))],
             ),
         );
 
@@ -500,13 +512,17 @@ mod tests {
             assert_eq!(ports.len(), 3, "Modified node should only have three ports");
             assert_eq!(
                 ports[0],
-                Port(i1, 0, 0),
+                Port(i1, 0, Variable::new(0)),
                 "Modified node should have same head as original node"
             );
-            assert_eq!(ports[1], Port(i2, 0, 1), "Left arg should be unchanged");
+            assert_eq!(
+                ports[1],
+                Port(i2, 0, Variable::new(1)),
+                "Left arg should be unchanged"
+            );
             assert_eq!(
                 ports[2],
-                Port(new_address, 0, 100),
+                Port(new_address, 0, Variable::new(100)),
                 "Right arg should point at new node"
             );
         } else {
@@ -518,17 +534,17 @@ mod tests {
             assert_eq!(ports.len(), 3, "New node should only have three ports");
             assert_eq!(
                 ports[0],
-                Port(addr1, 2, 100),
+                Port(addr1, 2, Variable::new(100)),
                 "Modified node should have same head as original node"
             );
             assert_eq!(
                 ports[1],
-                Port(i3, 0, 2),
+                Port(i3, 0, Variable::new(2)),
                 "Left arg should be second last orig arg"
             );
             assert_eq!(
                 ports[2],
-                Port(i4, 0, 3),
+                Port(i4, 0, Variable::new(3)),
                 "Right arg should be last orig arg"
             );
         } else {
@@ -546,10 +562,16 @@ mod tests {
     fn test_constant_constant_eq() {
         // Create a simple diagram with a single pair of interacting constants and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(i1, 0, 0)));
-        let i3 = diagram.add_node(Node::Constant(BigInt::from(55), Port(3, 0, 1)));
-        let i4 = diagram.add_node(Node::Constant(BigInt::from(55), Port(i3, 0, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(i1, 0, Variable::new(0))));
+        let i3 = diagram.add_node(Node::Constant(
+            BigInt::from(55),
+            Port(3, 0, Variable::new(1)),
+        ));
+        let i4 = diagram.add_node(Node::Constant(
+            BigInt::from(55),
+            Port(i3, 0, Variable::new(1)),
+        ));
 
         assert!(
             diagram.is_well_formed(),
@@ -594,10 +616,13 @@ mod tests {
     fn test_unrestricted_constant() {
         // Create a simple diagram with a single interacting constant and unrestricted and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(i1, 0, 0)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
-        let i4 = diagram.add_node(Node::Constant(BigInt::from(55), Port(i3, 0, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(i1, 0, Variable::new(0))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(3, 0, Variable::new(1))));
+        let i4 = diagram.add_node(Node::Constant(
+            BigInt::from(55),
+            Port(i3, 0, Variable::new(1)),
+        ));
 
         assert!(
             diagram.is_well_formed(),
@@ -640,10 +665,10 @@ mod tests {
     fn test_unrestricted_unrestricted() {
         // Create a simple diagram with interacting unrestricted nodes and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(i1, 0, 0)));
-        let i3: usize = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
-        let i4 = diagram.add_node(Node::Unrestricted(Port(i3, 0, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(i1, 0, Variable::new(0))));
+        let i3: usize = diagram.add_node(Node::Unrestricted(Port(3, 0, Variable::new(1))));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(i3, 0, Variable::new(1))));
 
         assert!(
             diagram.is_well_formed(),
@@ -686,12 +711,15 @@ mod tests {
     fn test_add_constant_constant_head() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Constant(BigInt::from(16), Port(2, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 1, 1)));
+        let i1 = diagram.add_node(Node::Constant(
+            BigInt::from(16),
+            Port(2, 0, Variable::new(0)),
+        ));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 1, Variable::new(1))));
         let i3 = diagram.add_node(Node::AddConstant(
             BigInt::from(32),
-            Port(i1, 0, 0),
-            Port(i2, 0, 1),
+            Port(i1, 0, Variable::new(0)),
+            Port(i2, 0, Variable::new(1)),
         ));
 
         assert!(
@@ -721,7 +749,7 @@ mod tests {
             match node {
                 Node::Constant(value, port) => {
                     assert_eq!(value, &BigInt::from(-16));
-                    assert_eq!(port, &Port(i2, 0, 1));
+                    assert_eq!(port, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not a Constant node."),
             }
@@ -743,12 +771,15 @@ mod tests {
     fn test_add_constant_constant_tail() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Constant(BigInt::from(16), Port(2, 1, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, 1)));
+        let i1 = diagram.add_node(Node::Constant(
+            BigInt::from(16),
+            Port(2, 1, Variable::new(0)),
+        ));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(1))));
         let i3 = diagram.add_node(Node::AddConstant(
             BigInt::from(32),
-            Port(i2, 0, 1),
-            Port(i1, 0, 0),
+            Port(i2, 0, Variable::new(1)),
+            Port(i1, 0, Variable::new(0)),
         ));
 
         assert!(
@@ -778,7 +809,7 @@ mod tests {
             match node {
                 Node::Constant(value, port) => {
                     assert_eq!(value, &BigInt::from(48));
-                    assert_eq!(port, &Port(i2, 0, 1));
+                    assert_eq!(port, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not a Constant node."),
             }
@@ -800,12 +831,15 @@ mod tests {
     fn test_mul_constant_constant_head() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Constant(BigInt::from(15), Port(2, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 1, 1)));
+        let i1 = diagram.add_node(Node::Constant(
+            BigInt::from(15),
+            Port(2, 0, Variable::new(0)),
+        ));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 1, Variable::new(1))));
         let i3 = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(3),
-            Port(i1, 0, 0),
-            Port(i2, 0, 1),
+            Port(i1, 0, Variable::new(0)),
+            Port(i2, 0, Variable::new(1)),
         ));
 
         assert!(
@@ -835,7 +869,7 @@ mod tests {
             match node {
                 Node::Constant(value, port) => {
                     assert_eq!(value, &BigInt::from(5));
-                    assert_eq!(port, &Port(i2, 0, 1));
+                    assert_eq!(port, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not a Constant node."),
             }
@@ -857,12 +891,15 @@ mod tests {
     fn test_mul_constant_constant_tail() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Constant(BigInt::from(16), Port(2, 1, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, 1)));
+        let i1 = diagram.add_node(Node::Constant(
+            BigInt::from(16),
+            Port(2, 1, Variable::new(0)),
+        ));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(1))));
         let i3 = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(32),
-            Port(i2, 0, 1),
-            Port(i1, 0, 0),
+            Port(i2, 0, Variable::new(1)),
+            Port(i1, 0, Variable::new(0)),
         ));
 
         assert!(
@@ -892,7 +929,7 @@ mod tests {
             match node {
                 Node::Constant(value, port) => {
                     assert_eq!(value, &BigInt::from(512));
-                    assert_eq!(port, &Port(i2, 0, 1));
+                    assert_eq!(port, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not a Constant node."),
             }
@@ -914,12 +951,15 @@ mod tests {
     fn test_exp_constant_constant_tail() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Constant(BigInt::from(6), Port(2, 1, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, 1)));
+        let i1 = diagram.add_node(Node::Constant(
+            BigInt::from(6),
+            Port(2, 1, Variable::new(0)),
+        ));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(1))));
         let i3 = diagram.add_node(Node::ExponentiateConstant(
             BigInt::from(3),
-            Port(i2, 0, 1),
-            Port(i1, 0, 0),
+            Port(i2, 0, Variable::new(1)),
+            Port(i1, 0, Variable::new(0)),
         ));
 
         assert!(
@@ -949,7 +989,7 @@ mod tests {
             match node {
                 Node::Constant(value, port) => {
                     assert_eq!(value, &BigInt::from(216));
-                    assert_eq!(port, &Port(i2, 0, 1));
+                    assert_eq!(port, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not a Constant node."),
             }
@@ -973,12 +1013,12 @@ mod tests {
     fn test_mul_constant_zero() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(1))));
         let i3 = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(0),
-            Port(i2, 0, 1),
-            Port(i1, 0, 0),
+            Port(i2, 0, Variable::new(1)),
+            Port(i1, 0, Variable::new(0)),
         ));
 
         assert!(
@@ -994,7 +1034,11 @@ mod tests {
             &mut diagram,
             &mut reg,
             &(),
-            RewriteRule::MulConstantZero(i3, (Port(i1, 0, 0), Port(i2, 0, 1)), i3 + 1),
+            RewriteRule::MulConstantZero(
+                i3,
+                (Port(i1, 0, Variable::new(0)), Port(i2, 0, Variable::new(1))),
+                i3 + 1,
+            ),
         );
 
         assert!(
@@ -1008,7 +1052,7 @@ mod tests {
             match node {
                 Node::Constant(value, port) => {
                     assert_eq!(value, &BigInt::from(0));
-                    assert_eq!(port, &Port(i2, 0, 1));
+                    assert_eq!(port, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not a Constant node."),
             }
@@ -1019,7 +1063,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(i3 + 1)) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(i1, 0, 0));
+                    assert_eq!(port, &Port(i1, 0, Variable::new(0)));
                 }
                 _ => panic!("Node is not a Constant node."),
             }
@@ -1038,14 +1082,14 @@ mod tests {
     fn test_add_constant_zero() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, 2)));
+        diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(2))));
         let i3 = diagram.add_node(Node::AddConstant(
             BigInt::from(0),
-            Port(i2, 0, 2),
-            Port(i1, 0, 1),
+            Port(i2, 0, Variable::new(2)),
+            Port(i1, 0, Variable::new(1)),
         ));
 
         assert!(
@@ -1061,7 +1105,10 @@ mod tests {
             &mut diagram,
             &mut reg,
             &(),
-            RewriteRule::AddConstantZero(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
+            RewriteRule::AddConstantZero(
+                i3,
+                (Port(i1, 0, Variable::new(1)), Port(i2, 0, Variable::new(2))),
+            ),
         );
 
         assert!(
@@ -1085,14 +1132,14 @@ mod tests {
     fn test_mul_constant_one() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, 2)));
+        diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(2))));
         let i3 = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(1),
-            Port(i2, 0, 2),
-            Port(i1, 0, 1),
+            Port(i2, 0, Variable::new(2)),
+            Port(i1, 0, Variable::new(1)),
         ));
 
         assert!(
@@ -1108,7 +1155,10 @@ mod tests {
             &mut diagram,
             &mut reg,
             &(),
-            RewriteRule::MulConstantOne(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
+            RewriteRule::MulConstantOne(
+                i3,
+                (Port(i1, 0, Variable::new(1)), Port(i2, 0, Variable::new(2))),
+            ),
         );
 
         assert!(
@@ -1129,14 +1179,14 @@ mod tests {
     fn test_exp_constant_one() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, 2)));
+        diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(2))));
         let i3 = diagram.add_node(Node::ExponentiateConstant(
             BigInt::from(1),
-            Port(i2, 0, 2),
-            Port(i1, 0, 1),
+            Port(i2, 0, Variable::new(2)),
+            Port(i1, 0, Variable::new(1)),
         ));
 
         assert!(
@@ -1152,7 +1202,10 @@ mod tests {
             &mut diagram,
             &mut reg,
             &(),
-            RewriteRule::ExpConstantOne(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
+            RewriteRule::ExpConstantOne(
+                i3,
+                (Port(i1, 0, Variable::new(1)), Port(i2, 0, Variable::new(2))),
+            ),
         );
 
         assert!(
@@ -1173,11 +1226,14 @@ mod tests {
     fn test_remove_binary_addition_node() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, 2)));
-        let i3 = diagram.add_node(Node::Addition(vec![Port(i2, 0, 2), Port(i1, 0, 1)]));
+        diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Addition(vec![
+            Port(i2, 0, Variable::new(2)),
+            Port(i1, 0, Variable::new(1)),
+        ]));
 
         assert!(
             diagram.is_well_formed(),
@@ -1192,7 +1248,10 @@ mod tests {
             &mut diagram,
             &mut reg,
             &(),
-            RewriteRule::RemoveBinaryAddition(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
+            RewriteRule::RemoveBinaryAddition(
+                i3,
+                (Port(i1, 0, Variable::new(1)), Port(i2, 0, Variable::new(2))),
+            ),
         );
 
         assert!(
@@ -1216,11 +1275,14 @@ mod tests {
     fn test_remove_binary_multiplication_node() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, 2)));
-        let i3 = diagram.add_node(Node::Multiplication(vec![Port(i2, 0, 2), Port(i1, 0, 1)]));
+        diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Multiplication(vec![
+            Port(i2, 0, Variable::new(2)),
+            Port(i1, 0, Variable::new(1)),
+        ]));
 
         assert!(
             diagram.is_well_formed(),
@@ -1235,7 +1297,10 @@ mod tests {
             &mut diagram,
             &mut reg,
             &(),
-            RewriteRule::RemoveBinaryMultiplication(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
+            RewriteRule::RemoveBinaryMultiplication(
+                i3,
+                (Port(i1, 0, Variable::new(1)), Port(i2, 0, Variable::new(2))),
+            ),
         );
 
         assert!(
@@ -1256,17 +1321,17 @@ mod tests {
     fn test_fuse_addition_by_constant_hd_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, Variable::new(1))));
         let i3 = diagram.add_node(Node::AddConstant(
             BigInt::from(15),
-            Port(i1, 0, 0),
-            Port(3, 0, 2),
+            Port(i1, 0, Variable::new(0)),
+            Port(3, 0, Variable::new(2)),
         ));
         let i4 = diagram.add_node(Node::AddConstant(
             BigInt::from(12),
-            Port(2, 1, 2),
-            Port(i2, 0, 1),
+            Port(2, 1, Variable::new(2)),
+            Port(i2, 0, Variable::new(1)),
         ));
 
         assert!(
@@ -1294,8 +1359,8 @@ mod tests {
             match node {
                 Node::AddConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(27));
-                    assert_eq!(port1, &Port(i1, 0, 0));
-                    assert_eq!(port2, &Port(i2, 0, 1));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(0)));
+                    assert_eq!(port2, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not an AddConstant node."),
             }
@@ -1319,17 +1384,17 @@ mod tests {
     fn test_fuse_addition_by_constant_hd_hd() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, Variable::new(1))));
         let i3 = diagram.add_node(Node::AddConstant(
             BigInt::from(15),
-            Port(3, 0, 2),
-            Port(i1, 0, 0),
+            Port(3, 0, Variable::new(2)),
+            Port(i1, 0, Variable::new(0)),
         ));
         let i4 = diagram.add_node(Node::AddConstant(
             BigInt::from(12),
-            Port(2, 0, 2),
-            Port(i2, 0, 1),
+            Port(2, 0, Variable::new(2)),
+            Port(i2, 0, Variable::new(1)),
         ));
 
         assert!(
@@ -1357,8 +1422,8 @@ mod tests {
             match node {
                 Node::AddConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(3));
-                    assert_eq!(port1, &Port(i2, 0, 1));
-                    assert_eq!(port2, &Port(i1, 0, 0));
+                    assert_eq!(port1, &Port(i2, 0, Variable::new(1)));
+                    assert_eq!(port2, &Port(i1, 0, Variable::new(0)));
                 }
                 _ => panic!("Node is not an AddConstant node."),
             }
@@ -1382,17 +1447,17 @@ mod tests {
     fn test_fuse_addition_by_constant_tl_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 0, Variable::new(1))));
         let i3 = diagram.add_node(Node::AddConstant(
             BigInt::from(15),
-            Port(i1, 0, 0),
-            Port(3, 1, 2),
+            Port(i1, 0, Variable::new(0)),
+            Port(3, 1, Variable::new(2)),
         ));
         let i4 = diagram.add_node(Node::AddConstant(
             BigInt::from(12),
-            Port(i2, 0, 1),
-            Port(2, 1, 2),
+            Port(i2, 0, Variable::new(1)),
+            Port(2, 1, Variable::new(2)),
         ));
 
         assert!(
@@ -1420,8 +1485,8 @@ mod tests {
             match node {
                 Node::AddConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(3));
-                    assert_eq!(port1, &Port(i1, 0, 0));
-                    assert_eq!(port2, &Port(i2, 0, 1));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(0)));
+                    assert_eq!(port2, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not an AddConstant node."),
             }
@@ -1445,17 +1510,17 @@ mod tests {
     fn test_fuse_multiplication_by_constant_hd_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, Variable::new(1))));
         let i3 = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(10),
-            Port(i1, 0, 0),
-            Port(3, 0, 2),
+            Port(i1, 0, Variable::new(0)),
+            Port(3, 0, Variable::new(2)),
         ));
         let i4 = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(12),
-            Port(2, 1, 2),
-            Port(i2, 0, 1),
+            Port(2, 1, Variable::new(2)),
+            Port(i2, 0, Variable::new(1)),
         ));
 
         assert!(
@@ -1483,8 +1548,8 @@ mod tests {
             match node {
                 Node::MultiplyConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(120));
-                    assert_eq!(port1, &Port(i1, 0, 0));
-                    assert_eq!(port2, &Port(i2, 0, 1));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(0)));
+                    assert_eq!(port2, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not an MultiplyConstant node."),
             }
@@ -1505,17 +1570,17 @@ mod tests {
     fn test_fuse_multiplication_by_constant_hd_hd() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 1, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, Variable::new(1))));
         let i3 = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(3),
-            Port(3, 0, 2),
-            Port(i1, 0, 0),
+            Port(3, 0, Variable::new(2)),
+            Port(i1, 0, Variable::new(0)),
         ));
         let i4 = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(15),
-            Port(2, 0, 2),
-            Port(i2, 0, 1),
+            Port(2, 0, Variable::new(2)),
+            Port(i2, 0, Variable::new(1)),
         ));
 
         assert!(
@@ -1543,8 +1608,8 @@ mod tests {
             match node {
                 Node::MultiplyConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(5));
-                    assert_eq!(port1, &Port(i1, 0, 0));
-                    assert_eq!(port2, &Port(i2, 0, 1));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(0)));
+                    assert_eq!(port2, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not an MultiplyConstant node."),
             }
@@ -1565,17 +1630,17 @@ mod tests {
     fn test_fuse_multiplication_by_constant_tl_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 0, Variable::new(1))));
         let i3 = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(3),
-            Port(i1, 0, 0),
-            Port(3, 1, 2),
+            Port(i1, 0, Variable::new(0)),
+            Port(3, 1, Variable::new(2)),
         ));
         let i4 = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(15),
-            Port(i2, 0, 1),
-            Port(2, 1, 2),
+            Port(i2, 0, Variable::new(1)),
+            Port(2, 1, Variable::new(2)),
         ));
 
         assert!(
@@ -1603,8 +1668,8 @@ mod tests {
             match node {
                 Node::MultiplyConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(5));
-                    assert_eq!(port1, &Port(i2, 0, 1));
-                    assert_eq!(port2, &Port(i1, 0, 0));
+                    assert_eq!(port1, &Port(i2, 0, Variable::new(1)));
+                    assert_eq!(port2, &Port(i1, 0, Variable::new(0)));
                 }
                 _ => panic!("Node is not an MultiplyConstant node."),
             }
@@ -1625,17 +1690,17 @@ mod tests {
     fn test_fuse_exponentiation_by_constant_hd_tl() {
         // Create a simple diagram with a single constant exponentiation node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, Variable::new(1))));
         let i3 = diagram.add_node(Node::ExponentiateConstant(
             BigInt::from(10),
-            Port(i1, 0, 0),
-            Port(3, 0, 2),
+            Port(i1, 0, Variable::new(0)),
+            Port(3, 0, Variable::new(2)),
         ));
         let i4 = diagram.add_node(Node::ExponentiateConstant(
             BigInt::from(12),
-            Port(2, 1, 2),
-            Port(i2, 0, 1),
+            Port(2, 1, Variable::new(2)),
+            Port(i2, 0, Variable::new(1)),
         ));
 
         assert!(
@@ -1663,8 +1728,8 @@ mod tests {
             match node {
                 Node::ExponentiateConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(120));
-                    assert_eq!(port1, &Port(i1, 0, 0));
-                    assert_eq!(port2, &Port(i2, 0, 1));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(0)));
+                    assert_eq!(port2, &Port(i2, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not an ExponentiateConstant node."),
             }
@@ -1685,12 +1750,16 @@ mod tests {
     fn test_equality_unrestricted() {
         // Create a simple diagram with one equality node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, 0)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(3, 2, 2)));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, Variable::new(0))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(3, 1, Variable::new(1))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(3, 2, Variable::new(2))));
         let addr1 = diagram.add_node(Node::Equality(
             vec![Variable::new(1)],
-            vec![Port(i1, 0, 0), Port(i2, 0, 1), Port(i3, 0, 2)],
+            vec![
+                Port(i1, 0, Variable::new(0)),
+                Port(i2, 0, Variable::new(1)),
+                Port(i3, 0, Variable::new(2)),
+            ],
         ));
 
         assert!(
@@ -1739,11 +1808,14 @@ mod tests {
     fn test_binary_equation_node() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, 2)));
-        let i3 = diagram.add_node(Node::Equality(vec![], vec![Port(i2, 0, 2), Port(i1, 0, 1)]));
+        diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(4, 1, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Equality(
+            vec![],
+            vec![Port(i2, 0, Variable::new(2)), Port(i1, 0, Variable::new(1))],
+        ));
 
         assert!(
             diagram.is_well_formed(),
@@ -1758,7 +1830,10 @@ mod tests {
             &mut diagram,
             &mut reg,
             &(),
-            RewriteRule::RemoveBinaryEquality(i3, (Port(i1, 0, 1), Port(i2, 0, 2))),
+            RewriteRule::RemoveBinaryEquality(
+                i3,
+                (Port(i1, 0, Variable::new(1)), Port(i2, 0, Variable::new(2))),
+            ),
         );
 
         assert!(
@@ -1782,24 +1857,24 @@ mod tests {
     fn test_addition_const_addition_hd() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1, 2)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2, 3)));
-        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 1, 5)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4, 4)));
+        diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2, Variable::new(3))));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 1, Variable::new(5))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4, Variable::new(4))));
         let ia = diagram.add_node(Node::Addition(vec![
-            Port(i1, 0, 1),
-            Port(i2, 0, 2),
-            Port(i3, 0, 3),
-            Port(8, 0, 6),
-            Port(i5, 0, 4),
+            Port(i1, 0, Variable::new(1)),
+            Port(i2, 0, Variable::new(2)),
+            Port(i3, 0, Variable::new(3)),
+            Port(8, 0, Variable::new(6)),
+            Port(i5, 0, Variable::new(4)),
         ]));
         let ic = diagram.add_node(Node::AddConstant(
             BigInt::from(15),
-            Port(ia, 3, 6),
-            Port(i4, 0, 5),
+            Port(ia, 3, Variable::new(6)),
+            Port(i4, 0, Variable::new(5)),
         ));
 
         assert!(
@@ -1826,11 +1901,11 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ia) {
             match node {
                 Node::Addition(ports) => {
-                    assert_eq!(ports[0], Port(ic, 1, 100));
-                    assert_eq!(ports[1], Port(i2, 0, 2));
-                    assert_eq!(ports[2], Port(i3, 0, 3));
-                    assert_eq!(ports[3], Port(i4, 0, 5));
-                    assert_eq!(ports[4], Port(i5, 0, 4));
+                    assert_eq!(ports[0], Port(ic, 1, Variable::new(100)));
+                    assert_eq!(ports[1], Port(i2, 0, Variable::new(2)));
+                    assert_eq!(ports[2], Port(i3, 0, Variable::new(3)));
+                    assert_eq!(ports[3], Port(i4, 0, Variable::new(5)));
+                    assert_eq!(ports[4], Port(i5, 0, Variable::new(4)));
                 }
                 _ => panic!("Node is not an Addition node."),
             }
@@ -1841,8 +1916,8 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ic) {
             match node {
                 Node::AddConstant(val, port1, port2) => {
-                    assert_eq!(port1, &Port(i1, 0, 1));
-                    assert_eq!(port2, &Port(ia, 0, 100));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(1)));
+                    assert_eq!(port2, &Port(ia, 0, Variable::new(100)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not an AddConstant node."),
@@ -1862,24 +1937,24 @@ mod tests {
     fn test_addition_const_addition_tl() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1, 2)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2, 3)));
-        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 0, 4)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4, 5)));
+        diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2, Variable::new(3))));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 0, Variable::new(4))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4, Variable::new(5))));
         let ia = diagram.add_node(Node::Addition(vec![
-            Port(i1, 0, 1),
-            Port(i2, 0, 2),
-            Port(i3, 0, 3),
-            Port(8, 1, 6),
-            Port(i5, 0, 5),
+            Port(i1, 0, Variable::new(1)),
+            Port(i2, 0, Variable::new(2)),
+            Port(i3, 0, Variable::new(3)),
+            Port(8, 1, Variable::new(6)),
+            Port(i5, 0, Variable::new(5)),
         ]));
         let ic = diagram.add_node(Node::AddConstant(
             BigInt::from(15),
-            Port(i4, 0, 4),
-            Port(ia, 3, 6),
+            Port(i4, 0, Variable::new(4)),
+            Port(ia, 3, Variable::new(6)),
         ));
 
         assert!(
@@ -1906,11 +1981,11 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ia) {
             match node {
                 Node::Addition(ports) => {
-                    assert_eq!(ports[0], Port(ic, 1, 100));
-                    assert_eq!(ports[1], Port(i2, 0, 2));
-                    assert_eq!(ports[2], Port(i3, 0, 3));
-                    assert_eq!(ports[3], Port(i4, 0, 4));
-                    assert_eq!(ports[4], Port(i5, 0, 5));
+                    assert_eq!(ports[0], Port(ic, 1, Variable::new(100)));
+                    assert_eq!(ports[1], Port(i2, 0, Variable::new(2)));
+                    assert_eq!(ports[2], Port(i3, 0, Variable::new(3)));
+                    assert_eq!(ports[3], Port(i4, 0, Variable::new(4)));
+                    assert_eq!(ports[4], Port(i5, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Addition node."),
             }
@@ -1921,8 +1996,8 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ic) {
             match node {
                 Node::AddConstant(val, port1, port2) => {
-                    assert_eq!(port1, &Port(i1, 0, 1));
-                    assert_eq!(port2, &Port(ia, 0, 100));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(1)));
+                    assert_eq!(port2, &Port(ia, 0, Variable::new(100)));
                     assert_eq!(val, &BigInt::from(-15));
                 }
                 _ => panic!("Node is not an AddConstant node."),
@@ -1942,24 +2017,24 @@ mod tests {
     fn test_multiplication_const_multiplication_hd() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1, 2)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2, 3)));
-        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 1, 4)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4, 5)));
+        diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2, Variable::new(3))));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 1, Variable::new(4))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4, Variable::new(5))));
         let ia = diagram.add_node(Node::Multiplication(vec![
-            Port(i1, 0, 1),
-            Port(i2, 0, 2),
-            Port(i3, 0, 3),
-            Port(8, 0, 6),
-            Port(i5, 0, 5),
+            Port(i1, 0, Variable::new(1)),
+            Port(i2, 0, Variable::new(2)),
+            Port(i3, 0, Variable::new(3)),
+            Port(8, 0, Variable::new(6)),
+            Port(i5, 0, Variable::new(5)),
         ]));
         let ic = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(15),
-            Port(ia, 3, 6),
-            Port(i4, 0, 4),
+            Port(ia, 3, Variable::new(6)),
+            Port(i4, 0, Variable::new(4)),
         ));
 
         assert!(
@@ -1986,11 +2061,11 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ia) {
             match node {
                 Node::Multiplication(ports) => {
-                    assert_eq!(ports[0], Port(ic, 1, 100));
-                    assert_eq!(ports[1], Port(i2, 0, 2));
-                    assert_eq!(ports[2], Port(i3, 0, 3));
-                    assert_eq!(ports[3], Port(i4, 0, 4));
-                    assert_eq!(ports[4], Port(i5, 0, 5));
+                    assert_eq!(ports[0], Port(ic, 1, Variable::new(100)));
+                    assert_eq!(ports[1], Port(i2, 0, Variable::new(2)));
+                    assert_eq!(ports[2], Port(i3, 0, Variable::new(3)));
+                    assert_eq!(ports[3], Port(i4, 0, Variable::new(4)));
+                    assert_eq!(ports[4], Port(i5, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Multiplication node."),
             }
@@ -2001,8 +2076,8 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ic) {
             match node {
                 Node::MultiplyConstant(val, port1, port2) => {
-                    assert_eq!(port1, &Port(i1, 0, 1));
-                    assert_eq!(port2, &Port(ia, 0, 100));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(1)));
+                    assert_eq!(port2, &Port(ia, 0, Variable::new(100)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not an MultiplyConstant node."),
@@ -2022,24 +2097,24 @@ mod tests {
     fn test_multiplication_const_multiplication_tl() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(1, 0, 0)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1, 2)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2, 3)));
-        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 0, 4)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4, 5)));
+        diagram.add_node(Node::Unrestricted(Port(1, 0, Variable::new(0))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(7, 0, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(7, 1, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(7, 2, Variable::new(3))));
+        let i4 = diagram.add_node(Node::Unrestricted(Port(8, 0, Variable::new(4))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(7, 4, Variable::new(5))));
         let ia = diagram.add_node(Node::Multiplication(vec![
-            Port(i1, 0, 1),
-            Port(i2, 0, 2),
-            Port(i3, 0, 3),
-            Port(8, 1, 6),
-            Port(i5, 0, 5),
+            Port(i1, 0, Variable::new(1)),
+            Port(i2, 0, Variable::new(2)),
+            Port(i3, 0, Variable::new(3)),
+            Port(8, 1, Variable::new(6)),
+            Port(i5, 0, Variable::new(5)),
         ]));
         let ic = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(15),
-            Port(i4, 0, 4),
-            Port(ia, 3, 6),
+            Port(i4, 0, Variable::new(4)),
+            Port(ia, 3, Variable::new(6)),
         ));
 
         assert!(
@@ -2066,11 +2141,11 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ia) {
             match node {
                 Node::Multiplication(ports) => {
-                    assert_eq!(ports[0], Port(ic, 1, 100));
-                    assert_eq!(ports[1], Port(i2, 0, 2));
-                    assert_eq!(ports[2], Port(i3, 0, 3));
-                    assert_eq!(ports[3], Port(i4, 0, 4));
-                    assert_eq!(ports[4], Port(i5, 0, 5));
+                    assert_eq!(ports[0], Port(ic, 1, Variable::new(100)));
+                    assert_eq!(ports[1], Port(i2, 0, Variable::new(2)));
+                    assert_eq!(ports[2], Port(i3, 0, Variable::new(3)));
+                    assert_eq!(ports[3], Port(i4, 0, Variable::new(4)));
+                    assert_eq!(ports[4], Port(i5, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Multiplication node."),
             }
@@ -2081,8 +2156,8 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ic) {
             match node {
                 Node::MultiplyConstant(val, port1, port2) => {
-                    assert_eq!(port1, &Port(i1, 0, 1));
-                    assert_eq!(port2, &Port(ia, 0, 100));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(1)));
+                    assert_eq!(port2, &Port(ia, 0, Variable::new(100)));
                     assert_eq!(val, &BigInt::from(1 / 15));
                 }
                 _ => panic!("Node is not an MultiplyConstant node."),
@@ -2102,20 +2177,23 @@ mod tests {
     fn test_addition_const() {
         // Create a simple diagram with a single constant addition node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, 2)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(6, 2, 3)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(6, 4, 4)));
+        diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(6, 2, Variable::new(3))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(6, 4, Variable::new(4))));
         let ia = diagram.add_node(Node::Addition(vec![
-            Port(i1, 0, 1),
-            Port(i2, 0, 2),
-            Port(i3, 0, 3),
-            Port(7, 0, 5),
-            Port(i5, 0, 4),
+            Port(i1, 0, Variable::new(1)),
+            Port(i2, 0, Variable::new(2)),
+            Port(i3, 0, Variable::new(3)),
+            Port(7, 0, Variable::new(5)),
+            Port(i5, 0, Variable::new(4)),
         ]));
-        let ic = diagram.add_node(Node::Constant(BigInt::from(15), Port(6, 3, 5)));
+        let ic = diagram.add_node(Node::Constant(
+            BigInt::from(15),
+            Port(6, 3, Variable::new(5)),
+        ));
 
         assert!(
             diagram.is_well_formed(),
@@ -2141,10 +2219,10 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ia) {
             match node {
                 Node::Addition(ports) => {
-                    assert_eq!(ports[0], Port(ic, 1, 100));
-                    assert_eq!(ports[1], Port(i2, 0, 2));
-                    assert_eq!(ports[2], Port(i3, 0, 3));
-                    assert_eq!(ports[3], Port(i5, 0, 4));
+                    assert_eq!(ports[0], Port(ic, 1, Variable::new(100)));
+                    assert_eq!(ports[1], Port(i2, 0, Variable::new(2)));
+                    assert_eq!(ports[2], Port(i3, 0, Variable::new(3)));
+                    assert_eq!(ports[3], Port(i5, 0, Variable::new(4)));
                     assert_eq!(ports.len(), 4);
                 }
                 _ => panic!("Node is not an Addition node."),
@@ -2156,8 +2234,8 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ic) {
             match node {
                 Node::AddConstant(val, port1, port2) => {
-                    assert_eq!(port1, &Port(i1, 0, 1));
-                    assert_eq!(port2, &Port(ia, 0, 100));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(1)));
+                    assert_eq!(port2, &Port(ia, 0, Variable::new(100)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not an AddConstant node."),
@@ -2177,20 +2255,23 @@ mod tests {
     fn test_multiplication_const() {
         // Create a simple diagram with a single constant multiplication node and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, 2)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(6, 2, 3)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(6, 4, 4)));
+        diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(6, 2, Variable::new(3))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(6, 4, Variable::new(4))));
         let ia = diagram.add_node(Node::Multiplication(vec![
-            Port(i1, 0, 1),
-            Port(i2, 0, 2),
-            Port(i3, 0, 3),
-            Port(7, 0, 5),
-            Port(i5, 0, 4),
+            Port(i1, 0, Variable::new(1)),
+            Port(i2, 0, Variable::new(2)),
+            Port(i3, 0, Variable::new(3)),
+            Port(7, 0, Variable::new(5)),
+            Port(i5, 0, Variable::new(4)),
         ]));
-        let ic = diagram.add_node(Node::Constant(BigInt::from(15), Port(6, 3, 5)));
+        let ic = diagram.add_node(Node::Constant(
+            BigInt::from(15),
+            Port(6, 3, Variable::new(5)),
+        ));
 
         assert!(
             diagram.is_well_formed(),
@@ -2216,10 +2297,10 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ia) {
             match node {
                 Node::Multiplication(ports) => {
-                    assert_eq!(ports[0], Port(ic, 1, 100));
-                    assert_eq!(ports[1], Port(i2, 0, 2));
-                    assert_eq!(ports[2], Port(i3, 0, 3));
-                    assert_eq!(ports[3], Port(i5, 0, 4));
+                    assert_eq!(ports[0], Port(ic, 1, Variable::new(100)));
+                    assert_eq!(ports[1], Port(i2, 0, Variable::new(2)));
+                    assert_eq!(ports[2], Port(i3, 0, Variable::new(3)));
+                    assert_eq!(ports[3], Port(i5, 0, Variable::new(4)));
                     assert_eq!(ports.len(), 4);
                 }
                 _ => panic!("Node is not a Multiplication node."),
@@ -2231,8 +2312,8 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ic) {
             match node {
                 Node::MultiplyConstant(val, port1, port2) => {
-                    assert_eq!(port1, &Port(i1, 0, 1));
-                    assert_eq!(port2, &Port(ia, 0, 100));
+                    assert_eq!(port1, &Port(i1, 0, Variable::new(1)));
+                    assert_eq!(port2, &Port(ia, 0, Variable::new(100)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not an MultiplyConstant node."),
@@ -2252,23 +2333,26 @@ mod tests {
     fn test_equality_const_nvar() {
         // Create a simple diagram with a single constant Equality interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, 2)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(6, 2, 3)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(6, 4, 4)));
+        diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(6, 2, Variable::new(3))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(6, 4, Variable::new(4))));
         let ia = diagram.add_node(Node::Equality(
             vec![],
             vec![
-                Port(i1, 0, 1),
-                Port(i2, 0, 2),
-                Port(i3, 0, 3),
-                Port(7, 0, 5),
-                Port(i5, 0, 4),
+                Port(i1, 0, Variable::new(1)),
+                Port(i2, 0, Variable::new(2)),
+                Port(i3, 0, Variable::new(3)),
+                Port(7, 0, Variable::new(5)),
+                Port(i5, 0, Variable::new(4)),
             ],
         ));
-        let ic = diagram.add_node(Node::Constant(BigInt::from(15), Port(6, 3, 5)));
+        let ic = diagram.add_node(Node::Constant(
+            BigInt::from(15),
+            Port(6, 3, Variable::new(5)),
+        ));
 
         assert!(
             diagram.is_well_formed(),
@@ -2295,7 +2379,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 1)) {
             match node {
                 Node::Constant(val, port) => {
-                    assert_eq!(port, &Port(i1, 0, 5));
+                    assert_eq!(port, &Port(i1, 0, Variable::new(5)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not a Constant node."),
@@ -2306,7 +2390,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 2)) {
             match node {
                 Node::Constant(val, port) => {
-                    assert_eq!(port, &Port(i2, 0, 5));
+                    assert_eq!(port, &Port(i2, 0, Variable::new(5)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not a Constant node."),
@@ -2317,7 +2401,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 3)) {
             match node {
                 Node::Constant(val, port) => {
-                    assert_eq!(port, &Port(i3, 0, 5));
+                    assert_eq!(port, &Port(i3, 0, Variable::new(5)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not a Constant node."),
@@ -2328,7 +2412,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 4)) {
             match node {
                 Node::Constant(val, port) => {
-                    assert_eq!(port, &Port(i5, 0, 5));
+                    assert_eq!(port, &Port(i5, 0, Variable::new(5)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not a Constant node."),
@@ -2341,7 +2425,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i1) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 1, 0, 5));
+                    assert_eq!(port, &Port(ic + 1, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2351,7 +2435,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i2) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 2, 0, 5));
+                    assert_eq!(port, &Port(ic + 2, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2361,7 +2445,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i3) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 3, 0, 5));
+                    assert_eq!(port, &Port(ic + 3, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2371,7 +2455,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i5) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 4, 0, 5));
+                    assert_eq!(port, &Port(ic + 4, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2400,23 +2484,26 @@ mod tests {
     fn test_equality_const_var() {
         // Create a simple diagram with a single constant Equality interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, 2)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(6, 2, 3)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(6, 4, 4)));
+        diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(6, 2, Variable::new(3))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(6, 4, Variable::new(4))));
         let ia = diagram.add_node(Node::Equality(
             vec![Variable::new(34)],
             vec![
-                Port(i1, 0, 1),
-                Port(i2, 0, 2),
-                Port(i3, 0, 3),
-                Port(7, 0, 5),
-                Port(i5, 0, 4),
+                Port(i1, 0, Variable::new(1)),
+                Port(i2, 0, Variable::new(2)),
+                Port(i3, 0, Variable::new(3)),
+                Port(7, 0, Variable::new(5)),
+                Port(i5, 0, Variable::new(4)),
             ],
         ));
-        let ic = diagram.add_node(Node::Constant(BigInt::from(15), Port(6, 3, 5)));
+        let ic = diagram.add_node(Node::Constant(
+            BigInt::from(15),
+            Port(6, 3, Variable::new(5)),
+        ));
 
         assert!(
             diagram.is_well_formed(),
@@ -2444,7 +2531,7 @@ mod tests {
             match node {
                 Node::Equality(_, ports) => {
                     assert_eq!(ports.len(), 1);
-                    assert_eq!(ports[0], Port(ic, 0, 5));
+                    assert_eq!(ports[0], Port(ic, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not a Equality node."),
             }
@@ -2456,7 +2543,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 1)) {
             match node {
                 Node::Constant(val, port) => {
-                    assert_eq!(port, &Port(i1, 0, 5));
+                    assert_eq!(port, &Port(i1, 0, Variable::new(5)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not a Constant node."),
@@ -2467,7 +2554,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 2)) {
             match node {
                 Node::Constant(val, port) => {
-                    assert_eq!(port, &Port(i2, 0, 5));
+                    assert_eq!(port, &Port(i2, 0, Variable::new(5)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not a Constant node."),
@@ -2478,7 +2565,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 3)) {
             match node {
                 Node::Constant(val, port) => {
-                    assert_eq!(port, &Port(i3, 0, 5));
+                    assert_eq!(port, &Port(i3, 0, Variable::new(5)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not a Constant node."),
@@ -2489,7 +2576,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 4)) {
             match node {
                 Node::Constant(val, port) => {
-                    assert_eq!(port, &Port(i5, 0, 5));
+                    assert_eq!(port, &Port(i5, 0, Variable::new(5)));
                     assert_eq!(val, &BigInt::from(15));
                 }
                 _ => panic!("Node is not a Constant node."),
@@ -2502,7 +2589,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i1) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 1, 0, 5));
+                    assert_eq!(port, &Port(ic + 1, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2512,7 +2599,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i2) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 2, 0, 5));
+                    assert_eq!(port, &Port(ic + 2, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2522,7 +2609,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i3) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 3, 0, 5));
+                    assert_eq!(port, &Port(ic + 3, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2532,7 +2619,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i5) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 4, 0, 5));
+                    assert_eq!(port, &Port(ic + 4, 0, Variable::new(5)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2551,20 +2638,20 @@ mod tests {
     fn test_addmul_unrestricted() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(4, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, 1)));
-        let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, 2)));
-        let i3 = diagram.add_node(Node::Unrestricted(Port(6, 2, 3)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
-        let i5 = diagram.add_node(Node::Unrestricted(Port(6, 4, 4)));
+        diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(6, 0, Variable::new(1))));
+        let i2 = diagram.add_node(Node::Unrestricted(Port(6, 1, Variable::new(2))));
+        let i3 = diagram.add_node(Node::Unrestricted(Port(6, 2, Variable::new(3))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
+        let i5 = diagram.add_node(Node::Unrestricted(Port(6, 4, Variable::new(4))));
         let ia = diagram.add_node(Node::Addition(vec![
-            Port(i1, 0, 1),
-            Port(i2, 0, 2),
-            Port(i3, 0, 3),
-            Port(7, 0, 5),
-            Port(i5, 0, 4),
+            Port(i1, 0, Variable::new(1)),
+            Port(i2, 0, Variable::new(2)),
+            Port(i3, 0, Variable::new(3)),
+            Port(7, 0, Variable::new(5)),
+            Port(i5, 0, Variable::new(4)),
         ]));
-        let ic = diagram.add_node(Node::Unrestricted(Port(6, 3, 5)));
+        let ic = diagram.add_node(Node::Unrestricted(Port(6, 3, Variable::new(5))));
 
         assert!(
             diagram.is_well_formed(),
@@ -2591,7 +2678,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 1)) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(i1, 0, 1));
+                    assert_eq!(port, &Port(i1, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not a Unrestricted node."),
             }
@@ -2601,7 +2688,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 2)) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(i2, 0, 2));
+                    assert_eq!(port, &Port(i2, 0, Variable::new(2)));
                 }
                 _ => panic!("Node is not a Unrestricted node."),
             }
@@ -2611,7 +2698,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 3)) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(i3, 0, 3));
+                    assert_eq!(port, &Port(i3, 0, Variable::new(3)));
                 }
                 _ => panic!("Node is not a Unrestricted node."),
             }
@@ -2621,7 +2708,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&(ic + 4)) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(i5, 0, 4));
+                    assert_eq!(port, &Port(i5, 0, Variable::new(4)));
                 }
                 _ => panic!("Node is not a Unrestricted node."),
             }
@@ -2633,7 +2720,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i1) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 1, 0, 1));
+                    assert_eq!(port, &Port(ic + 1, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2643,7 +2730,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i2) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 2, 0, 2));
+                    assert_eq!(port, &Port(ic + 2, 0, Variable::new(2)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2653,7 +2740,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i3) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 3, 0, 3));
+                    assert_eq!(port, &Port(ic + 3, 0, Variable::new(3)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2663,7 +2750,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i5) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic + 4, 0, 4));
+                    assert_eq!(port, &Port(ic + 4, 0, Variable::new(4)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2692,15 +2779,15 @@ mod tests {
     fn test_addition_const_unrestricted_1() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
+        diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, Variable::new(1))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
         let ia = diagram.add_node(Node::AddConstant(
             BigInt::from(15),
-            Port(i1, 0, 1),
-            Port(4, 0, 2),
+            Port(i1, 0, Variable::new(1)),
+            Port(4, 0, Variable::new(2)),
         ));
-        let ic = diagram.add_node(Node::Unrestricted(Port(3, 1, 2)));
+        let ic = diagram.add_node(Node::Unrestricted(Port(3, 1, Variable::new(2))));
 
         assert!(
             diagram.is_well_formed(),
@@ -2726,7 +2813,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ic) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(i1, 0, 2));
+                    assert_eq!(port, &Port(i1, 0, Variable::new(2)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2736,7 +2823,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i1) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic, 0, 2));
+                    assert_eq!(port, &Port(ic, 0, Variable::new(2)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2760,15 +2847,15 @@ mod tests {
     fn test_addition_const_unrestricted_2() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
+        diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, Variable::new(1))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
         let ia = diagram.add_node(Node::AddConstant(
             BigInt::from(15),
-            Port(i1, 0, 1),
-            Port(4, 0, 2),
+            Port(i1, 0, Variable::new(1)),
+            Port(4, 0, Variable::new(2)),
         ));
-        let ic = diagram.add_node(Node::Unrestricted(Port(3, 1, 2)));
+        let ic = diagram.add_node(Node::Unrestricted(Port(3, 1, Variable::new(2))));
 
         assert!(
             diagram.is_well_formed(),
@@ -2794,7 +2881,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&ic) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(i1, 0, 1));
+                    assert_eq!(port, &Port(i1, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2804,7 +2891,7 @@ mod tests {
         if let Some(node) = diagram.nodes.get(&i1) {
             match node {
                 Node::Unrestricted(port) => {
-                    assert_eq!(port, &Port(ic, 0, 1));
+                    assert_eq!(port, &Port(ic, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not an Unrestricted node."),
             }
@@ -2828,22 +2915,22 @@ mod tests {
     fn test_swap_add_and_multiply_constants_hd_tl() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 1, 1)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
+        diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 1, Variable::new(1))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
         let ia = diagram.add_node(Node::AddConstant(
             BigInt::from(10),
-            Port(5, 1, 5),
-            Port(i1, 0, 1),
+            Port(5, 1, Variable::new(5)),
+            Port(i1, 0, Variable::new(1)),
         ));
-        diagram.add_node(Node::Unrestricted(Port(7, 0, 2)));
+        diagram.add_node(Node::Unrestricted(Port(7, 0, Variable::new(2))));
         let im = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(15),
-            Port(6, 0, 6),
-            Port(ia, 0, 5),
+            Port(6, 0, Variable::new(6)),
+            Port(ia, 0, Variable::new(5)),
         ));
-        let i6 = diagram.add_node(Node::Unrestricted(Port(im, 0, 6)));
-        diagram.add_node(Node::Unrestricted(Port(4, 0, 2)));
+        let i6 = diagram.add_node(Node::Unrestricted(Port(im, 0, Variable::new(6))));
+        diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(2))));
 
         assert!(
             diagram.is_well_formed(),
@@ -2870,8 +2957,8 @@ mod tests {
             match node {
                 Node::MultiplyConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(15));
-                    assert_eq!(port1, &Port(im, 1, 100));
-                    assert_eq!(port2, &Port(i1, 0, 1));
+                    assert_eq!(port1, &Port(im, 1, Variable::new(100)));
+                    assert_eq!(port2, &Port(i1, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not a MultiplyConstant node."),
             }
@@ -2883,8 +2970,8 @@ mod tests {
             match node {
                 Node::AddConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(150));
-                    assert_eq!(port1, &Port(i6, 0, 6));
-                    assert_eq!(port2, &Port(ia, 0, 100));
+                    assert_eq!(port1, &Port(i6, 0, Variable::new(6)));
+                    assert_eq!(port2, &Port(ia, 0, Variable::new(100)));
                 }
                 _ => panic!("Node is not a MultiplyConstant node."),
             }
@@ -2903,22 +2990,22 @@ mod tests {
     fn test_swap_add_and_multiply_constants_tl_tl() {
         // Create a simple diagram with a single unrestricted addition interaction and a few ancillary nodes.
         let mut diagram = StringDiagram::new();
-        diagram.add_node(Node::Unrestricted(Port(2, 0, 0)));
-        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, 1)));
-        diagram.add_node(Node::Unrestricted(Port(0, 0, 0)));
+        diagram.add_node(Node::Unrestricted(Port(2, 0, Variable::new(0))));
+        let i1 = diagram.add_node(Node::Unrestricted(Port(3, 0, Variable::new(1))));
+        diagram.add_node(Node::Unrestricted(Port(0, 0, Variable::new(0))));
         let ia = diagram.add_node(Node::AddConstant(
             BigInt::from(10),
-            Port(i1, 0, 1),
-            Port(5, 1, 5),
+            Port(i1, 0, Variable::new(1)),
+            Port(5, 1, Variable::new(5)),
         ));
-        diagram.add_node(Node::Unrestricted(Port(7, 0, 2)));
+        diagram.add_node(Node::Unrestricted(Port(7, 0, Variable::new(2))));
         let im = diagram.add_node(Node::MultiplyConstant(
             BigInt::from(15),
-            Port(6, 0, 6),
-            Port(ia, 1, 5),
+            Port(6, 0, Variable::new(6)),
+            Port(ia, 1, Variable::new(5)),
         ));
-        let i6 = diagram.add_node(Node::Unrestricted(Port(im, 0, 6)));
-        diagram.add_node(Node::Unrestricted(Port(4, 0, 2)));
+        let i6 = diagram.add_node(Node::Unrestricted(Port(im, 0, Variable::new(6))));
+        diagram.add_node(Node::Unrestricted(Port(4, 0, Variable::new(2))));
 
         assert!(
             diagram.is_well_formed(),
@@ -2945,8 +3032,8 @@ mod tests {
             match node {
                 Node::MultiplyConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(15));
-                    assert_eq!(port1, &Port(im, 1, 100));
-                    assert_eq!(port2, &Port(i1, 0, 1));
+                    assert_eq!(port1, &Port(im, 1, Variable::new(100)));
+                    assert_eq!(port2, &Port(i1, 0, Variable::new(1)));
                 }
                 _ => panic!("Node is not a MultiplyConstant node."),
             }
@@ -2958,8 +3045,8 @@ mod tests {
             match node {
                 Node::AddConstant(value, port1, port2) => {
                     assert_eq!(value, &BigInt::from(-150));
-                    assert_eq!(port1, &Port(i6, 0, 6));
-                    assert_eq!(port2, &Port(ia, 0, 100));
+                    assert_eq!(port1, &Port(i6, 0, Variable::new(6)));
+                    assert_eq!(port2, &Port(ia, 0, Variable::new(100)));
                 }
                 _ => panic!("Node is not a MultiplyConstant node."),
             }
