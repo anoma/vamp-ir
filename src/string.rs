@@ -1,5 +1,4 @@
 // TODO:
-// Definition resynthesis
 // Addition-constmul reorientation
 // Enum-driven reverse rewriting
 // Distributivity-based greedy searching
@@ -183,7 +182,6 @@ impl StringDiagram {
                 Node::Addition(ports) | Node::Multiplication(ports) | Node::Equality(_, ports) => {
                     for (port_index, port) in ports.iter().enumerate() {
                         if !self.is_connected_back(port, (*address, port_index)) {
-                            println!("{node:?}");
                             return false;
                         }
                     }
@@ -196,13 +194,11 @@ impl StringDiagram {
                     if !self.is_connected_back(port1, (*address, 0))
                         || !self.is_connected_back(port2, (*address, 1))
                     {
-                        println!("{node:?}");
                         return false;
                     }
                 }
                 Node::Unrestricted(port) | Node::Constant(_, port) => {
                     if !self.is_connected_back(port, (*address, 0)) {
-                        println!("{node:?}");
                         return false;
                     }
                 }
@@ -819,7 +815,6 @@ pub fn build_string_diagram(
                 }
                 expr => {
                     println!("Unsupported: {expr:?}")
-                    // Unsupported case
                 }
             }
         }
@@ -879,7 +874,7 @@ fn construct_port_vars(
     }
 
     // Assign variables to the remaining ports if they don't have one
-    for (address, _) in &diagram.nodes {
+    for address in diagram.nodes.keys() {
         let ports = diagram.port_list(address);
 
         for (index, Port(target_addr, target_ptidx, variable)) in ports.iter().enumerate() {
@@ -2955,7 +2950,6 @@ fn gen_string_diagram_step(
                         //         return Some(RewriteRule::FuseMultiplication(address, port_index));
                         //     }
                         // }
-
                         if let Some(Node::MultiplyConstant(val, _, _)) =
                             diagram.nodes.get(&target_port.0)
                         {
@@ -3359,11 +3353,7 @@ fn simplify_string_diagram_step(
     let step = gen_string_diagram_step(diagram, defs, address);
 
     if let Some(rule) = &step {
-        println!("Applying rule: {rule:?}");
         let res = apply_rewrite_step(diagram, defs, field_ops, rule.clone());
-        // for (i, e) in &diagram.nodes {
-        //     println!("{i}: {e}");
-        // }
         (step, res)
     } else {
         (None, vec![])
@@ -3683,15 +3673,7 @@ pub fn simplify_3ac(
     let mut reg: DefinitionRegistry = DefinitionRegistry::new(defs);
     let mut diag: StringDiagram = build_string_diagram(equations.to_vec(), input_ids, &mut reg);
     equations.clear();
-    // println!("Starting Diagram:");
-    // for (i, e) in &diag.nodes {
-    //     println!("{i}: {e}");
-    // }
     simplify_string_diagram(&mut diag, &mut reg, field_ops);
-    // println!("Ending Diagram:");
-    // for (i, e) in &diag.nodes {
-    //     println!("{i}: {e}");
-    // }
     println!("Converting back into 3AC...");
     prep_for_3ac(&mut diag, &mut reg);
     equations.extend(convert_to_3ac(&diag, &reg));
