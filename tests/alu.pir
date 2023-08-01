@@ -199,8 +199,8 @@ def div_next prev a b m n acc = {
     // Shift the divisor
     def c = b * (2^n);
     // Check if shifting produces larger number
-    def d = ult m c a;
-    // Subtract the shifted value if it is smaller
+    def d = ule m c a;
+    // Subtract the shifted value if it is smaller or equal
     def e = a - d * c;
     // Move to the next round on the remainder
     prev e b m n (d:acc)
@@ -244,6 +244,8 @@ def rem n a b = snd (divrem n a b);
 1 = sle 8 5 5;
 
 (25,21) = divrem 32 3846 153;
+
+(282,0) = divrem 32 282 1;
 
 range 4 15;
 
