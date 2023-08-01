@@ -98,7 +98,8 @@ fn bench(pir_file: &str) {
     // Start proving witnesses
     println!("* Proving knowledge of witnesses...");
     let inst10 = Instant::now();
-    let proof = prover(circuit.clone(), &params, &pk, &[]).expect("prover failed in halo2 benchmark");
+    let proof =
+        prover(circuit.clone(), &params, &pk, &[]).expect("prover failed in halo2 benchmark");
     let inst11 = Instant::now();
     file.write_all(
         format!(
