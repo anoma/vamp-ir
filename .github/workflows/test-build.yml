@@ -67,6 +67,17 @@ jobs:
         if: success()
         run: cargo build --release --target=${{ matrix.target }}
 
+      - name: benchmarks
+        if: matrix.arch == 'x86_64-musl'
+        run: cargo bench
+
+      - name: upload benchmark output
+        if: matrix.arch == 'x86_64-musl'
+        uses: actions/upload-artifact@v3
+        with:
+          name: bench-results
+          path: benches/halo2_bench_timing.txt
+
   test-macos:
     strategy:
       matrix:
