@@ -80,6 +80,12 @@ pub enum Error {
     // general error from backend
     BackendError { e: String },
 
+    // The user did not provide an assignment for a variable during proving
+    MissingVariableAssignment { var_name: String },
+
+    // A variable assignment has an invalid value
+    InvalidVariableAssignmentValue { var_name: String },
+
     // proof fails to verify
     ProofVerificationFailure,
 
@@ -193,7 +199,17 @@ impl std::fmt::Display for Error {
 
             // invalid field at repl
             Self::InvalidField => write!(f, "Invalid field value"),
-            Error::ParseError { e } => write!(f, "Error while parsing file: {e}"),
+
+            Self::ParseError { e } => write!(f, "Error while parsing file: {e}"),
+
+            Self::MissingVariableAssignment { var_name } => {
+                write!(f, "Missing assignment for variable: {var_name}")
+            }
+
+            Self::InvalidVariableAssignmentValue { var_name } => write!(
+                f,
+                "The assignment for variable: {var_name} has an invalid value"
+            ),
         }
     }
 }

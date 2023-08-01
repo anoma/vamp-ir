@@ -1,9 +1,9 @@
-use crate::ast::Module;
+use crate::ast::{Module, VariableId};
 use crate::error::Error;
 use crate::plonk::synth::{make_constant, PlonkModule, PrimeFieldOps};
 use crate::qprintln;
 use crate::transform::compile;
-use crate::util::{prompt_inputs, read_inputs_from_file, Config};
+use crate::util::{get_circuit_assignments, prompt_inputs, read_inputs_from_file, Config};
 
 use ark_bls12_381::{Bls12_381, Fr as BlsScalar};
 use ark_ec::PairingEngine;
@@ -23,10 +23,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
+
 use std::path::PathBuf;
 use std::rc::Rc;
 
 use clap::{Args, Subcommand};
+use num_bigint::BigInt;
 
 type PC = SonicKZG10<Bls12_381, DensePolynomial<BlsScalar>>;
 type UniversalParams = <PC as PolynomialCommitment<
@@ -232,6 +234,20 @@ fn compile_plonk_cmd(
     Ok(())
 }
 
+fn inputs_from_file(
+    path_to_inputs: &PathBuf,
+    circuit_module: &Module,
+    config: &Config,
+) -> Result<HashMap<VariableId, BigInt>, Error> {
+    qprintln!(
+        config,
+        "* Reading inputs from file {}...",
+        path_to_inputs.to_string_lossy()
+    );
+    let raw_inputs: HashMap<String, BigInt> = read_inputs_from_file(path_to_inputs).unwrap();
+    get_circuit_assignments::<BigInt>(circuit_module, &raw_inputs)
+}
+
 /* Implements the subcommand that creates a proof from interactively entered
  * inputs. */
 fn prove_plonk_cmd(
@@ -258,28 +274,16 @@ fn prove_plonk_cmd(
 
     // Prompt for program inputs
     let var_assignments_ints = match inputs {
-        Some(path_to_inputs) => {
-            qprintln!(
-                config,
-                "* Reading inputs from file {}...",
-                path_to_inputs.to_string_lossy()
-            );
-            read_inputs_from_file(&circuit.module, path_to_inputs)
-        }
+        Some(path_to_inputs) => inputs_from_file(path_to_inputs, &circuit.module, config),
         None => {
             if expected_path_to_inputs.exists() {
-                qprintln!(
-                    config,
-                    "* Reading inputs from file {}...",
-                    expected_path_to_inputs.to_string_lossy()
-                );
-                read_inputs_from_file(&circuit.module, &expected_path_to_inputs)
+                inputs_from_file(&expected_path_to_inputs, &circuit.module, config)
             } else {
                 qprintln!(config, "* Soliciting circuit witnesses...");
-                prompt_inputs(&circuit.module)
+                Ok(prompt_inputs(&circuit.module))
             }
         }
-    };
+    }?;
 
     let mut var_assignments = HashMap::new();
     for (k, v) in var_assignments_ints {
