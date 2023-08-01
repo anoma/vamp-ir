@@ -903,10 +903,15 @@ fn collect_def_variables(def: &Definition, map: &mut HashMap<VariableId, Variabl
     collect_pattern_variables(&def.0 .0, map);
 }
 
-/* Collect all the variables occurring in the given module. */
-pub fn collect_module_variables(module: &Module, map: &mut HashMap<VariableId, Variable>) {
+/* Collect all the public variables occurring in the given module. */
+pub fn collect_public_module_variables(module: &Module, map: &mut HashMap<VariableId, Variable>) {
     map.reserve(module.pubs.len());
     map.extend(module.pubs.iter().map(|var| (var.id, var.clone())));
+}
+
+/* Collect all the variables occurring in the given module. */
+pub fn collect_module_variables(module: &Module, map: &mut HashMap<VariableId, Variable>) {
+    collect_public_module_variables(module, map);
 
     for def in &module.defs {
         collect_def_variables(def, map);
