@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod backend;
 pub mod error;
 pub mod file_gen;
 pub mod halo2;
