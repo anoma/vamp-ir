@@ -14,7 +14,7 @@ struct Cli {
     #[command(subcommand)]
     backend: Backend,
 
-    #[clap(short, long, default_value = "false")]
+    #[arg(short, long, default_value_t = false)]
     quiet: bool,
 }
 
